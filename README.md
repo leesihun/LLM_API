@@ -119,6 +119,19 @@ python run_frontend.py
 - Hard refresh: `Ctrl+Shift+R` (Windows/Linux) or `Cmd+Shift+R` (Mac)
 - Clear browser cache
 
+## Version History
+
+### Version 1.0.0 (October 22, 2025)
+- **Initial Release**
+- Linked project to GitHub repository: https://github.com/leesihun/LLM_API
+- Set up git version control with initial commit
+- Configured .gitignore to exclude Python cache files, virtual environments, node_modules, and environment files
+- Project structure includes:
+  - FastAPI backend with agent graph, chat tasks, and web search functionality
+  - Static HTML/CSS/JavaScript frontend with login and chat interfaces
+  - Web search TypeScript module for DuckDuckGo and Google integration
+  - Helper scripts for running frontend and backend on Windows/Linux/Mac
+
 ## License
 
 *(Add your license here)*
