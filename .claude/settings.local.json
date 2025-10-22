@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Read(//c/Users/Lee/Desktop/Huni/**)",
+      "Bash(mkdir:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(chmod:*)",
+      "Bash(tree:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

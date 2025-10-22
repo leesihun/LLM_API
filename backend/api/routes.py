@@ -1,0 +1,244 @@
+"""
+API Routes
+OpenAI-compatible endpoints and authentication
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from typing import Dict, Any
+import time
+import uuid
+from pathlib import Path
+
+from backend.models.schemas import (
+    LoginRequest,
+    LoginResponse,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ModelsResponse,
+    ModelInfo,
+    User
+)
+from backend.utils.auth import authenticate_user, create_access_token, get_current_user
+from backend.storage.conversation_store import conversation_store
+from backend.tasks.chat_task import chat_task
+from backend.tasks.agentic_task import agentic_task
+from backend.tools.rag_retriever import rag_retriever
+from backend.config.settings import settings
+
+
+# ============================================================================
+# Router Setup
+# ============================================================================
+
+auth_router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+openai_router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
+files_router = APIRouter(prefix="/api/files", tags=["File Management"])
+
+
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+
+@auth_router.post("/login", response_model=LoginResponse)
+async def login(request: LoginRequest):
+    """Authenticate user and return access token"""
+    user = authenticate_user(request.username, request.password)
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Create access token
+    access_token = create_access_token(data={"sub": user["username"]})
+
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=user
+    )
+
+
+@auth_router.get("/me", response_model=User)
+async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get current authenticated user"""
+    return User(
+        username=current_user["username"],
+        role=current_user["role"]
+    )
+
+
+# ============================================================================
+# OpenAI-Compatible Endpoints
+# ============================================================================
+
+@openai_router.get("/models", response_model=ModelsResponse)
+async def list_models(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """List available models (OpenAI compatible)"""
+    models = [
+        ModelInfo(
+            id=settings.ollama_model,
+            created=int(time.time()),
+            owned_by="ollama"
+        )
+    ]
+
+    return ModelsResponse(
+        object="list",
+        data=models
+    )
+
+
+@openai_router.post("/chat/completions", response_model=ChatCompletionResponse)
+async def chat_completions(
+    request: ChatCompletionRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    OpenAI-compatible chat completions endpoint
+    Automatically routes to appropriate task based on query analysis
+    """
+    user_id = current_user["username"]
+    session_id = request.session_id
+
+    # Create new session if none provided
+    if not session_id:
+        session_id = conversation_store.create_session(user_id)
+
+    # Determine task type based on query
+    user_message = request.messages[-1].content if request.messages else ""
+    task_type = determine_task_type(user_message)
+
+    # Execute appropriate task
+    try:
+        if task_type == "agentic":
+            # Use full agentic workflow
+            response_text = await agentic_task.execute(
+                messages=request.messages,
+                session_id=session_id,
+                user_id=user_id,
+                max_iterations=3
+            )
+        else:
+            # Use simple chat
+            response_text = await chat_task.execute(
+                messages=request.messages,
+                session_id=session_id,
+                use_memory=(session_id is not None)
+            )
+
+        # Save to conversation history
+        conversation_store.add_message(session_id, "user", user_message)
+        conversation_store.add_message(session_id, "assistant", response_text)
+
+        # Build OpenAI-compatible response
+        return ChatCompletionResponse(
+            id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            created=int(time.time()),
+            model=request.model,
+            choices=[
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": response_text
+                    },
+                    "finish_reason": "stop"
+                }
+            ],
+            usage={
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            },
+            x_session_id=session_id
+        )
+
+    except Exception as e:
+        print(f"Error in chat completion: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating response: {str(e)}"
+        )
+
+
+def determine_task_type(query: str) -> str:
+    """
+    Determine which task type to use based on query
+    """
+    query_lower = query.lower()
+
+    # Keywords that suggest agentic processing
+    agentic_keywords = [
+        "search", "find", "look up", "research",
+        "compare", "analyze", "investigate",
+        "current", "latest", "news",
+        "document", "file", "pdf"
+    ]
+
+    if any(keyword in query_lower for keyword in agentic_keywords):
+        return "agentic"
+
+    return "chat"
+
+
+# ============================================================================
+# File Upload Endpoints
+# ============================================================================
+
+@files_router.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Upload a document for RAG processing
+    """
+    try:
+        # Save file
+        uploads_path = Path(settings.uploads_path)
+        uploads_path.mkdir(parents=True, exist_ok=True)
+
+        file_path = uploads_path / f"{uuid.uuid4().hex}_{file.filename}"
+
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # Index document
+        doc_id = await rag_retriever.index_document(file_path)
+
+        return {
+            "success": True,
+            "doc_id": doc_id,
+            "filename": file.filename,
+            "message": "File uploaded and indexed successfully"
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading file: {str(e)}"
+        )
+
+
+@files_router.get("/documents")
+async def list_documents(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """List uploaded documents"""
+    uploads_path = Path(settings.uploads_path)
+
+    if not uploads_path.exists():
+        return {"documents": []}
+
+    documents = []
+    for file_path in uploads_path.iterdir():
+        if file_path.is_file():
+            documents.append({
+                "filename": file_path.name,
+                "size": file_path.stat().st_size,
+                "created": file_path.stat().st_ctime
+            })
+
+    return {"documents": documents}

@@ -1,0 +1,14 @@
+{
+  "name": "websearch-ts",
+  "version": "1.0.0",
+  "description": "TypeScript web search from Page Assist",
+  "type": "module",
+  "scripts": {
+    "search": "node search.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "node-fetch": "^3.3.2"
+  }
+}
+
