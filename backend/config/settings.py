@@ -1,53 +1,112 @@
 """
 Configuration Management System
-Loads settings from environment variables with NO fallbacks
-All required settings must be explicitly configured
+Optimized settings with security and performance best practices
+Loads from environment variables with secure defaults
 """
 
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
+import secrets
 from pathlib import Path
 
 
 class Settings(BaseSettings):
-    """Application settings - all must be configured in .env file"""
+    """
+    Application settings with optimized defaults
+    All sensitive values should be overridden in production via .env file
+    """
 
+    # ============================================================================
     # Server Configuration
-    server_host: '0.0.0.0'
-    server_port: 8000
-    secret_key: 'change-this-secret-key-in-production'
+    # ============================================================================
 
-    # Ollama Configuration
-    ollama_host: 'http://localhost:11434'
-    ollama_model: 'gpt-oss:20b'
-    ollama_timeout: 600000
-    ollama_num_ctx: 8192
-    ollama_temperature: 0.1
-    ollama_top_p: 0.9
-    ollama_top_k: 40
+    # Host binding - use localhost in production, 0.0.0.0 for development
+    server_host: str = '0.0.0.0'
 
-    # Tavily Search API
-    tavily_api_key: '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'
+    # Port - standard HTTP port, change if needed
+    server_port: int = 8000
 
-    # Vector Database
-    vector_db_type: str
-    vector_db_path: str
-    embedding_model: str
+    # SECRET KEY - CRITICAL: Generate a secure 32+ character key for production
+    # Use: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    secret_key: str = 'dev-secret-key-change-in-production-please'
 
-    # Storage Paths
-    users_path: str
-    sessions_path: str
-    conversations_path: str
-    uploads_path: str
+    # ============================================================================
+    # Ollama Configuration - Optimized for Performance
+    # ============================================================================
 
-    # Authentication
-    jwt_algorithm: str
-    jwt_expiration_hours: int
+    # Ollama service endpoint
+    ollama_host: str = 'http://localhost:11434'
 
-    # Logging
-    log_level: str
-    log_file: str
+    # Model selection - gpt-oss:20b
+    ollama_model: str = 'deepseek-r1:1.5b'
+
+    # Request timeout - 5 minutes for most requests, adjust based on model size
+    ollama_timeout: int = 300000  # 5 minutes
+
+    # Context window - balance between capability and memory usage
+    ollama_num_ctx: int = 4096  # Good balance for most use cases
+
+    # Sampling parameters - optimized for coherent responses
+    ollama_temperature: float = 0.7  # 0.1=conservative, 1.0=creative
+    ollama_top_p: float = 0.9       # Nucleus sampling
+    ollama_top_k: int = 40          # Top-k sampling
+
+    # ============================================================================
+    # API Keys - SECURE THESE IN PRODUCTION
+    # ============================================================================
+
+    # Tavily Search API - Get from https://tavily.com/
+    tavily_api_key: str = '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'
+
+    # ============================================================================
+    # Vector Database - Optimized for Performance
+    # ============================================================================
+
+    # Vector DB type - 'faiss' for speed, 'chroma' for persistence
+    vector_db_type: str = 'faiss'
+
+    # Vector database storage path
+    vector_db_path: str = './data/vector_db'
+
+    # Embedding model - all-MiniLM-L6-v2 is fast and good quality
+    embedding_model: str = 'all-MiniLM-L6-v2'
+
+    # ============================================================================
+    # Storage Paths - Organized Data Structure
+    # ============================================================================
+
+    # User data and authentication
+    users_path: str = './data/users/users.json'
+
+    # Session management
+    sessions_path: str = './data/sessions/sessions.json'
+
+    # Conversation history storage
+    conversations_path: str = './data/conversations'
+
+    # File uploads directory
+    uploads_path: str = './data/uploads'
+
+    # ============================================================================
+    # Authentication - Security Optimized
+    # ============================================================================
+
+    # JWT algorithm - HS256 is secure and widely supported
+    jwt_algorithm: str = 'HS256'
+
+    # JWT expiration - 24 hours is reasonable for most applications
+    jwt_expiration_hours: int = 24
+
+    # ============================================================================
+    # Logging - Comprehensive and Structured
+    # ============================================================================
+
+    # Log level - INFO for production, DEBUG for development
+    log_level: str = 'INFO'
+
+    # Log file location
+    log_file: str = './data/logs/app.log'
 
     class Config:
         env_file = ".env"
@@ -56,30 +115,118 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     """
-    Load settings from environment variables
-    Raises error if required variables are missing
+    Load settings from environment variables with validation
+    Creates .env file if missing and provides helpful setup instructions
     """
     if not os.path.exists(".env"):
-        raise FileNotFoundError(
-            ".env file not found. Copy .env.example to .env and configure all required variables"
-        )
+        print("Warning: .env file not found!")
+        print("Creating .env file with default settings...")
+        print("Please edit .env file and update sensitive values for production!")
+        create_env_file()
 
     try:
         settings = Settings()
     except Exception as e:
         raise ValueError(
             f"Configuration error: {e}\n"
-            "Please ensure all required environment variables are set in .env file"
+            "Please check your .env file and ensure all required variables are set.\n"
+            "Refer to .env.example for guidance."
         )
 
     # Create necessary directories
-    Path(settings.conversations_path).mkdir(parents=True, exist_ok=True)
-    Path(settings.uploads_path).mkdir(parents=True, exist_ok=True)
-    Path(settings.vector_db_path).mkdir(parents=True, exist_ok=True)
-    Path(settings.log_file).parent.mkdir(parents=True, exist_ok=True)
-    Path(settings.users_path).parent.mkdir(parents=True, exist_ok=True)
+    directories_to_create = [
+        settings.conversations_path,
+        settings.uploads_path,
+        settings.vector_db_path,
+        Path(settings.log_file).parent,
+        Path(settings.users_path).parent,
+        Path(settings.sessions_path).parent,
+    ]
+
+    for directory in directories_to_create:
+        Path(directory).mkdir(parents=True, exist_ok=True)
 
     return settings
+
+
+def create_env_file():
+    """Create a .env file with default settings"""
+    env_content = """# ==============================================================================
+# LLM API Configuration
+# ==============================================================================
+# Copy this file to .env and customize for your environment
+# CRITICAL: Update sensitive values (API keys, secret keys) for production!
+
+# ==============================================================================
+# Server Configuration
+# ==============================================================================
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+SECRET_KEY=dev-secret-key-change-in-production-please
+
+# ==============================================================================
+# Ollama Configuration
+# ==============================================================================
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=deepseek-r1:1.5b
+OLLAMA_TIMEOUT=300000
+OLLAMA_NUM_CTX=4096
+OLLAMA_TEMPERATURE=0.7
+OLLAMA_TOP_P=0.9
+OLLAMA_TOP_K=40
+
+# ==============================================================================
+# API Keys (Get these from respective services)
+# ==============================================================================
+TAVILY_API_KEY=your-tavily-api-key-here
+
+# ==============================================================================
+# Vector Database
+# ==============================================================================
+VECTOR_DB_TYPE=faiss
+VECTOR_DB_PATH=./data/vector_db
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+
+# ==============================================================================
+# Storage Paths
+# ==============================================================================
+USERS_PATH=./data/users/users.json
+SESSIONS_PATH=./data/sessions/sessions.json
+CONVERSATIONS_PATH=./data/conversations
+UPLOADS_PATH=./data/uploads
+
+# ==============================================================================
+# Authentication
+# ==============================================================================
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_HOURS=24
+
+# ==============================================================================
+# Logging
+# ==============================================================================
+LOG_LEVEL=INFO
+LOG_FILE=./data/logs/app.log
+
+# ==============================================================================
+# Production Checklist
+# ==============================================================================
+# ✅ Generate secure SECRET_KEY: python -c "import secrets; print(secrets.token_urlsafe(32))"
+# ✅ Get Tavily API key from https://tavily.com/
+# ✅ Set SERVER_HOST=localhost for production security
+# ✅ Adjust OLLAMA_MODEL based on your hardware (7b, 13b, 70b)
+# ✅ Set LOG_LEVEL=WARNING for production to reduce log noise
+"""
+
+    try:
+        with open('.env', 'w', encoding='utf-8') as f:
+            f.write(env_content)
+        print(".env file created successfully!")
+        print("Next steps:")
+        print("   1. Edit .env file with your actual values")
+        print("   2. Get API keys from respective services")
+        print("   3. Run the application")
+    except Exception as e:
+        raise ValueError(f"Failed to create .env file: {e}")
 
 
 # Global settings instance

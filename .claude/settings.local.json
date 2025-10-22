@@ -6,7 +6,11 @@
       "Bash(mkdir:*)",
       "Bash(python -m py_compile:*)",
       "Bash(chmod:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(if [ ! -f .env ])",
+      "Bash(then cp .env.example .env)",
+      "Bash(fi)",
+      "Bash(ollama list:*)"
     ],
     "deny": [],
     "ask": []
