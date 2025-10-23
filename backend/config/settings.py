@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Host binding - use localhost in production, 0.0.0.0 for development
-    server_host: str = 'localhost'
+    server_host: str = '0.0.0.0'
 
     # Port - standard HTTP port, change if needed
     server_port: int = 8000
@@ -109,8 +109,13 @@ class Settings(BaseSettings):
     log_file: str = './data/logs/app.log'
 
     class Config:
-        env_file = ".env"
+        # .env file is optional - only load if it exists
+        env_file = ".env" if os.path.exists(".env") else None
+        env_file_encoding = 'utf-8'
         case_sensitive = False
+        # Ignore extra fields and validate assignment
+        extra = 'ignore'
+        validate_assignment = True
 
 
 def load_settings() -> Settings:
@@ -126,6 +131,10 @@ def load_settings() -> Settings:
 
     try:
         settings = Settings()
+        # Debug: Print loaded settings
+        print(f"DEBUG: ollama_host = '{settings.ollama_host}'")
+        print(f"DEBUG: ollama_model = '{settings.ollama_model}'")
+        print(f"DEBUG: server_host = '{settings.server_host}'")
     except Exception as e:
         raise ValueError(
             f"Configuration error: {e}\n"
