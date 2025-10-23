@@ -20,7 +20,19 @@
       "Bash(pip install:*)",
       "Bash(pip check)",
       "Bash(cat:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(venv\\Scripts\\pip.exe install:*)",
+      "Bash(.\\venv\\Scripts\\pip.exe install:*)",
+      "Bash(\"venv/Scripts/pip.exe\" install fastapi uvicorn pydantic pydantic-settings)",
+      "Bash(\"venv/Scripts/pip.exe\" install python-jose[cryptography] passlib[bcrypt] bcrypt python-multipart)",
+      "Bash(\"venv/Scripts/pip.exe\" install langchain langchain-community langchain-core langchain-ollama langchain-text-splitters langgraph langgraph-checkpoint langsmith ollama)",
+      "Bash(\"venv/Scripts/pip.exe\" install:*)",
+      "Bash(\"venv/Scripts/python.exe\" -c \"import backend.config.settings; print(''Backend imports successful!'')\")",
+      "Bash(\"venv/Scripts/pip.exe\" freeze)",
+      "Bash(\"venv/Scripts/pip.exe\" install beautifulsoup4 chromadb tavily-python openpyxl sentence-transformers huggingface-hub)",
+      "Bash(copy requirements_venv.txt requirements.txt)",
+      "Bash(\"venv/Scripts/python.exe\":*)",
+      "Bash(\"venv/Scripts/python.exe\" -m uvicorn backend.api.app:app --reload)"
     ],
     "deny": [],
     "ask": []
