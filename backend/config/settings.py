@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Ollama service endpoint
-    ollama_host: str = 'http://localhost:11434'
+    ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
     ollama_model: str = 'gpt-oss:20b'
