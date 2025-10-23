@@ -135,6 +135,12 @@ def load_settings() -> Settings:
         print(f"DEBUG: ollama_host = '{settings.ollama_host}'")
         print(f"DEBUG: ollama_model = '{settings.ollama_model}'")
         print(f"DEBUG: server_host = '{settings.server_host}'")
+
+        # FORCE FIX: Override if wrong value loaded
+        if settings.ollama_host == '0.0.0.0' or not settings.ollama_host.startswith('http'):
+            print("WARNING: ollama_host has wrong value, forcing to http://127.0.0.1:11434")
+            settings.ollama_host = 'http://127.0.0.1:11434'
+
     except Exception as e:
         raise ValueError(
             f"Configuration error: {e}\n"
