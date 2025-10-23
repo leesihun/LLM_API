@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     ollama_host: str = 'http://localhost:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = 'deepseek-r1:1.5b'
+    ollama_model: str = 'gpt-oss:20b'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
@@ -214,23 +214,24 @@ LOG_FILE={defaults.log_file}
 # ==============================================================================
 # Production Checklist
 # ==============================================================================
-# ✅ Generate secure SECRET_KEY: python -c "import secrets; print(secrets.token_urlsafe(32))"
-# ✅ Get Tavily API key from https://tavily.com/
-# ✅ Set SERVER_HOST=localhost for production security
-# ✅ Adjust OLLAMA_MODEL based on your hardware (7b, 13b, 70b)
-# ✅ Set LOG_LEVEL=WARNING for production to reduce log noise
+# - Generate secure SECRET_KEY:
+#   python -c "import secrets; print(secrets.token_urlsafe(32))"
+# - Get Tavily API key from https://tavily.com/
+# - Set SERVER_HOST=localhost for production security
+# - Adjust OLLAMA_MODEL based on your hardware (7b, 13b, 70b)
+# - Set LOG_LEVEL=WARNING for production environments
 """
 
     try:
-        with open('.env', 'w', encoding='utf-8') as f:
+        with open(env_path, 'w', encoding='utf-8') as f:
             f.write(env_content)
         print(".env file created successfully!")
         print("Next steps:")
         print("   1. Edit .env file with your actual values")
         print("   2. Get API keys from respective services")
         print("   3. Run the application")
-    except Exception as e:
-        raise ValueError(f"Failed to create .env file: {e}")
+    except OSError as exc:
+        raise ValueError(f"Failed to create .env file: {exc}") from exc
 
 
 # Global settings instance
