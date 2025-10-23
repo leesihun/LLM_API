@@ -21,7 +21,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 
 # Vector stores
 from langchain_community.vectorstores import FAISS, Chroma
@@ -34,8 +34,9 @@ class RAGRetriever:
     """Document processing and retrieval system"""
 
     def __init__(self):
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model
+        self.embeddings = OllamaEmbeddings(
+            model=settings.embedding_model,
+            base_url=settings.ollama_host
         )
         self.vector_db_path = Path(settings.vector_db_path)
         self.vector_db_path.mkdir(parents=True, exist_ok=True)

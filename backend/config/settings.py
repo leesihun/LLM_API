@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     vector_db_path: str = './data/vector_db'
 
     # Embedding model - nomic-embed-text:latest is fast and good quality
-    embedding_model: str = 'nomic-embed-text:latest'
+    embedding_model: str = 'bge-m3:latest'
 
     # ============================================================================
     # Storage Paths - Organized Data Structure
