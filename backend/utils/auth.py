@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -17,20 +16,12 @@ from backend.config.settings import settings
 
 
 # ============================================================================
-# Password Hashing
+# Password Verification (Plain Text)
 # ============================================================================
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    """Generate password hash"""
-    return pwd_context.hash(password)
+def verify_password(plain_password: str, stored_password: str) -> bool:
+    """Verify a password by direct comparison"""
+    return plain_password == stored_password
 
 
 # ============================================================================
@@ -79,12 +70,12 @@ def load_users() -> Dict[str, Any]:
             "users": [
                 {
                     "username": "guest",
-                    "password_hash": get_password_hash("guest_test1"),
+                    "password": "guest_test1",
                     "role": "guest"
                 },
                 {
                     "username": "admin",
-                    "password_hash": get_password_hash("administrator"),
+                    "password": "administrator",
                     "role": "admin"
                 }
             ]
@@ -103,7 +94,7 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
 
     for user in users_data.get("users", []):
         if user["username"] == username:
-            if verify_password(password, user["password_hash"]):
+            if verify_password(password, user.get("password", user.get("password_hash", ""))):
                 return {
                     "username": user["username"],
                     "role": user["role"]
