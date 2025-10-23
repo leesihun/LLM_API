@@ -1,7 +1,7 @@
 """
 Configuration Management System
-Optimized settings with security and performance best practices
-Loads from environment variables with secure defaults
+All settings are defined in this file with defaults
+.env file is OPTIONAL - can override settings if present
 """
 
 from pydantic_settings import BaseSettings
@@ -13,8 +13,8 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     """
-    Application settings with optimized defaults
-    All sensitive values should be overridden in production via .env file
+    Application settings with all defaults defined here
+    .env file is optional - use it only if you need to override specific values
     """
 
     # ============================================================================
@@ -115,22 +115,21 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     """
-    Load settings from environment variables with validation
-    Creates .env file if missing and provides helpful setup instructions
+    Load settings from settings.py defaults
+    .env file is optional - only used if present to override defaults
     """
-    if not os.path.exists(".env"):
-        print("Warning: .env file not found!")
-        print("Creating .env file with default settings...")
-        print("Please edit .env file and update sensitive values for production!")
-        create_env_file()
+    # Check if .env exists (optional)
+    if os.path.exists(".env"):
+        print("Info: Using settings from settings.py with .env overrides")
+    else:
+        print("Info: Using settings from settings.py (no .env file found, which is OK)")
 
     try:
         settings = Settings()
     except Exception as e:
         raise ValueError(
             f"Configuration error: {e}\n"
-            "Please check your .env file and ensure all required variables are set.\n"
-            "Refer to .env.example for guidance."
+            "Please check your backend/config/settings.py file."
         )
 
     # Create necessary directories
