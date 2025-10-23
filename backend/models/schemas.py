@@ -5,7 +5,17 @@ Defines all Pydantic models for API requests/responses
 
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+
+# ============================================================================
+# Timezone Helper
+# ============================================================================
+
+def get_kst_now() -> datetime:
+    """Get current time in KST (Korea Standard Time, UTC+9)"""
+    kst = timezone(timedelta(hours=9))
+    return datetime.now(kst)
 
 
 # ============================================================================
@@ -61,6 +71,7 @@ class ChatCompletionResponse(BaseModel):
     choices: List[Dict[str, Any]]
     usage: Optional[Dict[str, int]] = None
     x_session_id: Optional[str] = None
+    x_agent_metadata: Optional[Dict[str, Any]] = None  # Agentic workflow execution details
 
 
 class ModelInfo(BaseModel):
@@ -179,7 +190,7 @@ class ConversationMessage(BaseModel):
     """Stored conversation message"""
     role: str
     content: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=get_kst_now)
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -188,8 +199,8 @@ class Conversation(BaseModel):
     session_id: str
     user_id: str
     messages: List[ConversationMessage]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_kst_now)
+    updated_at: datetime = Field(default_factory=get_kst_now)
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -219,10 +230,12 @@ class ToolListResponse(BaseModel):
 
 class MathRequest(BaseModel):
     expression: str
+    return_latex: bool = False
 
 
 class MathResponse(BaseModel):
     result: str
+    latex: Optional[str] = None
 
 
 class WebSearchRequest(BaseModel):

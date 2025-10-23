@@ -41,7 +41,7 @@ class SmartAgentTask:
         session_id: Optional[str],
         user_id: str,
         agent_type: AgentType = AgentType.AUTO
-    ) -> str:
+    ) -> tuple[str, dict]:
         """
         Execute task using the appropriate agent
 
@@ -52,21 +52,28 @@ class SmartAgentTask:
             agent_type: Which agent to use (auto, react, plan_execute)
 
         Returns:
-            AI response
+            Tuple of (AI response, metadata)
         """
         # Auto-select agent if not specified
+        selected_agent = agent_type
         if agent_type == AgentType.AUTO:
-            agent_type = self._select_agent(messages[-1].content)
+            selected_agent = self._select_agent(messages[-1].content)
 
-        logger.info(f"[Smart Agent] Selected agent: {agent_type}")
+        logger.info(f"[Smart Agent] Selected agent: {selected_agent}")
 
         # Route to appropriate agent
-        if agent_type == AgentType.REACT:
+        if selected_agent == AgentType.REACT:
             logger.info(f"[Smart Agent] Using ReAct (Reasoning + Acting)")
-            return await react_agent.execute(messages, session_id, user_id)
+            response, metadata = await react_agent.execute(messages, session_id, user_id)
         else:
             logger.info(f"[Smart Agent] Using Plan-and-Execute")
-            return await agentic_task.execute(messages, session_id, user_id)
+            response, metadata = await agentic_task.execute(messages, session_id, user_id)
+
+        # Add selection info to metadata
+        metadata["agent_selected"] = selected_agent.value
+        metadata["agent_selection_mode"] = "auto" if agent_type == AgentType.AUTO else "manual"
+
+        return response, metadata
 
     def _select_agent(self, query: str) -> AgentType:
         """

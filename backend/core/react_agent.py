@@ -56,6 +56,16 @@ Action Input: {self.action_input}
 Observation: {self.observation}
 """
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert step to dictionary for serialization"""
+        return {
+            "step_num": self.step_num,
+            "thought": self.thought,
+            "action": self.action,
+            "action_input": self.action_input,
+            "observation": self.observation
+        }
+
 
 class ReActAgent:
     """
@@ -95,7 +105,7 @@ class ReActAgent:
         messages: List[ChatMessage],
         session_id: Optional[str],
         user_id: str
-    ) -> str:
+    ) -> tuple[str, Dict[str, Any]]:
         """
         Execute ReAct loop
 
@@ -105,7 +115,7 @@ class ReActAgent:
             user_id: User identifier
 
         Returns:
-            Final answer
+            Tuple of (final_answer, metadata)
         """
         logger.info(f"[ReAct Agent] Starting for user: {user_id}, session: {session_id}")
 
@@ -155,7 +165,11 @@ class ReActAgent:
             final_answer = await self._generate_final_answer(user_query, self.steps)
 
         logger.info(f"[ReAct Agent] Completed after {len(self.steps)} steps")
-        return final_answer
+
+        # Build metadata
+        metadata = self._build_metadata()
+
+        return final_answer, metadata
 
     async def _generate_thought(self, query: str, steps: List[ReActStep]) -> str:
         """
@@ -342,6 +356,28 @@ Step {step.step_num}:
 """)
 
         return "\n".join(context_parts)
+
+    def _build_metadata(self) -> Dict[str, Any]:
+        """
+        Build metadata dictionary with execution details
+        """
+        # Collect unique tools used
+        tools_used = list(set([
+            step.action for step in self.steps
+            if step.action != ToolName.FINISH
+        ]))
+
+        # Build execution steps
+        execution_steps = [step.to_dict() for step in self.steps]
+
+        return {
+            "agent_type": "react",
+            "total_iterations": len(self.steps),
+            "max_iterations": self.max_iterations,
+            "tools_used": tools_used,
+            "execution_steps": execution_steps,
+            "execution_trace": self.get_trace()
+        }
 
     def get_trace(self) -> str:
         """

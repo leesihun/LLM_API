@@ -188,10 +188,12 @@ async def chat_completions(
 
     # Execute appropriate task
     try:
+        agent_metadata = None
+
         if task_type == "agentic":
             # Use smart agent (auto-selects ReAct or Plan-and-Execute)
             agent_type = AgentType(request.agent_type) if request.agent_type else AgentType.AUTO
-            response_text = await smart_agent_task.execute(
+            response_text, agent_metadata = await smart_agent_task.execute(
                 messages=request.messages,
                 session_id=session_id,
                 user_id=user_id,
@@ -229,7 +231,8 @@ async def chat_completions(
                 "completion_tokens": 0,
                 "total_tokens": 0
             },
-            x_session_id=session_id
+            x_session_id=session_id,
+            x_agent_metadata=agent_metadata
         )
 
     except Exception as e:
@@ -484,8 +487,12 @@ async def list_tools(_: Dict[str, Any] = Depends(get_current_user)):
 
 @tools_router.post("/math", response_model=MathResponse)
 async def tool_math(request: MathRequest, _: Dict[str, Any] = Depends(get_current_user)):
-    result = await math_calculator.calculate(request.expression)
-    return MathResponse(result=result)
+    result = await math_calculator.calculate(request.expression, request.return_latex)
+
+    if request.return_latex and isinstance(result, dict):
+        return MathResponse(result=result["result"], latex=result.get("latex"))
+    else:
+        return MathResponse(result=result if isinstance(result, str) else result["result"])
 
 
 @tools_router.post("/websearch", response_model=WebSearchResponse)

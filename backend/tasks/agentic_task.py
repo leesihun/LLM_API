@@ -21,7 +21,7 @@ class AgenticTask:
         session_id: Optional[str],
         user_id: str,
         max_iterations: int = 3
-    ) -> str:
+    ) -> tuple[str, dict]:
         """
         Execute agentic workflow with planning, tool use, and verification
 
@@ -32,7 +32,7 @@ class AgenticTask:
             max_iterations: Maximum refinement iterations
 
         Returns:
-            Final AI response
+            Tuple of (final_output, metadata)
         """
         # Prepare initial state
         initial_state: AgentState = {
@@ -60,8 +60,27 @@ class AgenticTask:
         tools_used = result.get("tools_used", [])
         logger.info(f"Agentic workflow completed. Tools used: {', '.join(tools_used)}")
 
-        # Return final output
-        return result.get("final_output", "I apologize, but I couldn't generate a response.")
+        # Build metadata
+        metadata = self._build_metadata(result)
+
+        # Return final output and metadata
+        return result.get("final_output", "I apologize, but I couldn't generate a response."), metadata
+
+    def _build_metadata(self, result: dict) -> dict:
+        """Build metadata from the agent graph execution result"""
+        return {
+            "agent_type": "plan_execute",
+            "plan": result.get("plan", ""),
+            "tools_used": result.get("tools_used", []),
+            "iteration_count": result.get("iteration_count", 0),
+            "max_iterations": result.get("max_iterations", 3),
+            "verification_passed": result.get("verification_passed", False),
+            "tool_results": {
+                "search_results": result.get("search_results", ""),
+                "rag_context": result.get("rag_context", ""),
+                "data_analysis_results": result.get("data_analysis_results", "")
+            }
+        }
 
 
 # Global agentic task instance

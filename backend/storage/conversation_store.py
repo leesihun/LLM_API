@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from backend.config.settings import settings
-from backend.models.schemas import Conversation, ConversationMessage
+from backend.models.schemas import Conversation, ConversationMessage, get_kst_now
 
 
 class ConversationStore:
@@ -56,8 +56,8 @@ class ConversationStore:
 
     def save_conversation(self, conversation: Conversation) -> None:
         """Save conversation to disk"""
-        # Update timestamp
-        conversation.updated_at = datetime.utcnow()
+        # Update timestamp to KST
+        conversation.updated_at = get_kst_now()
 
         # Use new filename format with user_id and created_at
         file_path = self._get_conversation_file(
