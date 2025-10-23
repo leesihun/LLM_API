@@ -120,10 +120,36 @@ async def global_exception_handler(request, exc):
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup"""
+    import httpx
+
     logger.info("Starting HE Team LLM Assistant API...")
     logger.info(f"Ollama Host: {settings.ollama_host}")
     logger.info(f"Ollama Model: {settings.ollama_model}")
     logger.info(f"Server: {settings.server_host}:{settings.server_port}")
+
+    # Test Ollama connection
+    try:
+        logger.info("Testing Ollama connection...")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{settings.ollama_host}/api/tags", timeout=10.0)
+            if response.status_code == 200:
+                logger.info("✓ Ollama connection successful!")
+                models = response.json().get("models", [])
+                logger.info(f"✓ Available models: {[m.get('name') for m in models]}")
+            else:
+                logger.error(f"✗ Ollama returned status {response.status_code}")
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("✗ OLLAMA CONNECTION FAILED!")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Ollama Host: {settings.ollama_host}")
+        logger.error("Please check:")
+        logger.error("  1. Is Ollama running? (ollama serve)")
+        logger.error("  2. Is it accessible at the configured host?")
+        logger.error("  3. Try: curl http://127.0.0.1:11434/api/tags")
+        logger.error("=" * 80)
+
     logger.info("Application started successfully")
 
 
