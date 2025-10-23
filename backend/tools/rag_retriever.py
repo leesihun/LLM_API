@@ -14,6 +14,7 @@ from langchain_community.document_loaders import (
     PyPDFLoader,
     Docx2txtLoader,
     TextLoader,
+    UnstructuredExcelLoader,
 )
 from langchain_core.documents import Document
 
@@ -75,6 +76,8 @@ class RAGRetriever:
             ".pdf": PyPDFLoader,
             ".docx": Docx2txtLoader,
             ".txt": TextLoader,
+            ".xlsx": UnstructuredExcelLoader,
+            ".xls": UnstructuredExcelLoader,
         }
 
         loader_class = loaders.get(extension)

@@ -18,7 +18,8 @@
       "Bash(timeout:*)",
       "Bash(dir:*)",
       "Bash(pip install:*)",
-      "Bash(pip check)"
+      "Bash(pip check)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

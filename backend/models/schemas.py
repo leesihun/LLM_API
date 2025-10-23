@@ -78,6 +78,34 @@ class ModelsResponse(BaseModel):
 
 
 # ============================================================================
+# Management / Admin Models
+# ============================================================================
+
+class SignupRequest(BaseModel):
+    """User signup request"""
+    username: str
+    password: str
+    role: Optional[str] = "guest"
+
+
+class SignupResponse(BaseModel):
+    """User signup response"""
+    success: bool
+    user: User
+
+
+class ModelChangeRequest(BaseModel):
+    """Change active LLM model (admin only)"""
+    model: str
+
+
+class ModelChangeResponse(BaseModel):
+    """Response for model change"""
+    success: bool
+    model: str
+
+
+# ============================================================================
 # Agent State Models
 # ============================================================================
 
@@ -138,6 +166,11 @@ class RAGResult(BaseModel):
     score: float
 
 
+class RAGSearchResponse(BaseModel):
+    """RAG retrieval response"""
+    results: List[RAGResult]
+
+
 # ============================================================================
 # Storage Models
 # ============================================================================
@@ -158,3 +191,44 @@ class Conversation(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Optional[Dict[str, Any]] = None
+
+
+class SessionListResponse(BaseModel):
+    """List of session IDs for a user"""
+    sessions: List[str]
+
+
+class ConversationHistoryResponse(BaseModel):
+    """Conversation history response"""
+    session_id: str
+    messages: List[ConversationMessage]
+
+
+# ============================================================================
+# Tooling Models
+# ============================================================================
+
+class ToolInfo(BaseModel):
+    name: str
+    description: str
+
+
+class ToolListResponse(BaseModel):
+    tools: List[ToolInfo]
+
+
+class MathRequest(BaseModel):
+    expression: str
+
+
+class MathResponse(BaseModel):
+    result: str
+
+
+class WebSearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+
+class WebSearchResponse(BaseModel):
+    results: List[SearchResult]

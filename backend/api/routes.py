@@ -16,7 +16,20 @@ from backend.models.schemas import (
     ChatCompletionResponse,
     ModelsResponse,
     ModelInfo,
-    User
+    User,
+    SignupRequest,
+    SignupResponse,
+    ModelChangeRequest,
+    ModelChangeResponse,
+    SessionListResponse,
+    ConversationHistoryResponse,
+    ToolListResponse,
+    ToolInfo,
+    MathRequest,
+    MathResponse,
+    WebSearchRequest,
+    WebSearchResponse,
+    RAGSearchResponse
 )
 from backend.utils.auth import authenticate_user, create_access_token, get_current_user
 from backend.storage.conversation_store import conversation_store
@@ -24,9 +37,12 @@ from backend.tasks.chat_task import chat_task
 from backend.tasks.agentic_task import agentic_task
 from backend.tasks.smart_agent_task import smart_agent_task, AgentType
 from backend.tools.rag_retriever import rag_retriever
+from backend.tools.math_calculator import math_calculator
+from backend.tools.web_search import web_search_tool
 from backend.config.settings import settings
 import logging
 import traceback
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +54,9 @@ logger = logging.getLogger(__name__)
 auth_router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 openai_router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
 files_router = APIRouter(prefix="/api/files", tags=["File Management"])
+admin_router = APIRouter(prefix="/api/admin", tags=["Admin"])
+tools_router = APIRouter(prefix="/api/tools", tags=["Tools"])
+chat_router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
 
 # ============================================================================
@@ -86,6 +105,44 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
         username=current_user["username"],
         role=current_user["role"]
     )
+
+
+@auth_router.post("/signup", response_model=SignupResponse)
+async def signup(request: SignupRequest):
+    """Create a new user account (stores plaintext password for simplicity)"""
+    users_path = Path(settings.users_path)
+    users_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if users_path.exists():
+            with open(users_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = {"users": []}
+
+        # Check if user exists
+        for u in data.get("users", []):
+            if u.get("username") == request.username:
+                raise HTTPException(status_code=400, detail="Username already exists")
+
+        # Append new user (plaintext password for dev simplicity)
+        new_user = {
+            "username": request.username,
+            "password": request.password,
+            "role": request.role or "guest",
+        }
+        data.setdefault("users", []).append(new_user)
+
+        with open(users_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        return SignupResponse(success=True, user=User(username=new_user["username"], role=new_user["role"]))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Signup error: {e}")
+        raise HTTPException(status_code=500, detail="Error creating user")
 
 
 # ============================================================================
@@ -208,6 +265,25 @@ def determine_task_type(query: str) -> str:
         return "agentic"
 
     return "chat"
+
+
+# ============================================================================
+# Chat Management Endpoints
+# ============================================================================
+
+@chat_router.get("/sessions", response_model=SessionListResponse)
+async def list_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
+    user_id = current_user["username"]
+    sessions = conversation_store.get_user_sessions(user_id)
+    return SessionListResponse(sessions=sessions)
+
+
+@chat_router.get("/history/{session_id}", response_model=ConversationHistoryResponse)
+async def get_history(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    conv = conversation_store.load_conversation(session_id)
+    if conv is None or conv.user_id != current_user["username"]:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return ConversationHistoryResponse(session_id=session_id, messages=conv.messages)
 
 
 # ============================================================================
@@ -354,3 +430,71 @@ async def delete_document(
         )
 
     return {"success": True, "message": "File deleted successfully"}
+
+
+# ============================================================================
+# Admin Endpoints
+# ============================================================================
+
+@admin_router.post("/model", response_model=ModelChangeResponse)
+async def change_model(request: ModelChangeRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Change the active Ollama model (admin only)"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    try:
+        # Update settings in-memory
+        settings.ollama_model = request.model
+
+        # Reinitialize simple chat LLM to take effect immediately
+        from langchain_ollama import ChatOllama
+        chat_task.llm = ChatOllama(
+            base_url=settings.ollama_host,
+            model=settings.ollama_model,
+            temperature=settings.ollama_temperature,
+            num_ctx=settings.ollama_num_ctx,
+            top_p=settings.ollama_top_p,
+            top_k=settings.ollama_top_k,
+        )
+
+        return ModelChangeResponse(success=True, model=settings.ollama_model)
+    except Exception as e:
+        logger.error(f"Model change error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to change model")
+
+
+# ============================================================================
+# Tool Endpoints
+# ============================================================================
+
+@tools_router.get("/list", response_model=ToolListResponse)
+async def list_tools(_: Dict[str, Any] = Depends(get_current_user)):
+    tools = [
+        ToolInfo(name="web_search", description="Search the web for current information"),
+        ToolInfo(name="rag_retrieval", description="Retrieve from your uploaded documents"),
+        ToolInfo(name="data_analysis", description="Analyze tabular data"),
+        ToolInfo(name="python_code", description="Run safe Python code snippets"),
+        ToolInfo(name="math_calc", description="Symbolic and numeric math calculations"),
+        ToolInfo(name="wikipedia", description="Search summaries from Wikipedia"),
+        ToolInfo(name="weather", description="Get weather for a location"),
+        ToolInfo(name="sql_query", description="Run parameterized SQL queries (configured)"),
+    ]
+    return ToolListResponse(tools=tools)
+
+
+@tools_router.post("/math", response_model=MathResponse)
+async def tool_math(request: MathRequest, _: Dict[str, Any] = Depends(get_current_user)):
+    result = await math_calculator.calculate(request.expression)
+    return MathResponse(result=result)
+
+
+@tools_router.post("/websearch", response_model=WebSearchResponse)
+async def tool_websearch(request: WebSearchRequest, _: Dict[str, Any] = Depends(get_current_user)):
+    results = await web_search_tool.search(request.query, max_results=request.max_results)
+    return WebSearchResponse(results=results)
+
+
+@tools_router.get("/rag/search", response_model=RAGSearchResponse)
+async def tool_rag_search(query: str, top_k: int = 5, _: Dict[str, Any] = Depends(get_current_user)):
+    results = await rag_retriever.retrieve(query=query, top_k=top_k)
+    return RAGSearchResponse(results=results)
