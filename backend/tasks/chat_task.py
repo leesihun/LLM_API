@@ -16,22 +16,13 @@ class ChatTask:
     """Handles normal chat conversations"""
 
     def __init__(self):
-        import httpx
-        # Use AsyncClient for async operations
-        async_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=60.0),
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-        )
-
         self.llm = ChatOllama(
             base_url=settings.ollama_host,
             model=settings.ollama_model,
             temperature=settings.ollama_temperature,
             num_ctx=settings.ollama_num_ctx,
             top_p=settings.ollama_top_p,
-            top_k=settings.ollama_top_k,
-            timeout=settings.ollama_timeout / 1000,  # Convert ms to seconds
-            async_client=async_client
+            top_k=settings.ollama_top_k
         )
 
     async def execute(
