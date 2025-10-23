@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Backend Server Launcher Script (Cross-platform Python)
-Handles virtual environment setup and starts the FastAPI backend server
+Backend Server Launcher Script (Direct - No Virtual Environment)
+Starts the FastAPI backend server using system Python
 """
 
 import os
 import sys
 import subprocess
-import platform
 from pathlib import Path
 
 
@@ -20,17 +19,13 @@ def print_header():
 
 
 def check_env_file():
-    """Check if .env file exists"""
+    """Check if .env file exists, create if missing"""
     if not Path(".env").exists():
-        print("❌ Error: .env file not found")
-        print("Please create a .env file and configure it with your settings")
+        print("⚠️ Warning: .env file not found")
+        print("Creating .env file with default settings...")
+        # The settings.py will auto-create it
+        print("✅ .env file will be created on first run")
         print()
-        print("Required environment variables:")
-        print("  - OLLAMA_HOST (e.g., http://localhost:11434)")
-        print("  - OLLAMA_MODEL (e.g., llama2)")
-        print("  - SERVER_HOST (e.g., 0.0.0.0)")
-        print("  - SERVER_PORT (e.g., 8000)")
-        return False
     return True
 
 
@@ -40,77 +35,39 @@ def check_python_version():
         print("❌ Error: Python 3.8 or higher is required")
         print(f"Current version: {sys.version}")
         return False
+
+    print(f"✅ Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
     return True
 
 
-def get_venv_python():
-    """Get the path to the virtual environment Python executable"""
-    venv_dir = Path("venv")
-    if platform.system() == "Windows":
-        return venv_dir / "Scripts" / "python.exe"
-    else:
-        return venv_dir / "bin" / "python"
+def check_dependencies():
+    """Check if critical dependencies are installed"""
+    print("📦 Checking dependencies...")
 
+    required_packages = [
+        'fastapi',
+        'uvicorn',
+        'langchain',
+        'langgraph'
+    ]
 
-def get_venv_pip():
-    """Get the path to the virtual environment pip executable"""
-    venv_dir = Path("venv")
-    if platform.system() == "Windows":
-        return venv_dir / "Scripts" / "pip.exe"
-    else:
-        return venv_dir / "bin" / "pip"
+    missing_packages = []
 
-
-def create_venv():
-    """Create virtual environment if it doesn't exist"""
-    venv_dir = Path("venv")
-    
-    if not venv_dir.exists():
-        print("📦 Creating virtual environment...")
+    for package in required_packages:
         try:
-            subprocess.run([sys.executable, "-m", "venv", "venv"], check=True)
-            print("✅ Virtual environment created successfully")
-            print()
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Error creating virtual environment: {e}")
-            return False
-    else:
-        print("✅ Virtual environment already exists")
-        print()
-    
-    return True
+            __import__(package)
+        except ImportError:
+            missing_packages.append(package)
 
-
-def install_dependencies():
-    """Install dependencies from requirements.txt"""
-    print("📦 Installing dependencies...")
-    
-    pip_path = get_venv_pip()
-    
-    if not Path("requirements.txt").exists():
-        print("⚠️ Warning: requirements.txt not found, skipping dependency installation")
+    if missing_packages:
+        print(f"❌ Missing packages: {', '.join(missing_packages)}")
         print()
-        return True
-    
-    try:
-        # Upgrade pip first
-        subprocess.run(
-            [str(pip_path), "install", "--upgrade", "pip"],
-            check=True,
-            capture_output=True
-        )
-        
-        # Install dependencies
-        subprocess.run(
-            [str(pip_path), "install", "-r", "requirements.txt"],
-            check=True
-        )
-        print("✅ Dependencies installed successfully")
+        print("Please install dependencies with:")
+        print(f"  pip install -r requirements.txt")
         print()
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error installing dependencies: {e}")
         return False
-    
+
+    print("✅ All critical dependencies installed")
     return True
 
 
@@ -118,49 +75,44 @@ def run_server():
     """Run the backend server"""
     print("🚀 Starting backend server...")
     print()
-    
-    venv_python = get_venv_python()
-    
+
     try:
-        # Run server.py using the virtual environment Python
-        subprocess.run([str(venv_python), "server.py"], check=True)
+        # Run server.py using the current Python interpreter
+        subprocess.run([sys.executable, "server.py"], check=True)
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Error running server: {e}")
         return False
     except KeyboardInterrupt:
         print("\n\n👋 Server stopped by user")
         return True
-    
+
     return True
 
 
 def main():
     """Main function to orchestrate backend startup"""
     print_header()
-    
+
     # Check Python version
     if not check_python_version():
         sys.exit(1)
-    
+
+    print()
+
     # Check .env file
     if not check_env_file():
         sys.exit(1)
-    
-    print("✅ Environment file found")
+
+    # Check dependencies
+    if not check_dependencies():
+        sys.exit(1)
+
     print()
-    
-    # Create virtual environment
-    if not create_venv():
-        sys.exit(1)
-    
-    # Install dependencies
-    if not install_dependencies():
-        sys.exit(1)
-    
+
     # Run server
     if not run_server():
         sys.exit(1)
-    
+
     sys.exit(0)
 
 
