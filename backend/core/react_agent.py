@@ -69,7 +69,15 @@ class ReActAgent:
     """
 
     def __init__(self, max_iterations: int = 5):
+        import httpx
         self.max_iterations = max_iterations
+
+        # Use AsyncClient for async operations
+        async_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=60.0),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+        )
+
         self.llm = ChatOllama(
             base_url=settings.ollama_host,
             model=settings.ollama_model,
@@ -77,6 +85,8 @@ class ReActAgent:
             num_ctx=settings.ollama_num_ctx,
             top_p=settings.ollama_top_p,
             top_k=settings.ollama_top_k,
+            timeout=settings.ollama_timeout / 1000,
+            async_client=async_client
         )
         self.steps: List[ReActStep] = []
 
