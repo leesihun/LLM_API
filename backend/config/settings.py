@@ -5,7 +5,6 @@ All settings are defined in this file with defaults
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 from typing import Optional
 import os
 import secrets
@@ -37,10 +36,10 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Ollama service endpoint
-    ollama_host: str = Field(default='http://127.0.0.1:11434', env='OLLAMA_HOST')
+    ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = Field(default='gpt-oss:20b', env='OLLAMA_MODEL')
+    ollama_model: str = 'gpt-oss:20b'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
@@ -110,7 +109,9 @@ class Settings(BaseSettings):
     log_file: str = './data/logs/app.log'
 
     model_config = SettingsConfigDict(
-        env_file=".env" if os.path.exists(".env") else None,
+        # DO NOT read from system environment variables - only use defaults from this file
+        env_prefix='NONEXISTENT_PREFIX_',  # Ignore all env vars
+        env_file=None,  # Don't load .env file
         env_file_encoding='utf-8',
         case_sensitive=False,
         extra='ignore',
