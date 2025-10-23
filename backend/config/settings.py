@@ -69,8 +69,8 @@ class Settings(BaseSettings):
     # Vector database storage path
     vector_db_path: str = './data/vector_db'
 
-    # Embedding model - all-MiniLM-L6-v2 is fast and good quality
-    embedding_model: str = 'all-MiniLM-L6-v2'
+    # Embedding model - nomic-embed-text:latest is fast and good quality
+    embedding_model: str = 'nomic-embed-text:latest'
 
     # ============================================================================
     # Storage Paths - Organized Data Structure
