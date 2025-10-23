@@ -25,6 +25,10 @@ from backend.tasks.agentic_task import agentic_task
 from backend.tasks.smart_agent_task import smart_agent_task, AgentType
 from backend.tools.rag_retriever import rag_retriever
 from backend.config.settings import settings
+import logging
+import traceback
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -43,23 +47,36 @@ files_router = APIRouter(prefix="/api/files", tags=["File Management"])
 @auth_router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """Authenticate user and return access token"""
-    user = authenticate_user(request.username, request.password)
+    try:
+        logger.info(f"Login attempt for user: {request.username}")
+        user = authenticate_user(request.username, request.password)
 
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+        if user is None:
+            logger.warning(f"Failed login attempt for user: {request.username}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Create access token
+        access_token = create_access_token(data={"sub": user["username"]})
+        logger.info(f"Successful login for user: {request.username}")
+
+        return LoginResponse(
+            access_token=access_token,
+            token_type="bearer",
+            user=user
         )
-
-    # Create access token
-    access_token = create_access_token(data={"sub": user["username"]})
-
-    return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=user
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login error: {str(e)}"
+        )
 
 
 @auth_router.get("/me", response_model=User)
@@ -159,7 +176,14 @@ async def chat_completions(
         )
 
     except Exception as e:
-        print(f"Error in chat completion: {e}")
+        # Detailed error logging
+        logger.error("=" * 80)
+        logger.error(f"CHAT COMPLETION ERROR for user {user_id}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
+        logger.error("=" * 80)
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating response: {str(e)}"
