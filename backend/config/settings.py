@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Host binding - use localhost in production, 0.0.0.0 for development
-    server_host: str = '0.0.0.0'
+    server_host: str = 'localhost'
 
     # Port - standard HTTP port, change if needed
     server_port: int = 8000
