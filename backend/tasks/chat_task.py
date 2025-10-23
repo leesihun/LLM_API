@@ -16,6 +16,7 @@ class ChatTask:
     """Handles normal chat conversations"""
 
     def __init__(self):
+        import httpx
         self.llm = ChatOllama(
             base_url=settings.ollama_host,
             model=settings.ollama_model,
@@ -23,6 +24,8 @@ class ChatTask:
             num_ctx=settings.ollama_num_ctx,
             top_p=settings.ollama_top_p,
             top_k=settings.ollama_top_k,
+            timeout=settings.ollama_timeout / 1000,  # Convert ms to seconds
+            client=httpx.Client(timeout=settings.ollama_timeout / 1000)
         )
 
     async def execute(
