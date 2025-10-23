@@ -124,6 +124,13 @@ def load_settings() -> Settings:
     Load settings from settings.py defaults
     .env file is optional - only used if present to override defaults
     """
+    # FORCE: Remove problematic environment variables that interfere with settings
+    problematic_vars = ['OLLAMA_HOST', 'OLLAMA_MODEL', 'SERVER_HOST', 'SERVER_PORT']
+    for var in problematic_vars:
+        if var in os.environ:
+            print(f"WARNING: Removing system env var {var}={os.environ[var]} to use settings.py defaults")
+            del os.environ[var]
+
     # Check if .env exists (optional)
     if os.path.exists(".env"):
         print("Info: Using settings from settings.py with .env overrides")
