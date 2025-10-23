@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "username": "guest",
+      "password_hash": "$2b$12$QbPOMZyDmou0DazMQvUtz.djJ0LlcRUfI2lIp.VzIIOshFwfQrVdS",
+      "role": "guest"
+    },
+    {
+      "username": "admin",
+      "password_hash": "$2b$12$abptkqNRh0w3djPwfNB1b.CLi7RzshorSVnvIOM2efob7JX3fSQrS",
+      "role": "admin"
+    }
+  ]
+}

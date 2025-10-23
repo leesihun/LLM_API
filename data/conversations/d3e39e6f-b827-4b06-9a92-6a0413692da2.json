@@ -1,0 +1,21 @@
+{
+  "session_id": "d3e39e6f-b827-4b06-9a92-6a0413692da2",
+  "user_id": "guest",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is today's date? Please search for the current date.",
+      "timestamp": "2025-10-22T08:21:23.738356",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "Today's date is **Tuesday, October 21, 2025**.",
+      "timestamp": "2025-10-22T08:21:23.759264",
+      "metadata": null
+    }
+  ],
+  "created_at": "2025-10-22T08:16:57.970377",
+  "updated_at": "2025-10-22T08:21:23.759312",
+  "metadata": null
+}

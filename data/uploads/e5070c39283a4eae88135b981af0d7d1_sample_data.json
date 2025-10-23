@@ -1,0 +1,20 @@
+{
+  "project": "LLM API Test",
+  "description": "This is a sample JSON file for testing file upload and RAG retrieval",
+  "features": [
+    "Authentication system",
+    "Chat completions",
+    "File upload and RAG",
+    "Web search integration",
+    "Agentic workflows"
+  ],
+  "technologies": {
+    "backend": "FastAPI",
+    "ai": "LangGraph + Ollama",
+    "frontend": "HTML/CSS/JavaScript"
+  },
+  "test_data": {
+    "number": 42,
+    "message": "This is test data for RAG retrieval"
+  }
+}

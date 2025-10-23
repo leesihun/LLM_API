@@ -4,6 +4,7 @@ Processes documents and performs semantic search
 """
 
 import os
+import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import hashlib
@@ -13,11 +14,11 @@ from langchain_community.document_loaders import (
     PyPDFLoader,
     Docx2txtLoader,
     TextLoader,
-    JSONLoader,
 )
+from langchain_core.documents import Document
 
 # Text splitting
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -47,15 +48,32 @@ class RAGRetriever:
             length_function=len,
         )
 
+    def _load_json_as_document(self, file_path: Path) -> List[Document]:
+        """Load JSON file and convert to Document objects"""
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Convert JSON to formatted text
+        text_content = json.dumps(data, indent=2)
+        
+        # Create a single document with the JSON content
+        return [Document(
+            page_content=text_content,
+            metadata={"source": str(file_path), "type": "json"}
+        )]
+    
     def _get_document_loader(self, file_path: Path):
         """Get appropriate document loader based on file extension"""
         extension = file_path.suffix.lower()
 
+        if extension == ".json":
+            # Return a custom loader function for JSON
+            return lambda: self._load_json_as_document(file_path)
+        
         loaders = {
             ".pdf": PyPDFLoader,
             ".docx": Docx2txtLoader,
             ".txt": TextLoader,
-            ".json": lambda path: JSONLoader(path, jq_schema="."),
         }
 
         loader_class = loaders.get(extension)
@@ -76,7 +94,11 @@ class RAGRetriever:
         """
         # Load document
         loader = self._get_document_loader(file_path)
-        documents = loader.load()
+        # For JSON files, loader() returns documents directly
+        if file_path.suffix.lower() == ".json":
+            documents = loader()
+        else:
+            documents = loader.load()
 
         # Split into chunks
         chunks = self.text_splitter.split_documents(documents)

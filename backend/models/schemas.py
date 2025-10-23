@@ -49,6 +49,7 @@ class ChatCompletionRequest(BaseModel):
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     stream: bool = False
+    agent_type: Optional[Literal["auto", "react", "plan_execute"]] = "auto"
 
 
 class ChatCompletionResponse(BaseModel):

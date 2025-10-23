@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     ollama_model: str = 'deepseek-r1:1.5b'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
-    ollama_timeout: int = 300000  # 5 minutes
+    ollama_timeout: int = 3000000  # 50 minutes
 
     # Context window - balance between capability and memory usage
     ollama_num_ctx: int = 4096  # Good balance for most use cases
@@ -149,9 +149,13 @@ def load_settings() -> Settings:
     return settings
 
 
-def create_env_file():
-    """Create a .env file with default settings"""
-    env_content = """# ==============================================================================
+def create_env_file(env_path: str = ".env") -> None:
+    """
+    Create a .env file that mirrors the current Settings defaults.
+    Pulling values from Settings ensures the template stays in sync.
+    """
+    defaults = Settings()
+    env_content = f"""# ==============================================================================
 # LLM API Configuration
 # ==============================================================================
 # Copy this file to .env and customize for your environment
@@ -160,52 +164,52 @@ def create_env_file():
 # ==============================================================================
 # Server Configuration
 # ==============================================================================
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8000
-SECRET_KEY=dev-secret-key-change-in-production-please
+SERVER_HOST={defaults.server_host}
+SERVER_PORT={defaults.server_port}
+SECRET_KEY={defaults.secret_key}
 
 # ==============================================================================
 # Ollama Configuration
 # ==============================================================================
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=deepseek-r1:1.5b
-OLLAMA_TIMEOUT=300000
-OLLAMA_NUM_CTX=4096
-OLLAMA_TEMPERATURE=0.7
-OLLAMA_TOP_P=0.9
-OLLAMA_TOP_K=40
+OLLAMA_HOST={defaults.ollama_host}
+OLLAMA_MODEL={defaults.ollama_model}
+OLLAMA_TIMEOUT={defaults.ollama_timeout}
+OLLAMA_NUM_CTX={defaults.ollama_num_ctx}
+OLLAMA_TEMPERATURE={defaults.ollama_temperature}
+OLLAMA_TOP_P={defaults.ollama_top_p}
+OLLAMA_TOP_K={defaults.ollama_top_k}
 
 # ==============================================================================
 # API Keys (Get these from respective services)
 # ==============================================================================
-TAVILY_API_KEY=your-tavily-api-key-here
+TAVILY_API_KEY={defaults.tavily_api_key}
 
 # ==============================================================================
 # Vector Database
 # ==============================================================================
-VECTOR_DB_TYPE=faiss
-VECTOR_DB_PATH=./data/vector_db
-EMBEDDING_MODEL=all-MiniLM-L6-v2
+VECTOR_DB_TYPE={defaults.vector_db_type}
+VECTOR_DB_PATH={defaults.vector_db_path}
+EMBEDDING_MODEL={defaults.embedding_model}
 
 # ==============================================================================
 # Storage Paths
 # ==============================================================================
-USERS_PATH=./data/users/users.json
-SESSIONS_PATH=./data/sessions/sessions.json
-CONVERSATIONS_PATH=./data/conversations
-UPLOADS_PATH=./data/uploads
+USERS_PATH={defaults.users_path}
+SESSIONS_PATH={defaults.sessions_path}
+CONVERSATIONS_PATH={defaults.conversations_path}
+UPLOADS_PATH={defaults.uploads_path}
 
 # ==============================================================================
 # Authentication
 # ==============================================================================
-JWT_ALGORITHM=HS256
-JWT_EXPIRATION_HOURS=24
+JWT_ALGORITHM={defaults.jwt_algorithm}
+JWT_EXPIRATION_HOURS={defaults.jwt_expiration_hours}
 
 # ==============================================================================
 # Logging
 # ==============================================================================
-LOG_LEVEL=INFO
-LOG_FILE=./data/logs/app.log
+LOG_LEVEL={defaults.log_level}
+LOG_FILE={defaults.log_file}
 
 # ==============================================================================
 # Production Checklist

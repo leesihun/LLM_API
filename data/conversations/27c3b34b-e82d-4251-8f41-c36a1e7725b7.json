@@ -1,0 +1,21 @@
+{
+  "session_id": "27c3b34b-e82d-4251-8f41-c36a1e7725b7",
+  "user_id": "guest",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Who is Sihun Lee?",
+      "timestamp": "2025-10-22T07:53:20.197809",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "Sihun Lee is a South Korean singer and actor who has gained popularity for her talent and versatility. She has performed in various musical groups, such as the K-pop music industry, and has also been involved in acting roles. Some of her notable works include songs like \"I See You Again\" and \"Losing You,\" as well as movies. Sihun Lee is known for her catchy lyrics and dynamic stage presence, making her a beloved figure in contemporary music and theater.",
+      "timestamp": "2025-10-22T07:53:20.211505",
+      "metadata": null
+    }
+  ],
+  "created_at": "2025-10-22T07:53:15.303961",
+  "updated_at": "2025-10-22T07:53:20.211547",
+  "metadata": null
+}

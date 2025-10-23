@@ -260,7 +260,7 @@
                 .then(response => {
                     if (response.ok) {
                         // Redirect to main app
-                        window.location.href = '/';
+                        window.location.href = 'index.html';
                     }
                 })
                 .catch(() => {
@@ -309,14 +309,14 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    // Store session data
-                    localStorage.setItem('session_token', data.session_token);
+                    // Store session data (OpenAI compatible format)
+                    localStorage.setItem('session_token', data.access_token || data.session_token);
                     localStorage.setItem('user_data', JSON.stringify(data.user));
-                    
+
                     // Redirect to main app
-                    window.location.href = '/';
+                    window.location.href = 'index.html';
                 } else {
-                    showError(data.error || 'Login failed');
+                    showError(data.detail || data.error || 'Login failed');
                 }
             } catch (error) {
                 showError('Connection error. Please try again.');

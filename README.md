@@ -234,6 +234,102 @@ python run_frontend.py
 
 ## Version History
 
+### Version 2.0.0 (October 23, 2025) - Enhanced Frontend with Multi-User Support
+
+**Major Frontend Upgrade - User-Isolated File Management**
+
+This release significantly enhances the frontend UI with features inspired by the LLM_based_parser project, while maintaining compatibility with the current backend API.
+
+**New Features:**
+- **User-Isolated File Storage**
+  - Files are now stored in user-specific folders: `uploads/<username>/`
+  - Complete isolation between users' uploaded documents
+  - Each file gets a unique ID for easy management
+  - Prevents cross-user file access and naming conflicts
+
+- **Enhanced Document Management**
+  - Dedicated "Documents" modal with drag-and-drop upload
+  - File list with size, date, and delete functionality
+  - Upload progress feedback directly in chat
+  - Support for multiple file formats: PDF, TXT, MD, DOC, DOCX
+  - Quick upload via paperclip button in chat input area
+
+- **Improved UI/UX**
+  - User profile display in header showing logged-in username
+  - Model selection dropdown in toolbar
+  - Collapsible sidebar for conversation history (UI ready)
+  - Modern dark theme with gradients and animations
+  - Responsive design with smooth transitions
+  - Better spacing and visual hierarchy
+
+- **Backend Improvements**
+  - Updated file upload endpoint with user context
+  - New DELETE endpoint for removing user documents
+  - Enhanced file listing with metadata (size, date, file_id)
+  - Better error handling and validation
+
+**API Changes:**
+- `POST /api/files/upload` - Now creates user-specific folders automatically
+- `GET /api/files/documents` - Returns only the current user's files
+- `DELETE /api/files/documents/{file_id}` - New endpoint for file deletion
+
+**Security:**
+- All file operations are user-scoped via JWT authentication
+- No cross-user file access possible
+- File IDs are unique within user context
+
+**Files Modified:**
+- `frontend/static/index.html` - Complete redesign with new features
+- `frontend/static/login.html` - Updated for new response format
+- `backend/api/routes.py` - Enhanced file management endpoints
+
+**Migration Notes:**
+- Existing files in `uploads/` folder can be moved to user-specific subdirectories
+- Login now stores both `access_token` and `user_data` in localStorage
+- Frontend config now works with both old and new API formats
+
+### Version 1.1.4 (October 22, 2025) - Comprehensive API Testing & Fixes
+- **Comprehensive Test Suite**
+  - Created `test_all_apis.py` - comprehensive API testing script with 15 test cases
+  - Added automatic test data generation (JSON and text files)
+  - Implemented colored console output for better test result visibility
+  - Added server health checks and automatic status reporting
+  - Tests cover authentication, chat completions, file upload, RAG queries, and agentic workflows
+- **Bug Fixes**
+  - Fixed admin user authentication (password: "administrator")
+  - Updated unauthorized access test to accept both 401 and 403 status codes (FastAPI HTTPBearer behavior)
+  - Added `jq>=1.6.0` package to requirements.txt for JSON file processing
+  - Implemented custom JSON loader in RAG retriever to handle JSON files as text documents
+- **Code Improvements**
+  - Added `psutil` integration for port management in test suite
+  - Enhanced error handling with detailed error messages
+  - Improved test result reporting with pass/fail summary
+- **Test Results**
+  - 12/15 tests passing (80% success rate)
+  - Core APIs fully functional: authentication, chat, file upload (text), models listing
+  - Known issues: JSON file upload (needs investigation), agentic queries (timeout issues)
+- **Documentation**
+  - Added comprehensive inline comments in test suite
+  - Improved test output formatting for debugging
+
+### Version 1.1.3 (October 22, 2025) - Dependency & Compatibility Fixes
+- **Backend Dependency Updates**
+  - Fixed Keras 3 compatibility issue by installing `tf-keras>=2.20.0`
+  - Upgraded LangChain packages to latest versions (1.0.0+)
+  - Added `langchain-huggingface>=1.0.0` for embeddings
+  - Updated `langchain-ollama>=1.0.0` for improved Ollama integration
+  - Updated `langchain-community>=0.4` for better compatibility
+  - Fixed import issues with `langchain_text_splitters`
+- **Code Updates**
+  - Updated `backend/tools/rag_retriever.py` to use new HuggingFaceEmbeddings from langchain-huggingface
+  - Fixed text splitter import to use `langchain_text_splitters` module
+  - Resolved all ModuleNotFoundError issues
+- **Verified Functionality**
+  - Backend server starts successfully without errors
+  - All API endpoints tested and working (/, /health, /api/auth/login, /v1/models, /v1/chat/completions, /api/files/*)
+  - Authentication system working correctly
+  - Swagger documentation accessible at http://localhost:8000/docs
+
 ### Version 1.1.2 (October 22, 2025) - Python Backend Launcher
 - **Cross-platform Backend Script**
   - Added `run_backend.py` for cross-platform backend launching

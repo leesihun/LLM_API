@@ -1,0 +1,33 @@
+{
+  "session_id": "897df3d3-11ab-412b-887b-7d26951a6c93",
+  "user_id": "guest",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Say 'Hello' in exactly one word.",
+      "timestamp": "2025-10-22T08:01:39.217324",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "Hello",
+      "timestamp": "2025-10-22T08:01:39.230282",
+      "metadata": null
+    },
+    {
+      "role": "user",
+      "content": "What is 5 + 7? Answer with just the number.",
+      "timestamp": "2025-10-22T08:01:52.517633",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "The sum of 5 and 7 is \\boxed{12}.",
+      "timestamp": "2025-10-22T08:01:52.531263",
+      "metadata": null
+    }
+  ],
+  "created_at": "2025-10-22T08:01:26.730005",
+  "updated_at": "2025-10-22T08:01:52.531296",
+  "metadata": null
+}

@@ -10,7 +10,14 @@
       "Bash(if [ ! -f .env ])",
       "Bash(then cp .env.example .env)",
       "Bash(fi)",
-      "Bash(ollama list:*)"
+      "Bash(ollama list:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(python:*)",
+      "Bash(timeout:*)",
+      "Bash(dir:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []

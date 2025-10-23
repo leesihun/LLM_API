@@ -22,6 +22,7 @@ from backend.utils.auth import authenticate_user, create_access_token, get_curre
 from backend.storage.conversation_store import conversation_store
 from backend.tasks.chat_task import chat_task
 from backend.tasks.agentic_task import agentic_task
+from backend.tasks.smart_agent_task import smart_agent_task, AgentType
 from backend.tools.rag_retriever import rag_retriever
 from backend.config.settings import settings
 
@@ -114,12 +115,13 @@ async def chat_completions(
     # Execute appropriate task
     try:
         if task_type == "agentic":
-            # Use full agentic workflow
-            response_text = await agentic_task.execute(
+            # Use smart agent (auto-selects ReAct or Plan-and-Execute)
+            agent_type = AgentType(request.agent_type) if request.agent_type else AgentType.AUTO
+            response_text = await smart_agent_task.execute(
                 messages=request.messages,
                 session_id=session_id,
                 user_id=user_id,
-                max_iterations=3
+                agent_type=agent_type
             )
         else:
             # Use simple chat
@@ -194,26 +196,31 @@ async def upload_file(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
-    Upload a document for RAG processing
+    Upload a document for RAG processing (user-isolated)
     """
     try:
-        # Save file
-        uploads_path = Path(settings.uploads_path)
+        # Create user-specific upload folder
+        user_id = current_user["username"]
+        uploads_path = Path(settings.uploads_path) / user_id
         uploads_path.mkdir(parents=True, exist_ok=True)
 
-        file_path = uploads_path / f"{uuid.uuid4().hex}_{file.filename}"
+        # Save file with unique ID
+        file_id = uuid.uuid4().hex[:8]
+        file_path = uploads_path / f"{file_id}_{file.filename}"
 
         with open(file_path, "wb") as f:
             content = await file.read()
             f.write(content)
 
-        # Index document
-        doc_id = await rag_retriever.index_document(file_path)
+        # Index document with user context
+        doc_id = await rag_retriever.index_document(file_path, user_id=user_id)
 
         return {
             "success": True,
+            "file_id": file_id,
             "doc_id": doc_id,
             "filename": file.filename,
+            "size": len(content),
             "message": "File uploaded and indexed successfully"
         }
 
@@ -225,20 +232,101 @@ async def upload_file(
 
 
 @files_router.get("/documents")
-async def list_documents(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """List uploaded documents"""
-    uploads_path = Path(settings.uploads_path)
+async def list_documents(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    page: int = 1,
+    page_size: int = 20
+):
+    """
+    List uploaded documents with pagination (user-isolated)
+
+    Args:
+        page: Page number (starts at 1)
+        page_size: Number of items per page (max 100)
+
+    Returns:
+        Paginated document list with metadata
+    """
+    user_id = current_user["username"]
+    uploads_path = Path(settings.uploads_path) / user_id
 
     if not uploads_path.exists():
-        return {"documents": []}
+        return {
+            "documents": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0
+        }
+
+    # Limit page_size to prevent abuse
+    page_size = min(page_size, 100)
+    page = max(page, 1)  # Ensure page is at least 1
 
     documents = []
     for file_path in uploads_path.iterdir():
         if file_path.is_file():
+            # Parse file_id from filename (format: {file_id}_{original_name})
+            filename_parts = file_path.name.split("_", 1)
+            file_id = filename_parts[0] if len(filename_parts) > 0 else ""
+            original_name = filename_parts[1] if len(filename_parts) > 1 else file_path.name
+
             documents.append({
-                "filename": file_path.name,
+                "file_id": file_id,
+                "filename": original_name,
+                "full_path": file_path.name,
                 "size": file_path.stat().st_size,
                 "created": file_path.stat().st_ctime
             })
 
-    return {"documents": documents}
+    # Sort by creation time (newest first)
+    documents.sort(key=lambda x: x["created"], reverse=True)
+
+    # Calculate pagination
+    total = len(documents)
+    total_pages = (total + page_size - 1) // page_size  # Ceiling division
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+
+    # Get page of results
+    paginated_documents = documents[start_idx:end_idx]
+
+    return {
+        "documents": paginated_documents,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages
+    }
+
+
+@files_router.delete("/documents/{file_id}")
+async def delete_document(
+    file_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Delete a user's document"""
+    user_id = current_user["username"]
+    uploads_path = Path(settings.uploads_path) / user_id
+
+    if not uploads_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No documents found"
+        )
+
+    # Find file with matching file_id
+    deleted = False
+    for file_path in uploads_path.iterdir():
+        if file_path.is_file() and file_path.name.startswith(f"{file_id}_"):
+            file_path.unlink()
+            deleted = True
+            break
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    return {"success": True, "message": "File deleted successfully"}

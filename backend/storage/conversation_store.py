@@ -20,9 +20,26 @@ class ConversationStore:
         self.base_path = Path(settings.conversations_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
-    def _get_conversation_file(self, session_id: str) -> Path:
-        """Get file path for a conversation"""
-        return self.base_path / f"{session_id}.json"
+    def _get_conversation_file(self, session_id: str, user_id: str = None, created_at: datetime = None) -> Path:
+        """Get file path for a conversation with optional user and timestamp"""
+        # Try to load existing conversation to get user_id and created_at if not provided
+        if user_id is None or created_at is None:
+            # Check if file exists with just session_id (old format)
+            old_format_path = self.base_path / f"{session_id}.json"
+            if old_format_path.exists():
+                return old_format_path
+
+            # Search for file with new format
+            for file_path in self.base_path.glob(f"*_{session_id}.json"):
+                return file_path
+
+            # If not found, return old format path (for new conversations)
+            return old_format_path
+
+        # New format: user_YYYYMMDD_HHMMSS_sessionid.json
+        timestamp = created_at.strftime("%Y%m%d_%H%M%S")
+        filename = f"{user_id}_{timestamp}_{session_id}.json"
+        return self.base_path / filename
 
     def create_session(self, user_id: str) -> str:
         """Create a new conversation session"""
@@ -39,10 +56,15 @@ class ConversationStore:
 
     def save_conversation(self, conversation: Conversation) -> None:
         """Save conversation to disk"""
-        file_path = self._get_conversation_file(conversation.session_id)
-
         # Update timestamp
         conversation.updated_at = datetime.utcnow()
+
+        # Use new filename format with user_id and created_at
+        file_path = self._get_conversation_file(
+            conversation.session_id,
+            conversation.user_id,
+            conversation.created_at
+        )
 
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(conversation.model_dump(mode="json"), f, indent=2, default=str)
