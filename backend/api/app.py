@@ -18,17 +18,36 @@ from backend.api.routes import auth_router, openai_router, files_router, admin_r
 # ============================================================================
 
 def setup_logging():
-    """Configure application logging"""
+    """Configure application logging with proper Unicode handling for Windows"""
+    import sys
+
     log_path = Path(settings.log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Create console handler with UTF-8 encoding for Windows compatibility
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(getattr(logging, settings.log_level))
+    console_handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    )
+
+    # Force UTF-8 encoding on the stream to handle Unicode characters
+    if hasattr(console_handler.stream, 'reconfigure'):
+        # Python 3.7+ on Windows
+        console_handler.stream.reconfigure(encoding='utf-8', errors='replace')
+
+    # Create file handler with UTF-8 encoding
+    file_handler = logging.FileHandler(settings.log_file, encoding='utf-8')
+    file_handler.setLevel(getattr(logging, settings.log_level))
+    file_handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    )
+
+    # Configure root logger
     logging.basicConfig(
         level=getattr(logging, settings.log_level),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(settings.log_file),
-            logging.StreamHandler()
-        ]
+        handlers=[file_handler, console_handler]
     )
 
 
