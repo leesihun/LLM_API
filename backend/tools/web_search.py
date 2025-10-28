@@ -41,7 +41,9 @@ class WebSearchTool:
 
     async def _tavily_search(self, query: str, max_results: int) -> List[SearchResult]:
         """Search using Tavily API"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # Use corporate CA certificate if available (for corporate proxy SSL inspection)
+        ssl_verify = "C:/DigitalCity.crt" if Path("C:/DigitalCity.crt").exists() else True
+        async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
             response = await client.post(
                 self.tavily_url,
                 json={
