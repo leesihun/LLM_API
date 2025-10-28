@@ -214,7 +214,7 @@ Question: {query}
 
 Your Thought: {thought}
 
-Available Actions:
+Available Actions (choose EXACTLY one of these names):
 1. web_search - Search the web for current information (use for: news, current events, latest data)
 2. rag_retrieval - Retrieve relevant documents from uploaded files (use for: document queries, file content)
 3. data_analysis - Analyze JSON data with statistics (use for: min, max, mean, count, sum)
@@ -225,17 +225,20 @@ Available Actions:
 8. sql_query - Query SQL database (use for: structured data queries)
 9. finish - Provide the final answer (use when you have enough information)
 
-Select ONE action and provide the input.
+CRITICAL: You MUST respond with EXACTLY this format (no extra text):
+Action: <one_of_the_action_names_above>
+Action Input: <your_input_here>
 
-Format your response EXACTLY as:
-Action: <action_name>
-Action Input: <input_for_the_action>
-
-Example:
+Good example:
 Action: web_search
 Action Input: current weather in Seoul
 
-Your response:"""
+Bad example (don't do this):
+I think we should search the web.
+Action: search the web
+Action Input: weather
+
+Now provide your action (follow the format exactly):"""
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
 
@@ -246,24 +249,74 @@ Your response:"""
     def _parse_action_response(self, response: str) -> tuple[str, str]:
         """
         Parse LLM response to extract action and input
+        Enhanced parsing with better error handling and fuzzy matching
         """
+        import re
+
         lines = response.strip().split('\n')
         action = ""
         action_input = ""
 
+        # Try strict parsing first
         for line in lines:
-            if line.startswith("Action:"):
-                action = line.replace("Action:", "").strip().lower()
-            elif line.startswith("Action Input:"):
-                action_input = line.replace("Action Input:", "").strip()
+            line_stripped = line.strip()
+            if line_stripped.lower().startswith("action:"):
+                action = line_stripped.split(":", 1)[1].strip().lower()
+            elif line_stripped.lower().startswith("action input:"):
+                action_input = line_stripped.split(":", 1)[1].strip()
+
+        # If strict parsing failed, try regex-based extraction
+        if not action:
+            # Look for "Action: <value>" pattern anywhere in response
+            action_match = re.search(r'action\s*:\s*(\w+)', response, re.IGNORECASE)
+            if action_match:
+                action = action_match.group(1).strip().lower()
+
+        if not action_input:
+            # Look for "Action Input: <value>" pattern
+            input_match = re.search(r'action\s+input\s*:\s*(.+?)(?:\n|$)', response, re.IGNORECASE)
+            if input_match:
+                action_input = input_match.group(1).strip()
+
+        # Log raw response for debugging if parsing failed
+        if not action:
+            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:200]}")
 
         # Validate action
         valid_actions = [e.value for e in ToolName]
         if action not in valid_actions:
-            # Default to finish if invalid
-            logger.warning(f"[ReAct Agent] Invalid action '{action}', defaulting to finish")
-            action = ToolName.FINISH
-            action_input = "I don't have enough information to answer this question."
+            # Try fuzzy matching for common typos/variations
+            action_mapping = {
+                "web": ToolName.WEB_SEARCH,
+                "search": ToolName.WEB_SEARCH,
+                "rag": ToolName.RAG_RETRIEVAL,
+                "retrieval": ToolName.RAG_RETRIEVAL,
+                "retrieve": ToolName.RAG_RETRIEVAL,
+                "document": ToolName.RAG_RETRIEVAL,
+                "data": ToolName.DATA_ANALYSIS,
+                "analyze": ToolName.DATA_ANALYSIS,
+                "analysis": ToolName.DATA_ANALYSIS,
+                "python": ToolName.PYTHON_CODE,
+                "code": ToolName.PYTHON_CODE,
+                "math": ToolName.MATH_CALC,
+                "calculator": ToolName.MATH_CALC,
+                "calc": ToolName.MATH_CALC,
+                "wiki": ToolName.WIKIPEDIA,
+                "done": ToolName.FINISH,
+                "answer": ToolName.FINISH,
+                "complete": ToolName.FINISH,
+            }
+
+            matched_action = action_mapping.get(action, None)
+            if matched_action:
+                logger.info(f"[ReAct Agent] Fuzzy matched '{action}' to '{matched_action}'")
+                action = matched_action
+            else:
+                # Default to finish if invalid
+                logger.warning(f"[ReAct Agent] Invalid action '{action}', defaulting to finish")
+                action = ToolName.FINISH
+                if not action_input:
+                    action_input = "I don't have enough information to answer this question."
 
         return action, action_input
 

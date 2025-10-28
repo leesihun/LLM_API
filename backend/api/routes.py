@@ -315,8 +315,8 @@ async def upload_file(
             content = await file.read()
             f.write(content)
 
-        # Index document with user context
-        doc_id = await rag_retriever.index_document(file_path, user_id=user_id)
+        # Index document
+        doc_id = await rag_retriever.index_document(file_path)
 
         return {
             "success": True,
