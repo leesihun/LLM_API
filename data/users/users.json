@@ -9,6 +9,11 @@
       "username": "admin",
       "password": "administrator",
       "role": "admin"
+    },
+    {
+      "username": "leesihun",
+      "password": "s.hun.lee",
+      "role": "guest"
     }
   ]
 }

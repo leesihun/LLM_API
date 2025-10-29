@@ -16,6 +16,7 @@ from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.data_analysis import data_analysis_tool
 from backend.tools.python_executor import python_executor
+from backend.tools.python_coder_tool import python_coder_tool
 from backend.tools.math_calculator import math_calculator
 from backend.tools.wikipedia_tool import wikipedia_tool
 from backend.tools.weather_tool import weather_tool
@@ -30,6 +31,7 @@ class ToolName(str, Enum):
     RAG_RETRIEVAL = "rag_retrieval"
     DATA_ANALYSIS = "data_analysis"
     PYTHON_CODE = "python_code"
+    PYTHON_CODER = "python_coder"
     MATH_CALC = "math_calc"
     WIKIPEDIA = "wikipedia"
     WEATHER = "weather"
@@ -218,12 +220,13 @@ Available Actions (choose EXACTLY one of these names):
 1. web_search - Search the web for current information (use for: news, current events, latest data)
 2. rag_retrieval - Retrieve relevant documents from uploaded files (use for: document queries, file content)
 3. data_analysis - Analyze JSON data with statistics (use for: min, max, mean, count, sum)
-4. python_code - Execute Python code (use for: calculations, data transformations, code examples)
-5. math_calc - Perform advanced math calculations (use for: algebra, calculus, equations, symbolic math)
-6. wikipedia - Search Wikipedia for factual information (use for: definitions, facts, history)
-7. weather - Get current weather information (use for: weather queries, forecasts)
-8. sql_query - Query SQL database (use for: structured data queries)
-9. finish - Provide the final answer (use when you have enough information)
+4. python_code - Execute simple Python code (use for: quick calculations, simple scripts)
+5. python_coder - Generate, verify, and execute complex Python code with file processing (use for: data analysis, file processing, complex calculations, working with CSV/Excel/PDF files)
+6. math_calc - Perform advanced math calculations (use for: algebra, calculus, equations, symbolic math)
+7. wikipedia - Search Wikipedia for factual information (use for: definitions, facts, history)
+8. weather - Get current weather information (use for: weather queries, forecasts)
+9. sql_query - Query SQL database (use for: structured data queries)
+10. finish - Provide the final answer (use when you have enough information)
 
 CRITICAL: You MUST respond with EXACTLY this format (no extra text):
 Action: <one_of_the_action_names_above>
@@ -298,6 +301,9 @@ Now provide your action (follow the format exactly):"""
                 "analysis": ToolName.DATA_ANALYSIS,
                 "python": ToolName.PYTHON_CODE,
                 "code": ToolName.PYTHON_CODE,
+                "coder": ToolName.PYTHON_CODER,
+                "generate": ToolName.PYTHON_CODER,
+                "generate_code": ToolName.PYTHON_CODER,
                 "math": ToolName.MATH_CALC,
                 "calculator": ToolName.MATH_CALC,
                 "calc": ToolName.MATH_CALC,
@@ -346,6 +352,14 @@ Now provide your action (follow the format exactly):"""
                 logger.info(f"[ReAct Agent] Executing Python code: {action_input[:50]}...")
                 result = await python_executor.execute(action_input)
                 return python_executor.format_result(result)
+
+            elif action == ToolName.PYTHON_CODER:
+                logger.info(f"[ReAct Agent] Executing Python coder: {action_input[:50]}...")
+                result = await python_coder_tool.execute_code_task(action_input)
+                if result["success"]:
+                    return f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"
+                else:
+                    return f"Code execution failed: {result.get('error', 'Unknown error')}"
 
             elif action == ToolName.MATH_CALC:
                 logger.info(f"[ReAct Agent] Calculating: {action_input}")

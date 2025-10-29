@@ -1,0 +1,21 @@
+{
+  "session_id": "86218209-70c9-47e9-8ad4-dcfc7dbe2439",
+  "user_id": "admin",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a short haiku about autumn.",
+      "timestamp": "2025-10-29T14:01:27.818521+09:00",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Red Leaves Fall**\n\nThey Move Across Paths,\n\nThe World Is Bathed In Gold.",
+      "timestamp": "2025-10-29T14:01:27.907885+09:00",
+      "metadata": null
+    }
+  ],
+  "created_at": "2025-10-29T13:55:58.332604+09:00",
+  "updated_at": "2025-10-29T14:01:27.907918+09:00",
+  "metadata": null
+}

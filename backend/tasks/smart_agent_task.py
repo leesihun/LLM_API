@@ -108,9 +108,21 @@ class SmartAgentTask:
             "summarize everything", "full report",
         ]
 
+        # Python code generation indicators (prefer ReAct for iterative development)
+        python_code_indicators = [
+            "write code", "generate code", "create script", "implement",
+            "python", "calculate", "compute", "process file",
+            "csv", "excel", "pandas", "numpy"
+        ]
+
         # Count indicators
         react_score = sum(1 for indicator in react_indicators if indicator in query_lower)
         plan_score = sum(1 for indicator in plan_indicators if indicator in query_lower)
+        python_code_score = sum(1 for indicator in python_code_indicators if indicator in query_lower)
+
+        # Python code generation queries prefer ReAct for iterative verification/modification
+        if python_code_score > 0:
+            react_score += python_code_score
 
         # Additional heuristics
         if "?" in query and query_lower.count("?") == 1 and len(query.split()) < 15:

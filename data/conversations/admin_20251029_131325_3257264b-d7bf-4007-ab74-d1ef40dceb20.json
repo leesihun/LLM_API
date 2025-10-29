@@ -1,0 +1,33 @@
+{
+  "session_id": "3257264b-d7bf-4007-ab74-d1ef40dceb20",
+  "user_id": "admin",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello! Give me a short haiku about autumn.",
+      "timestamp": "2025-10-29T13:13:38.052630+09:00",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "Fallen leaves fall,  \nA distant voice comes from far away;  \nThe air floats like a river.",
+      "timestamp": "2025-10-29T13:13:38.063227+09:00",
+      "metadata": null
+    },
+    {
+      "role": "user",
+      "content": "Now do one about winter.",
+      "timestamp": "2025-10-29T13:13:45.176523+09:00",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "The snow's chill  \nThrough time's shifting lens  \nClouds drift under the mountains,  \nA golden hue of ice glaze.",
+      "timestamp": "2025-10-29T13:13:45.190554+09:00",
+      "metadata": null
+    }
+  ],
+  "created_at": "2025-10-29T13:13:25.890896+09:00",
+  "updated_at": "2025-10-29T13:13:45.190561+09:00",
+  "metadata": null
+}

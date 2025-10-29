@@ -108,6 +108,31 @@ class Settings(BaseSettings):
     # Log file location
     log_file: str = './data/logs/app.log'
 
+    # ============================================================================
+    # Python Code Execution - Sandbox Configuration
+    # ============================================================================
+
+    # Enable/disable Python code execution feature
+    python_code_enabled: bool = True
+
+    # Maximum execution time for generated code (seconds)
+    python_code_timeout: int = 300
+
+    # Maximum memory usage (MB) - future: cgroups for true enforcement
+    python_code_max_memory: int = 5120
+
+    # Temporary execution directory for code execution
+    python_code_execution_dir: str = './data/code_execution'
+
+    # Maximum verification-modification loop iterations
+    python_code_max_iterations: int = 10
+
+    # Execute code even if minor issues remain after max iterations
+    python_code_allow_partial_execution: bool = False
+
+    # Maximum input file size (MB) for code execution
+    python_code_max_file_size: int = 500
+
     model_config = SettingsConfigDict(
         # DO NOT read from system environment variables - only use defaults from this file
         env_prefix='NONEXISTENT_PREFIX_',  # Ignore all env vars
@@ -160,6 +185,7 @@ def load_settings() -> Settings:
         settings.conversations_path,
         settings.uploads_path,
         settings.vector_db_path,
+        settings.python_code_execution_dir,
         Path(settings.log_file).parent,
         Path(settings.users_path).parent,
         Path(settings.sessions_path).parent,
@@ -169,91 +195,6 @@ def load_settings() -> Settings:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
     return settings
-
-
-def create_env_file(env_path: str = ".env") -> None:
-    """
-    Create a .env file that mirrors the current Settings defaults.
-    Pulling values from Settings ensures the template stays in sync.
-    """
-    defaults = Settings()
-    env_content = f"""# ==============================================================================
-# LLM API Configuration
-# ==============================================================================
-# Copy this file to .env and customize for your environment
-# CRITICAL: Update sensitive values (API keys, secret keys) for production!
-
-# ==============================================================================
-# Server Configuration
-# ==============================================================================
-SERVER_HOST={defaults.server_host}
-SERVER_PORT={defaults.server_port}
-SECRET_KEY={defaults.secret_key}
-
-# ==============================================================================
-# Ollama Configuration
-# ==============================================================================
-OLLAMA_HOST={defaults.ollama_host}
-OLLAMA_MODEL={defaults.ollama_model}
-OLLAMA_TIMEOUT={defaults.ollama_timeout}
-OLLAMA_NUM_CTX={defaults.ollama_num_ctx}
-OLLAMA_TEMPERATURE={defaults.ollama_temperature}
-OLLAMA_TOP_P={defaults.ollama_top_p}
-OLLAMA_TOP_K={defaults.ollama_top_k}
-
-# ==============================================================================
-# API Keys (Get these from respective services)
-# ==============================================================================
-TAVILY_API_KEY={defaults.tavily_api_key}
-
-# ==============================================================================
-# Vector Database
-# ==============================================================================
-VECTOR_DB_TYPE={defaults.vector_db_type}
-VECTOR_DB_PATH={defaults.vector_db_path}
-EMBEDDING_MODEL={defaults.embedding_model}
-
-# ==============================================================================
-# Storage Paths
-# ==============================================================================
-USERS_PATH={defaults.users_path}
-SESSIONS_PATH={defaults.sessions_path}
-CONVERSATIONS_PATH={defaults.conversations_path}
-UPLOADS_PATH={defaults.uploads_path}
-
-# ==============================================================================
-# Authentication
-# ==============================================================================
-JWT_ALGORITHM={defaults.jwt_algorithm}
-JWT_EXPIRATION_HOURS={defaults.jwt_expiration_hours}
-
-# ==============================================================================
-# Logging
-# ==============================================================================
-LOG_LEVEL={defaults.log_level}
-LOG_FILE={defaults.log_file}
-
-# ==============================================================================
-# Production Checklist
-# ==============================================================================
-# - Generate secure SECRET_KEY:
-#   python -c "import secrets; print(secrets.token_urlsafe(32))"
-# - Get Tavily API key from https://tavily.com/
-# - Set SERVER_HOST=localhost for production security
-# - Adjust OLLAMA_MODEL based on your hardware (7b, 13b, 70b)
-# - Set LOG_LEVEL=WARNING for production environments
-"""
-
-    try:
-        with open(env_path, 'w', encoding='utf-8') as f:
-            f.write(env_content)
-        print(".env file created successfully!")
-        print("Next steps:")
-        print("   1. Edit .env file with your actual values")
-        print("   2. Get API keys from respective services")
-        print("   3. Run the application")
-    except OSError as exc:
-        raise ValueError(f"Failed to create .env file: {exc}") from exc
 
 
 # Global settings instance

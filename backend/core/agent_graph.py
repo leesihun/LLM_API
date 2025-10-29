@@ -16,6 +16,7 @@ from backend.models.schemas import ChatMessage
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.data_analysis import data_analysis_tool
+from backend.tools.python_coder_tool import python_coder_tool
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class AgentState(TypedDict):
     search_results: str
     rag_context: str
     data_analysis_results: str
+    python_coder_results: str
     current_agent: str
     final_output: str
     verification_passed: bool
@@ -87,8 +89,9 @@ Consider:
 1. Does this require web search for current information?
 2. Does this require document retrieval (RAG)?
 3. Does this require data analysis (min/max/mean/statistics)?
-4. Is this a straightforward chat response?
-5. What tools are needed?
+4. Does this require Python code generation (calculations, file processing, data analysis)?
+5. Is this a straightforward chat response?
+6. What tools are needed?
 
 Create a concise plan (2-4 steps) explaining how to answer this query."""
 
@@ -130,6 +133,11 @@ async def tool_selection_node(state: AgentState) -> Dict[str, Any]:
     analysis_keywords = ["min", "max", "mean", "average", "sum", "count", "statistic", "analyze", "calculation"]
     if any(keyword in plan_lower or keyword in query_lower for keyword in analysis_keywords):
         tools_used.append("data_analysis")
+
+    # Check for Python code generation needs
+    python_keywords = ["write code", "generate code", "python", "script", "implement", "calculate", "compute", "process file", "csv", "excel", "pandas"]
+    if any(keyword in plan_lower or keyword in query_lower for keyword in python_keywords):
+        tools_used.append("python_coder")
 
     # If no tools needed, it's just chat
     if not tools_used:
@@ -197,6 +205,30 @@ async def data_analysis_node(state: AgentState) -> Dict[str, Any]:
     return {"data_analysis_results": analysis_results, "current_agent": "data_analysis"}
 
 
+async def python_coder_node(state: AgentState) -> Dict[str, Any]:
+    """
+    Step 3d: Execute Python code generation if needed
+    """
+    if "python_coder" not in state.get("tools_used", []):
+        logger.info("[AGENT: Python Coder] Skipping - not needed")
+        return {"python_coder_results": "", "current_agent": "python_coder"}
+
+    logger.info("[AGENT: Python Coder] Generating and executing Python code")
+    user_message = state["messages"][-1].content
+
+    # Execute code generation task
+    result = await python_coder_tool.execute_code_task(user_message)
+
+    if result["success"]:
+        formatted_result = f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"
+    else:
+        formatted_result = f"Code execution failed: {result.get('error', 'Unknown error')}"
+
+    logger.info(f"[AGENT: Python Coder] Execution completed")
+
+    return {"python_coder_results": formatted_result, "current_agent": "python_coder"}
+
+
 async def reasoning_node(state: AgentState) -> Dict[str, Any]:
     """
     Step 4: Generate response using LLM with retrieved information
@@ -215,6 +247,9 @@ async def reasoning_node(state: AgentState) -> Dict[str, Any]:
 
     if state.get("data_analysis_results"):
         context_parts.append(f"Data Analysis Results:\n{state['data_analysis_results']}")
+
+    if state.get("python_coder_results"):
+        context_parts.append(f"Python Code Execution Results:\n{state['python_coder_results']}")
 
     context = "\n\n".join(context_parts) if context_parts else ""
 
@@ -309,6 +344,7 @@ def create_agent_graph():
     workflow.add_node("web_search", web_search_node)
     workflow.add_node("rag_retrieval", rag_retrieval_node)
     workflow.add_node("data_analysis", data_analysis_node)
+    workflow.add_node("python_coder", python_coder_node)
     workflow.add_node("reasoning", reasoning_node)
     workflow.add_node("verification", verification_node)
 
@@ -318,7 +354,8 @@ def create_agent_graph():
     workflow.add_edge("tool_selection", "web_search")
     workflow.add_edge("web_search", "rag_retrieval")
     workflow.add_edge("rag_retrieval", "data_analysis")
-    workflow.add_edge("data_analysis", "reasoning")
+    workflow.add_edge("data_analysis", "python_coder")
+    workflow.add_edge("python_coder", "reasoning")
     workflow.add_edge("reasoning", "verification")
 
     # Conditional routing from verification

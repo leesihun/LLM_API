@@ -41,7 +41,7 @@ ollama pull gpt-oss:20b           # Download the default model
 
 ### Configuration
 
-The system uses a **no fallbacks** design - all settings in [backend/config/settings.py](backend/config/settings.py:14-120) must be explicitly configured. Missing values will raise descriptive errors on startup.
+The system uses a **no fallbacks** design - all settings in [backend/config/settings.py](backend/config/settings.py:14-134) must be explicitly configured. Missing values will raise descriptive errors on startup.
 
 **Critical variables:**
 - `SECRET_KEY` - JWT signing key (generate with: `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
@@ -49,6 +49,15 @@ The system uses a **no fallbacks** design - all settings in [backend/config/sett
 - `OLLAMA_HOST` - Ollama endpoint (default: http://127.0.0.1:11434)
 - `OLLAMA_MODEL` - Model name (default: gpt-oss:20b)
 - `SERVER_HOST` - Use `0.0.0.0` for development, `localhost` for production
+
+**Python Code Execution Settings:**
+- `PYTHON_CODE_ENABLED` - Enable/disable code execution feature (default: True)
+- `PYTHON_CODE_TIMEOUT` - Max execution time in seconds (default: 30)
+- `PYTHON_CODE_MAX_MEMORY` - Memory limit in MB (default: 512)
+- `PYTHON_CODE_EXECUTION_DIR` - Temp directory for code execution (default: ./data/code_execution)
+- `PYTHON_CODE_MAX_ITERATIONS` - Max verification-modification loops (default: 3)
+- `PYTHON_CODE_ALLOW_PARTIAL_EXECUTION` - Execute with minor issues (default: False)
+- `PYTHON_CODE_MAX_FILE_SIZE` - Max input file size in MB (default: 50)
 
 ## Architecture
 
@@ -58,26 +67,27 @@ The system implements a **smart agent router** ([backend/tasks/smart_agent_task.
 
 **1. ReAct Agent** ([backend/core/react_agent.py](backend/core/react_agent.py))
 - **Pattern:** Iterative Thought → Action → Observation loops
-- **Best for:** Exploratory queries, sequential reasoning, dynamic tool selection
+- **Best for:** Exploratory queries, sequential reasoning, dynamic tool selection, Python code generation
 - **Example:** "Find the capital of France, then search for its population, then calculate if it's larger than London"
 - **Max iterations:** 5 (configurable in line 361)
 - **How it works:**
   1. `_generate_thought()` - Reason about what to do next
-  2. `_select_action()` - Choose tool and input (9 available actions)
+  2. `_select_action()` - Choose tool and input (10 available actions including python_coder)
   3. `_execute_action()` - Run tool and observe result
   4. Repeat until `finish` action or max iterations reached
 
 **2. Plan-and-Execute Agent** ([backend/core/agent_graph.py](backend/core/agent_graph.py))
-- **Pattern:** LangGraph state machine with 7 nodes (Planning → Tool Selection → 3 Tool Nodes → Reasoning → Verification)
+- **Pattern:** LangGraph state machine with 8 nodes (Planning → Tool Selection → 4 Tool Nodes (including Python Coder) → Reasoning → Verification)
 - **Best for:** Complex batch queries, parallel tool usage, comprehensive tasks
 - **Example:** "Search weather AND analyze data AND retrieve documents"
 - **Max iterations:** 3 with verification loops
-- **State flow:** Nodes pass `AgentState` TypedDict containing messages, plan, search_results, rag_context, etc.
+- **State flow:** Nodes pass `AgentState` TypedDict containing messages, plan, search_results, rag_context, python_coder_results, etc.
 
-**Smart Router Logic** ([backend/tasks/smart_agent_task.py](backend/tasks/smart_agent_task.py:71-124)):
+**Smart Router Logic** ([backend/tasks/smart_agent_task.py](backend/tasks/smart_agent_task.py:71-145)):
 - Scores queries based on indicator keywords
 - ReAct indicators: "then", "after that", "step by step", "if", "depending on"
 - Plan-and-Execute indicators: " and ", "both", "comprehensive", "full report"
+- Python code indicators: "write code", "generate code", "python", "calculate", "csv", "excel" (boosts ReAct score for iterative development)
 - Default fallback: ReAct (for flexibility and transparency)
 
 ### Task Routing
@@ -102,11 +112,55 @@ All tools are in [backend/tools/](backend/tools/). Each tool has async methods a
 1. **web_search.py** - Tavily API for web search
 2. **rag_retriever.py** - Document Q&A with FAISS/Chroma vector DB
 3. **data_analysis.py** - JSON data statistics (min/max/mean/count)
-4. **python_executor.py** - Safe Python code execution
-5. **math_calculator.py** - SymPy-based symbolic math
-6. **wikipedia_tool.py** - Wikipedia search and summarization
-7. **weather_tool.py** - Weather information retrieval
-8. **sql_query_tool.py** - SQL database queries
+4. **python_executor.py** - Safe Python code execution (simple scripts)
+5. **python_coder_tool.py** - AI-driven Python code generator with iterative verification/modification (NEW)
+6. **math_calculator.py** - SymPy-based symbolic math
+7. **wikipedia_tool.py** - Wikipedia search and summarization
+8. **weather_tool.py** - Weather information retrieval
+9. **sql_query_tool.py** - SQL database queries
+
+#### Python Code Generator Tool (NEW)
+
+The **python_coder_tool** is an advanced code generation system that automatically:
+- Generates Python code based on natural language descriptions
+- Performs static analysis and LLM-based verification
+- Iteratively modifies code to fix issues (up to 3 iterations)
+- Executes code in isolated subprocess sandboxes
+- Supports file processing (CSV, Excel, PDF, JSON, etc.)
+
+**Key files:**
+- [backend/tools/python_coder_tool.py](backend/tools/python_coder_tool.py) - Main orchestrator
+- [backend/tools/python_executor_engine.py](backend/tools/python_executor_engine.py) - Subprocess execution engine
+- [backend/config/settings.py](backend/config/settings.py) - Configuration (lines 111-134)
+
+**Security features:**
+- Whitelisted packages only (40+ safe packages including numpy, pandas, matplotlib, etc.)
+- Blocked imports (socket, subprocess, eval, exec, pickle)
+- Timeout enforcement (default: 30s)
+- Filesystem isolation (temporary execution directories)
+- Automatic cleanup after execution
+
+**Workflow:**
+1. Generate code using LLM
+2. Verify code (static + semantic checks)
+3. Modify if issues found (max 3 iterations)
+4. Execute in isolated subprocess
+5. Return results with full audit trail
+
+**Usage example:**
+```python
+from backend.tools.python_coder_tool import python_coder_tool
+
+result = await python_coder_tool.execute_code_task(
+    query="Calculate Fibonacci sequence up to 100",
+    context=None,
+    file_paths=None
+)
+
+# Returns: {success, code, output, error, iterations, modifications, execution_time, ...}
+```
+
+**Supported file types:** .csv, .xlsx, .pdf, .json, .txt, .md, .parquet, .h5, .png, .jpg, and more (see [SANDBOX_IMPLEMENTATION_PLAN.md](SANDBOX_IMPLEMENTATION_PLAN.md))
 
 ### API Endpoints
 
@@ -315,3 +369,7 @@ When testing:
 - Plan-and-Execute: Test with multi-tool queries ("search AND analyze AND retrieve")
 - Smart router: Verify correct agent selection via logs
 - Test both `agent_type="auto"` and explicit agent selection
+- Python code generation: Test with various complexity levels (simple calculations, data analysis, file processing)
+  - Example queries in [API_examples.ipynb](API_examples.ipynb) cells 14-17
+  - Verify iterative verification-modification loops in logs
+  - Check execution isolation and cleanup in `data/code_execution/`

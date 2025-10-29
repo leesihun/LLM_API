@@ -1405,14 +1405,24 @@ Configuration error: Missing required settings
 ```
 
 **Solution**:
+All settings have defaults in `backend/config/settings.py`. You can either:
+
+**Option 1: Edit settings.py directly**
+```bash
+# Edit backend/config/settings.py
+nano backend/config/settings.py
+
+# Update required values like:
+# secret_key = 'your-secure-key'
+# tavily_api_key = 'your-tavily-key'
+```
+
+**Option 2: Create .env file to override defaults**
 ```bash
 # Create .env file
-python -c "from backend.config.settings import create_env_file; create_env_file()"
-
-# Edit .env
 nano .env
 
-# Set required values
+# Add your custom values:
 SECRET_KEY=your-secure-key
 TAVILY_API_KEY=your-tavily-key
 ```
