@@ -89,14 +89,14 @@ Consider:
 1. Does this require web search for current information?
 2. Does this require document retrieval (RAG)?
 3. Does this require data analysis (min/max/mean/statistics)?
-4. Does this require Python code generation (calculations, file processing, data analysis)?
+4. Does this absolutely require Python code generation?
 5. Is this a straightforward chat response?
 6. What tools are needed?
 
-Create a concise plan (2-4 steps) explaining how to answer this query."""
+Create a concise plan (2-10 steps) explaining how to answer this query."""
 
     response = await llm.ainvoke([HumanMessage(content=planning_prompt)])
-    logger.info(f"[AGENT: Planning] Plan created: {response.content[:100]}...")
+    logger.info(f"[AGENT: Planning] Plan created: {response.content[:]}...")
 
     return {
         "plan": response.content,
