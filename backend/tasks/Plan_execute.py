@@ -169,7 +169,7 @@ When you are done, verify if the required tools are correct. Try to avoid python
 
         logger.info(f"[Plan-Execute] Execution completed:")
         logger.info(f"  - Tools used: {', '.join(tools_used)}")
-        logger.info(f"  - ReAct iterations: {total_iterations}/{react_metadata.get('max_iterations', 5)}"))
+        logger.info(f"  - ReAct iterations: {total_iterations}/{react_metadata.get('max_iterations', 5)}")
 
         # Verify if planned tools were used
         used_tools_set = set(tools_used)
