@@ -169,18 +169,11 @@ When you are done, verify if the required tools are correct. Try to avoid python
 
         logger.info(f"[Plan-Execute] Execution completed:")
         logger.info(f"  - Tools used: {', '.join(tools_used)}")
-        logger.info(f"  - Planned tools: {', '.join(plan_data['required_tools'])}")
-        logger.info(f"  - ReAct iterations: {total_iterations}/{react_metadata.get('max_iterations', 5)}")
-        logger.info(f"  - Plan complexity: {plan_data['complexity']}")
+        logger.info(f"  - ReAct iterations: {total_iterations}/{react_metadata.get('max_iterations', 5)}"))
 
         # Verify if planned tools were used
-        planned_tools_set = set(plan_data['required_tools'])
         used_tools_set = set(tools_used)
-        missing_tools = planned_tools_set - used_tools_set - {"chat"}  # chat doesn't need verification
-
-        if missing_tools:
-            logger.warning(f"[Plan-Execute] Some planned tools were not used: {', '.join(missing_tools)}")
-
+        
         # Build comprehensive metadata
         metadata = self._build_metadata(react_metadata, plan_data)
 
