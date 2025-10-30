@@ -255,7 +255,8 @@ Make sure to execute this plan step-by-step using the ReAct framework. Do not sk
                 "tools_used": react_metadata.get("tools_used", []),
                 "total_iterations": react_metadata.get("total_iterations", 0),
                 "max_iterations": react_metadata.get("max_iterations", 5),
-                "execution_steps": react_metadata.get("execution_steps", [])
+                "execution_steps": react_metadata.get("execution_steps", []),
+                "execution_trace": react_metadata.get("execution_trace", "No trace available")
             }
         }
 

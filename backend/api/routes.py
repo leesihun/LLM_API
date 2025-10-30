@@ -302,25 +302,25 @@ async def determine_task_type(query: str) -> str:
     except Exception as e:
         logger.error(f"[Task Classifier] Failed to initialize classifier: {str(e)}, falling back to keywords")
 
-    # # Fallback: Keyword-based classification
-    # logger.info("[Task Classifier] Using keyword-based fallback classification")
-    # query_lower = query.lower()
+    # Fallback: Keyword-based classification
+    logger.info("[Task Classifier] Using keyword-based fallback classification")
+    query_lower = query.lower()
 
-    # # Keywords that suggest agentic processing
-    # agentic_keywords = [
-    #     "search", "find", "look up", "research",
-    #     "compare", "analyze", "investigate",
-    #     "current", "latest", "news",
-    #     "document", "file", "pdf",
-    #     "code", "python", "calculate", "data"
-    # ]
+    # Keywords that suggest agentic processing
+    agentic_keywords = [
+        "search", "find", "look up", "research",
+        "compare", "analyze", "investigate",
+        "current", "latest", "news",
+        "document", "file", "pdf",
+        "code", "python", "calculate", "data"
+    ]
 
-    # if any(keyword in query_lower for keyword in agentic_keywords):
-    #     logger.info(f"[Task Classifier] Fallback classified as 'agentic': {query[:]}")
-    #     return "agentic"
+    if any(keyword in query_lower for keyword in agentic_keywords):
+        logger.info(f"[Task Classifier] Fallback classified as 'agentic': {query[:]}")
+        return "agentic"
 
-    # logger.info(f"[Task Classifier] Fallback classified as 'chat': {query[:]}")
-    # return "chat"
+    logger.info(f"[Task Classifier] Fallback classified as 'chat': {query[:]}")
+    return "chat"
 
 
 # ============================================================================
