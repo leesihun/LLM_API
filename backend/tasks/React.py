@@ -73,7 +73,7 @@ class ReActAgent:
     4. Repeat until answer is ready
     """
 
-    def __init__(self, max_iterations: int = 5):
+    def __init__(self, max_iterations: int = 100):
         import httpx
         self.max_iterations = max_iterations
 
@@ -181,10 +181,10 @@ Question: {query}
 
 {context}
 
-Think step-by-step about what you need to do to answer this question.
-What information do you need? What should you do next?
+Think step-by-step about what you need to do to answer this question. Do not skip any steps.
+What information do you need? What should you do next? Try to avoid python coder if possible.
 
-Provide your reasoning (1-2 sentences):"""
+Provide your reasoning:"""
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
@@ -218,10 +218,7 @@ Available Actions (choose EXACTLY one of these names):
 4. python_code - Execute simple Python code (use for: quick calculations, simple scripts)
 5. python_coder - Generate, verify, and execute complex Python code with file processing (use for: data analysis, file processing, complex calculations, working with CSV/Excel/PDF files)
 6. math_calc - Perform advanced math calculations (use for: algebra, calculus, equations, symbolic math)
-7. wikipedia - Search Wikipedia for factual information (use for: definitions, facts, history)
-8. weather - Get current weather information (use for: weather queries, forecasts)
-9. sql_query - Query SQL database (use for: structured data queries)
-10. finish - Provide the final answer (use when you have enough information)
+7. finish - Provide the final answer (use when you have enough information)
 
 CRITICAL: You MUST respond with EXACTLY this format (no extra text):
 Action: <one_of_the_action_names_above>
@@ -360,21 +357,6 @@ Now provide your action (follow the format exactly):"""
                 logger.info(f"[ReAct Agent] Calculating: {action_input}")
                 result = await math_calculator.calculate(action_input)
                 return result
-
-            elif action == ToolName.WIKIPEDIA:
-                logger.info(f"[ReAct Agent] Searching Wikipedia: {action_input}")
-                result = await wikipedia_tool.search_and_summarize(action_input, sentences=3)
-                return result
-
-            elif action == ToolName.WEATHER:
-                logger.info(f"[ReAct Agent] Getting weather: {action_input}")
-                result = await weather_tool.get_weather(action_input)
-                return result
-
-            elif action == ToolName.SQL_QUERY:
-                logger.info(f"[ReAct Agent] Executing SQL query: {action_input[:50]}...")
-                result = await sql_query_tool.execute_query(action_input)
-                return sql_query_tool.format_results(result)
 
             else:
                 return "Invalid action."

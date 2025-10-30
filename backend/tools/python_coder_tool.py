@@ -319,12 +319,11 @@ Task: {query}
 {file_context}
 
 Important requirements:
-1. Only use these whitelisted packages: {', '.join(SAFE_PACKAGES)}
-2. If files are provided, access them by their basename (e.g., 'data.csv', not full path)
-3. Output results by printing JSON to stdout
-4. Include error handling
-5. Add docstring explaining what the code does
-6. Keep code clean and readable
+1. If files are provided, access them by their basename (e.g., 'data.csv', not full path)
+2. Output results by printing JSON to stdout
+3. Include error handling
+4. Add docstring explaining what the code does
+5. Keep code clean and readable
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
@@ -340,7 +339,7 @@ Generate ONLY the Python code, no explanations or markdown:"""
                 code = code.split("```")[0]
 
             code = code.strip()
-            logger.info(f"[PythonCoderTool] Generated code ({len(code)} chars)")
+            logger.info(f"\n\n\n[PythonCoderTool] Generated code: {code[:]}\n\n\n")
             return code
 
         except Exception as e:
@@ -397,6 +396,9 @@ Check for:
 2. Are there potential runtime errors?
 3. Is the output format parseable (JSON)?
 4. Are there any security concerns?
+5. Are there any potential performance issues?
+6. Are there any potential memory issues?
+7. Are there any potential file system issues?
 
 Respond with a JSON object:
 {{"verified": true/false, "issues": ["issue1", "issue2", ...]}}

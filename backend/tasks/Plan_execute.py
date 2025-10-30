@@ -84,109 +84,27 @@ Conversation History:
 
 Current User Query: {query}
 
-Analyze the query and provide:
-1. **Required Tools**: Which tools are needed? (web_search, rag, data_analysis, python_coder, or just chat)
-2. **Execution Steps**: Break down into 2-10 concrete steps
-3. **Complexity Assessment**: Simple/Medium/Complex
-4. **Expected Challenges**: Potential issues to watch for
-5. **Success Criteria**: How to verify the answer is complete
+Analyze the query and provide a detailed execution plan:
 
-Available Tools:
+Here are a list of Available Tools:
 {settings.available_tools}
 
-Format your response as:
-REQUIRED_TOOLS: [list tools]
-COMPLEXITY: [Simple/Medium/Complex]
-STEPS:
+Format your response as a detailed execution plan:
+[Execution Plan]
 1. [First step]
 2. [Second step]
 ...
-CHALLENGES: [potential issues]
-SUCCESS_CRITERIA: [verification criteria]"""
+n-1. [Last step]
+n. [Verifying step]
+...
+When you are done, verify if the required tools are correct. Try to avoid python coder if possible."""
 
         response = await llm.ainvoke([HumanMessage(content=planning_prompt)])
         plan_text = response.content
 
-        # Parse the plan
-        plan_data = self._parse_plan(plan_text)
+        logger.info(f"[Plan-Execute: Planning] \n\nPlan: {plan_text}")
 
-        logger.info(f"[Plan-Execute: Planning] Plan created with {len(plan_data['steps'])} steps")
-        logger.info(f"[Plan-Execute: Planning] Required tools: {', '.join(plan_data['required_tools'])}")
-        logger.info(f"[Plan-Execute: Planning] Complexity: {plan_data['complexity']}")
-
-        return plan_data
-
-    def _parse_plan(self, plan_text: str) -> Dict[str, Any]:
-        """Parse LLM planning response into structured format"""
-        lines = plan_text.split('\n')
-
-        plan_data = {
-            "raw_plan": plan_text,
-            "required_tools": [],
-            "complexity": "Medium",
-            "steps": [],
-            "challenges": "",
-            "success_criteria": ""
-        }
-
-        current_section = None
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Parse sections
-            if line.startswith("REQUIRED_TOOLS:"):
-                tools_str = line.replace("REQUIRED_TOOLS:", "").strip()
-                # Extract tool names from brackets or comma-separated
-                tools_str = tools_str.replace("[", "").replace("]", "")
-                plan_data["required_tools"] = [t.strip() for t in tools_str.split(",") if t.strip()]
-                current_section = "tools"
-
-            elif line.startswith("COMPLEXITY:"):
-                complexity = line.replace("COMPLEXITY:", "").strip()
-                plan_data["complexity"] = complexity
-                current_section = "complexity"
-
-            elif line.startswith("STEPS:"):
-                current_section = "steps"
-
-            elif line.startswith("CHALLENGES:"):
-                plan_data["challenges"] = line.replace("CHALLENGES:", "").strip()
-                current_section = "challenges"
-
-            elif line.startswith("SUCCESS_CRITERIA:"):
-                plan_data["success_criteria"] = line.replace("SUCCESS_CRITERIA:", "").strip()
-                current_section = "criteria"
-
-            # Collect step items
-            elif current_section == "steps" and (line[0].isdigit() or line.startswith("-")):
-                # Remove step numbers/bullets
-                step_text = line.lstrip("0123456789.-) ").strip()
-                if step_text:
-                    plan_data["steps"].append(step_text)
-
-            # Continue collecting multi-line sections
-            elif current_section == "challenges" and not line.startswith(("REQUIRED", "COMPLEXITY", "STEPS", "SUCCESS")):
-                plan_data["challenges"] += " " + line
-
-            elif current_section == "criteria" and not line.startswith(("REQUIRED", "COMPLEXITY", "STEPS", "CHALLENGES")):
-                plan_data["success_criteria"] += " " + line
-
-        # Ensure at least one tool
-        if not plan_data["required_tools"]:
-            plan_data["required_tools"] = ["chat"]
-
-        # Save the plan to a log
-        logger.info(f"[Plan-Execute: Planning] Plan saved to log: {plan_data['raw_plan']}")
-        logger.info(f"[Plan-Execute: Planning] Required tools: {', '.join(plan_data['required_tools'])}")
-        logger.info(f"[Plan-Execute: Planning] Complexity: {plan_data['complexity']}")
-        logger.info(f"[Plan-Execute: Planning] Steps: {', '.join(plan_data['steps'])}")
-        logger.info(f"[Plan-Execute: Planning] Challenges: {plan_data['challenges']}")
-        logger.info(f"[Plan-Execute: Planning] Success criteria: {plan_data['success_criteria']}")
-
-        return plan_data
+        return plan_text
 
     async def execute(
         self,
@@ -231,7 +149,7 @@ SUCCESS_CRITERIA: [verification criteria]"""
 
         # ====== PHASE 2: EXECUTION with ReAct Agent ======
         logger.info("[Plan-Execute] Phase 2: Executing plan with ReAct Agent...")
-        logger.info(f"[Plan-Execute] Plan summary: {len(plan_data['steps'])} steps, Tools: {', '.join(plan_data['required_tools'])}")
+        logger.info(f"[Plan-Execute] Plan summary: {plan_data}")
 
         # Create enhanced prompt for ReAct agent with the plan
         plan_aware_messages = self._create_plan_aware_messages(messages, plan_data)
@@ -272,7 +190,7 @@ SUCCESS_CRITERIA: [verification criteria]"""
     def _create_plan_aware_messages(
         self,
         messages: List[ChatMessage],
-        plan_data: Dict[str, Any]
+        plan_data: str
     ) -> List[ChatMessage]:
         """
         Create messages list with plan context injected for ReAct agent
@@ -289,14 +207,7 @@ SUCCESS_CRITERIA: [verification criteria]"""
 [EXECUTION PLAN]
 Your task has been analyzed and a plan has been created:
 
-Required Tools: {', '.join(plan_data['required_tools'])}
-Complexity: {plan_data['complexity']}
-
-Steps to follow:
-{self._format_steps_list(plan_data['steps'])}
-
-Expected Challenges: {plan_data['challenges']}
-Success Criteria: {plan_data['success_criteria']}
+The plan: {plan_data}
 
 Make sure to execute this plan step-by-step using the ReAct framework. Do not skip any steps.
 [END PLAN]

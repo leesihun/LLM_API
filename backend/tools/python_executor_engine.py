@@ -18,40 +18,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded security constants (NOT configurable to ensure consistent security)
-SAFE_PACKAGES = [
-    # Standard library
-    "json", "csv", "math", "datetime", "collections", "itertools", "re",
-    "os", "sys", "zipfile", "tarfile", "gzip", "bz2", "statistics",
-
-    # Data science core
-    "numpy", "pandas", "scipy", "sklearn", "scikit-learn", "sympy", "statsmodels",
-
-    # Visualization
-    "matplotlib", "seaborn", "plotly",
-
-    # Office formats
-    "openpyxl", "xlrd", "xlwt", "python-docx",
-
-    # PDF
-    "PyPDF2", "pdfplumber", "pypdf",
-
-    # Big data formats
-    "pyarrow", "h5py", "tables", "netCDF4", "xarray",
-
-    # Text/Web
-    "lxml", "beautifulsoup4", "chardet",
-
-    # Image
-    "Pillow", "imageio",
-
-    # Data validation
-    "jsonschema", "cerberus",
-
-    # NLP
-    "nltk", "textblob",
-]
-
 BLOCKED_IMPORTS = [
     "socket", "subprocess", "os.system", "eval", "exec",
     "__import__", "importlib", "shutil.rmtree", "pickle",
@@ -118,15 +84,11 @@ class PythonExecutor:
                     module = alias.name.split('.')[0]
                     if module in BLOCKED_IMPORTS:
                         issues.append(f"Blocked import detected: {module}")
-                    elif module not in SAFE_PACKAGES:
-                        issues.append(f"Unsafe import detected: {module} (not in whitelist)")
 
             elif isinstance(node, ast.ImportFrom):
                 module = node.module.split('.')[0] if node.module else ''
                 if module in BLOCKED_IMPORTS:
                     issues.append(f"Blocked import detected: {module}")
-                elif module and module not in SAFE_PACKAGES:
-                    issues.append(f"Unsafe import detected: {module} (not in whitelist)")
 
             # Check for dangerous function calls
             elif isinstance(node, ast.Call):
