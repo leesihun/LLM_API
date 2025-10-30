@@ -17,7 +17,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
 from backend.config.settings import settings
-from backend.tools.python_executor_engine import PythonExecutor, SAFE_PACKAGES, SUPPORTED_FILE_TYPES
+from backend.tools.python_executor_engine import PythonExecutor, SUPPORTED_FILE_TYPES
 
 logger = logging.getLogger(__name__)
 

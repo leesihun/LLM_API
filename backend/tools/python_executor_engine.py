@@ -199,10 +199,6 @@ class PythonExecutor:
         ext = Path(file_path).suffix.lower()
         return ext in SUPPORTED_FILE_TYPES
 
-    def get_safe_packages(self) -> List[str]:
-        """Get list of safe packages that can be imported."""
-        return SAFE_PACKAGES.copy()
-
     def get_blocked_imports(self) -> List[str]:
         """Get list of blocked imports."""
         return BLOCKED_IMPORTS.copy()
