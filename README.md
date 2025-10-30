@@ -1,6 +1,6 @@
 # LLM API – Sample Client and Usage
 
-Version: 0.2.0
+Version: 0.2.1
 
 This document shows a minimal Python client and examples for common tasks.
 
@@ -178,6 +178,7 @@ print(client.answer_from_json(MODEL, sample, "Who is older?"))
 
 ## Changelog
 
+- 0.2.1: Fix import path case for Plan-and-Execute module in `backend/api/routes.py`.
 - 0.2.0: Added single notebook `API_examples.ipynb` covering tasks 1–9.
 - 0.1.0: Added signup, admin model change, chat sessions/history, tools list, math, web search, and sample client with examples.
 # Agentic AI Backend with FastAPI

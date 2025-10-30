@@ -34,7 +34,7 @@ from backend.models.schemas import (
 from backend.utils.auth import authenticate_user, create_access_token, get_current_user
 from backend.storage.conversation_store import conversation_store
 from backend.tasks.chat_task import chat_task
-from backend.tasks.plan_execute_task import plan_execute_task
+from backend.tasks.Plan_execute import PlanExecuteTask
 from backend.tasks.smart_agent_task import smart_agent_task, AgentType
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.math_calculator import math_calculator
