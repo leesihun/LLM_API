@@ -34,7 +34,7 @@ from backend.models.schemas import (
 from backend.utils.auth import authenticate_user, create_access_token, get_current_user
 from backend.storage.conversation_store import conversation_store
 from backend.tasks.chat_task import chat_task
-from backend.tasks.agentic_task import agentic_task
+from backend.tasks.plan_execute_task import plan_execute_task
 from backend.tasks.smart_agent_task import smart_agent_task, AgentType
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.math_calculator import math_calculator
@@ -43,6 +43,9 @@ from backend.config.settings import settings
 import logging
 import traceback
 import json
+from langchain_ollama import ChatOllama
+from langchain_core.messages import SystemMessage, HumanMessage
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +187,7 @@ async def chat_completions(
 
     # Determine task type based on query
     user_message = request.messages[-1].content if request.messages else ""
-    task_type = determine_task_type(user_message)
+    task_type = await determine_task_type(user_message)
 
     # Execute appropriate task
     try:
@@ -192,6 +195,7 @@ async def chat_completions(
 
         if task_type == "agentic":
             # Use smart agent (auto-selects ReAct or Plan-and-Execute)
+            logger.info(f"[Task Classifier] Using agentic worflow for query: {user_message[:]}")
             agent_type = AgentType(request.agent_type) if request.agent_type else AgentType.AUTO
             response_text, agent_metadata = await smart_agent_task.execute(
                 messages=request.messages,
@@ -250,24 +254,73 @@ async def chat_completions(
         )
 
 
-def determine_task_type(query: str) -> str:
+async def determine_task_type(query: str) -> str:
     """
-    Determine which task type to use based on query
+    Determine which task type to use based on query using LLM analysis
+    Falls back to keyword matching if LLM fails
     """
-    query_lower = query.lower()
+    try:
 
-    # Keywords that suggest agentic processing
-    agentic_keywords = [
-        "search", "find", "look up", "research",
-        "compare", "analyze", "investigate",
-        "current", "latest", "news",
-        "document", "file", "pdf"
-    ]
+        logger.info(f"[Task Classifier] Determining task type for query: {query[:]}")
+        # Initialize LLM for classification (using lower temperature for deterministic results)
+        classifier_llm = ChatOllama(
+            base_url=settings.ollama_host,
+            model=settings.agentic_classifier_model,
+            temperature=0.1,  # Low temperature for consistent classification
+            num_ctx=2048,  # Small context window for fast classification
+        )
 
-    if any(keyword in query_lower for keyword in agentic_keywords):
-        return "agentic"
+        # Create classification prompt
+        system_prompt = settings.agentic_classifier_prompt
 
-    return "chat"
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Query: {query}")
+        ]
+
+        # Get classification with timeout
+        try:
+            response = await asyncio.wait_for(
+                classifier_llm.ainvoke(messages),
+                timeout=100  # 10 second timeout for classification
+            )
+
+            classification = response.content.strip().lower()
+
+            # Validate response
+            if classification in ["agentic", "chat"]:
+                logger.info(f"[Task Classifier] Query classified as '{classification}': {query[:]}")
+                return classification
+            else:
+                logger.warning(f"[Task Classifier] Invalid LLM response: '{classification}', falling back to keywords")
+
+        except asyncio.TimeoutError:
+            logger.warning("[Task Classifier] LLM classification timed out, falling back to keywords")
+        except Exception as llm_error:
+            logger.warning(f"[Task Classifier] LLM classification error: {str(llm_error)}, falling back to keywords")
+
+    except Exception as e:
+        logger.error(f"[Task Classifier] Failed to initialize classifier: {str(e)}, falling back to keywords")
+
+    # # Fallback: Keyword-based classification
+    # logger.info("[Task Classifier] Using keyword-based fallback classification")
+    # query_lower = query.lower()
+
+    # # Keywords that suggest agentic processing
+    # agentic_keywords = [
+    #     "search", "find", "look up", "research",
+    #     "compare", "analyze", "investigate",
+    #     "current", "latest", "news",
+    #     "document", "file", "pdf",
+    #     "code", "python", "calculate", "data"
+    # ]
+
+    # if any(keyword in query_lower for keyword in agentic_keywords):
+    #     logger.info(f"[Task Classifier] Fallback classified as 'agentic': {query[:]}")
+    #     return "agentic"
+
+    # logger.info(f"[Task Classifier] Fallback classified as 'chat': {query[:]}")
+    # return "chat"
 
 
 # ============================================================================

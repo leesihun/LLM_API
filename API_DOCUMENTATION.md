@@ -1299,7 +1299,7 @@ def upload_file(token, file_path):
 
 # Example usage
 token = login("admin", "administrator")
-print(f"Logged in, token: {token[:20]}...")
+print(f"Logged in, token: {token[:]}...")
 
 # Simple chat
 response, _ = chat(token, "What is the capital of France?")

@@ -72,7 +72,7 @@ class PythonCoderTool:
                 "output": ""
             }
 
-        logger.info(f"[PythonCoderTool] Executing task: {query[:100]}...")
+        logger.info(f"[PythonCoderTool] Executing task: {query[:]}...")
 
         # Phase 0: Prepare input files
         validated_files = {}
@@ -270,7 +270,7 @@ class PythonCoderTool:
                     metadata.update({
                         "type": "text",
                         "line_count": len(lines),
-                        "preview": ''.join(lines[:5])[:200]
+                        "preview": ''.join(lines[:])[:]
                     })
                 except Exception as e:
                     logger.warning(f"[PythonCoderTool] Could not extract text metadata: {e}")
@@ -307,9 +307,9 @@ class PythonCoderTool:
                 metadata = file_metadata.get(original_path, {})
                 file_context += f"- {basename}: {metadata.get('type', 'unknown')} ({metadata.get('size_mb', 0)}MB)\n"
                 if 'columns' in metadata:
-                    file_context += f"  Columns: {', '.join(metadata['columns'][:10])}\n"
+                    file_context += f"  Columns: {', '.join(metadata['columns'][:])}\n"
                 if 'preview' in metadata:
-                    file_context += f"  Preview: {metadata['preview'][:100]}...\n"
+                    file_context += f"  Preview: {metadata['preview'][:]}...\n"
 
         prompt = f"""You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:
 

@@ -125,7 +125,7 @@ class PythonExecutor:
                 - error: str (stderr/exception)
                 - result: Any (last expression value)
         """
-        logger.info(f"[Python Executor] Executing code: {code[:100]}...")
+        logger.info(f"[Python Executor] Executing code: {code[:]}...")
 
         try:
             # Validate code first

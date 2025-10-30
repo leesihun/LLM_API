@@ -104,7 +104,7 @@ SmartAgentTask
     ├── _select_agent(query) → AgentType
     └── execute()
         ├── If REACT → react_agent.execute()
-        └── If PLAN_EXECUTE → agentic_task.execute()
+        └── If PLAN_EXECUTE → plan_execute_task.execute()
 ```
 
 ### 3. Chain of Responsibility (Task Routing)

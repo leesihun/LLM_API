@@ -8,8 +8,9 @@ from typing import List, Optional
 from enum import Enum
 
 from backend.models.schemas import ChatMessage
-from backend.tasks.agentic_task import agentic_task  # Plan-and-Execute
-from backend.core.react_agent import react_agent
+from backend.tasks.Plan_execute import plan_execute_task  # Plan-and-Execute
+from backend.tasks.React import react_agent  # ReAct
+from backend.config.settings import settings
 
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class SmartAgentTask:
         # Auto-select agent if not specified
         selected_agent = agent_type
         if agent_type == AgentType.AUTO:
-            selected_agent = self._select_agent(messages[-1].content)
+            selected_agent = AgentType.PLAN_EXECUTE
 
         logger.info(f"[Smart Agent] Selected agent: {selected_agent}")
 
@@ -67,80 +68,13 @@ class SmartAgentTask:
             response, metadata = await react_agent.execute(messages, session_id, user_id)
         else:
             logger.info(f"[Smart Agent] Using Plan-and-Execute")
-            response, metadata = await agentic_task.execute(messages, session_id, user_id)
+            response, metadata = await plan_execute_task.execute(messages, session_id, user_id)
 
         # Add selection info to metadata
         metadata["agent_selected"] = selected_agent.value
         metadata["agent_selection_mode"] = "auto" if agent_type == AgentType.AUTO else "manual"
 
         return response, metadata
-
-    def _select_agent(self, query: str) -> AgentType:
-        """
-        Automatically select the best agent based on query characteristics
-
-        ReAct is better for:
-        - Exploratory queries ("find X, then Y, then Z")
-        - Sequential dependencies ("after finding X, do Y")
-        - Iterative refinement needs
-        - Single-tool queries that may need follow-up
-
-        Plan-and-Execute is better for:
-        - Multi-tool parallel queries ("search AND analyze AND retrieve")
-        - Complex batch operations
-        - Well-defined comprehensive tasks
-        """
-        query_lower = query.lower()
-
-        # Indicators for ReAct
-        react_indicators = [
-            "then", "after that", "next", "followed by",
-            "step by step", "first", "second", "third",
-            "if", "depending on", "based on",
-            "explore", "investigate", "find out",
-        ]
-
-        # Indicators for Plan-and-Execute
-        plan_indicators = [
-            " and ", " also ", " plus ",
-            "both", "all", "multiple",
-            "comprehensive", "complete analysis",
-            "summarize everything", "full report",
-        ]
-
-        # Python code generation indicators (prefer ReAct for iterative development)
-        python_code_indicators = [
-            "write code", "generate code", "create script", "implement",
-            "python", "calculate", "compute", "process file",
-            "csv", "excel", "pandas", "numpy"
-        ]
-
-        # Count indicators
-        react_score = sum(1 for indicator in react_indicators if indicator in query_lower)
-        plan_score = sum(1 for indicator in plan_indicators if indicator in query_lower)
-        python_code_score = sum(1 for indicator in python_code_indicators if indicator in query_lower)
-
-        # Python code generation queries prefer ReAct for iterative verification/modification
-        if python_code_score > 0:
-            react_score += python_code_score
-
-        # Additional heuristics
-        if "?" in query and query_lower.count("?") == 1 and len(query.split()) < 15:
-            # Simple single question - prefer ReAct for flexibility
-            react_score += 1
-
-        if query_lower.count(",") >= 2 or query_lower.count(" and ") >= 2:
-            # Multiple requirements - prefer Plan-and-Execute
-            plan_score += 2
-
-        # Decision
-        if react_score > plan_score:
-            return AgentType.REACT
-        elif plan_score > react_score:
-            return AgentType.PLAN_EXECUTE
-        else:
-            # Default to ReAct for better transparency and flexibility
-            return AgentType.REACT
 
 
 # Global smart agent instance

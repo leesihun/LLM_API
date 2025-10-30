@@ -306,7 +306,7 @@ Provide brief reasoning."""
 
     response = await llm.ainvoke([HumanMessage(content=verification_prompt)])
 
-    verification_passed = "yes" in response.content.lower()[:10]
+    verification_passed = "yes" in response.content.lower()[:]
     logger.info(f"[AGENT: Verification] Verification {'passed' if verification_passed else 'failed'}")
 
     return {"verification_passed": verification_passed, "current_agent": "verification"}

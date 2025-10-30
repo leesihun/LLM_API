@@ -982,11 +982,11 @@ LLM_API/
 │   │   ├── app.py              # FastAPI application
 │   │   └── routes.py           # API endpoints
 │   ├── core/
-│   │   ├── agent_graph.py      # Plan-and-Execute agent
-│   │   └── react_agent.py      # ReAct agent
+│   │   └── agent_graph.py      # LangGraph workflow (deprecated)
 │   ├── tasks/
 │   │   ├── chat_task.py        # Simple chat task
-│   │   ├── agentic_task.py     # Agentic task wrapper
+│   │   ├── React.py            # ReAct agent (Reasoning + Acting)
+│   │   ├── Plan_execute.py    # Plan-and-Execute agent (hybrid)
 │   │   └── smart_agent_task.py # Smart agent router
 │   ├── tools/
 │   │   ├── web_search.py       # Web search tool
@@ -1051,7 +1051,7 @@ class MyTool:
 my_tool = MyTool()
 ```
 
-2. **Register in ReAct Agent** ([backend/core/react_agent.py](backend/core/react_agent.py)):
+2. **Register in ReAct Agent** ([backend/tasks/React.py](backend/tasks/React.py)):
 
 ```python
 # Add to ToolName enum
@@ -1162,7 +1162,7 @@ async def test_math_calculator():
 
 @pytest.mark.asyncio
 async def test_react_agent():
-    from backend.core.react_agent import react_agent
+    from backend.tasks.React import react_agent
     messages = [{"role": "user", "content": "What is 5 + 3?"}]
     result = await react_agent.execute(messages, None, "test_user")
     assert "8" in result
@@ -1456,7 +1456,7 @@ Request timeout after 2 minutes
 OLLAMA_TIMEOUT=3000000  # 50 minutes
 
 # Or reduce max iterations in agents
-# backend/core/react_agent.py: max_iterations=3
+# backend/tasks/React.py: max_iterations=3
 # backend/core/agent_graph.py: max_iterations=2
 ```
 

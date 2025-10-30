@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = 'gpt-oss:20b'
+    ollama_model: str = 'gemma3:12b'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
@@ -103,10 +103,44 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Log level - INFO for production, DEBUG for development
-    log_level: str = 'INFO'
+    log_level: str = 'DEBUG'
 
     # Log file location
     log_file: str = './data/logs/app.log'
+
+
+
+    # AGENTIC FLOW
+
+    # Agentic flow model
+    agentic_classifier_model: str = 'gemma3:12b'
+    agentic_classifier_prompt: str = """You are a task classifier. Analyze the user's query and determine if it requires:
+
+1. "agentic" - Use when the query requires agentic flow:
+   - Web search for current/latest information
+   - Document retrieval from uploaded files
+   - Data analysis or processing
+   - Extremely complex task that requires Python code execution
+   - Multi-step reasoning with tools
+   - Research, comparison, or investigation
+   - Any query mentioning: search, find, research, analyze, current, latest, news, documents, files, code, calculate
+
+2. "chat" - Use when the query is:
+   - Simple conversation
+   - General knowledge questions (not requiring current data)
+   - Explanations or clarifications
+
+Unless its absolutely necessary, use "chat" for simple questions.
+
+Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)."""
+
+    # Available tools
+    available_tools: list[str] = ['web_search', 'rag', 'data_analysis', 'python_coder', 'chat']
+
+
+
+
+
 
     # ============================================================================
     # Python Code Execution - Sandbox Configuration

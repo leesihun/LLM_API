@@ -18,12 +18,8 @@ from backend.tools.data_analysis import data_analysis_tool
 from backend.tools.python_executor import python_executor
 from backend.tools.python_coder_tool import python_coder_tool
 from backend.tools.math_calculator import math_calculator
-from backend.tools.wikipedia_tool import wikipedia_tool
-from backend.tools.weather_tool import weather_tool
-from backend.tools.sql_query_tool import sql_query_tool
 
 logger = logging.getLogger(__name__)
-
 
 class ToolName(str, Enum):
     """Available tools for ReAct agent"""
@@ -33,9 +29,6 @@ class ToolName(str, Enum):
     PYTHON_CODE = "python_code"
     PYTHON_CODER = "python_coder"
     MATH_CALC = "math_calc"
-    WIKIPEDIA = "wikipedia"
-    WEATHER = "weather"
-    SQL_QUERY = "sql_query"
     FINISH = "finish"
 
 
@@ -87,7 +80,7 @@ class ReActAgent:
         # Use AsyncClient for async operations
         async_client = httpx.AsyncClient(
             timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=60.0),
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
         )
 
         self.llm = ChatOllama(
@@ -139,13 +132,13 @@ class ReActAgent:
             # Step 1: Thought - What should I do next?
             thought = await self._generate_thought(user_query, self.steps)
             step.thought = thought
-            logger.info(f"[ReAct Agent] Thought: {thought[:100]}...")
+            logger.info(f"[ReAct Agent] Thought: {thought[:]}...")
 
             # Step 2: Action - Select tool and input
             action, action_input = await self._select_action(user_query, thought, self.steps)
             step.action = action
             step.action_input = action_input
-            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:50]}...")
+            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:]}...")
 
             # Check if we're done
             if action == ToolName.FINISH:
@@ -156,7 +149,7 @@ class ReActAgent:
             # Step 3: Observation - Execute action and observe result
             observation = await self._execute_action(action, action_input)
             step.observation = observation
-            logger.info(f"[ReAct Agent] Observation: {observation[:100]}...")
+            logger.info(f"[ReAct Agent] Observation: {observation[:]}...")
 
             # Store step
             self.steps.append(step)
@@ -283,7 +276,7 @@ Now provide your action (follow the format exactly):"""
 
         # Log raw response for debugging if parsing failed
         if not action:
-            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:200]}")
+            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:]}")
 
         # Validate action
         valid_actions = [e.value for e in ToolName]
@@ -419,7 +412,7 @@ Step {step.step_num}:
 - Thought: {step.thought}
 - Action: {step.action}
 - Action Input: {step.action_input}
-- Observation: {step.observation[:200]}{"..." if len(step.observation) > 200 else ""}
+- Observation: {step.observation[:]}{"..." if len(step.observation) > 200 else ""}
 """)
 
         return "\n".join(context_parts)
