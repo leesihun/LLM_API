@@ -6,6 +6,7 @@ Performs precise mathematical calculations using SymPy
 import logging
 from typing import Any, Dict
 import re
+import math
 
 
 logger = logging.getLogger(__name__)
@@ -54,14 +55,18 @@ class MathCalculator:
             # Clean the expression
             expression = expression.strip()
 
-            # Handle special commands
-            if "solve" in expression.lower():
+            # Handle special commands - use word boundaries to avoid false matches
+            # Check for factorial before factor to avoid conflict
+            if re.search(r'\bfactorial\b', expression, re.IGNORECASE):
+                # This is a factorial function, not the factor command - process normally
+                return await self._evaluate_expression(expression, return_latex)
+            elif "solve" in expression.lower():
                 return await self._solve_equation(expression, return_latex)
             elif "derivative" in expression.lower() or "diff" in expression.lower():
                 return await self._calculate_derivative(expression, return_latex)
             elif "integral" in expression.lower() or "integrate" in expression.lower():
                 return await self._calculate_integral(expression, return_latex)
-            elif "factor" in expression.lower():
+            elif re.search(r'\bfactor\b', expression, re.IGNORECASE):
                 return await self._factor_expression(expression, return_latex)
             elif "expand" in expression.lower():
                 return await self._expand_expression(expression, return_latex)
@@ -79,15 +84,90 @@ class MathCalculator:
     async def _evaluate_expression(self, expression: str, return_latex: bool = False) -> str | Dict[str, str]:
         """Evaluate a mathematical expression"""
         try:
-            # Parse and evaluate
-            result = self.sympy.sympify(expression)
-            evaluated = self.sympy.N(result, 10)  # 10 decimal places
+            # Parse the expression - use locals_dict to define constants explicitly
+            # This fixes issues with lowercase 'e', 'ln', etc.
+            local_dict = {
+                'e': self.sympy.E,  # Euler's number
+                'E': self.sympy.E,  # Alternative
+                'pi': self.sympy.pi,
+                'Pi': self.sympy.pi,
+                'ln': lambda x: self.sympy.log(x),  # Natural log
+                'log10': lambda x: self.sympy.log(x, 10),  # Base-10 log
+            }
 
-            # Format result
-            if evaluated.is_integer:
-                plain_text = f"Result: {int(evaluated)}"
+            result = self.sympy.sympify(expression, locals=local_dict)
+            evaluated = self.sympy.N(result, 15)  # 15 decimal places for better precision
+
+            # Handle different result types
+            plain_text = None
+
+            # In SymPy, all real numbers have is_complex=True (since reals ⊂ complex)
+            # We need to check is_real to distinguish true complex numbers
+
+            # Handle special SymPy values first
+            if evaluated == self.sympy.nan or (hasattr(evaluated, 'is_nan') and evaluated.is_nan):
+                # Not a Number (e.g., 0/0)
+                plain_text = "Result: undefined (NaN)"
+            elif evaluated == self.sympy.zoo:
+                # Complex infinity (division by zero with complex result)
+                plain_text = "Result: complex infinity (undefined)"
+            elif evaluated == self.sympy.oo:
+                # Positive infinity
+                plain_text = "Result: infinity"
+            elif evaluated == -self.sympy.oo:
+                # Negative infinity
+                plain_text = "Result: -infinity"
+            elif evaluated.is_infinite:
+                # Other infinite values
+                plain_text = "Result: infinity" if evaluated > 0 else "Result: -infinity"
+            elif not evaluated.is_real:
+                # Handle TRUE complex numbers (e.g., sqrt(-1) = i)
+                real_part = self.sympy.re(evaluated)
+                imag_part = self.sympy.im(evaluated)
+
+                # Try to convert to Python types for cleaner display
+                try:
+                    real_val = float(self.sympy.N(real_part, 10))
+                    imag_val = float(self.sympy.N(imag_part, 10))
+
+                    # Format based on parts
+                    if abs(real_val) < 1e-10:  # Real part essentially zero
+                        if abs(imag_val - 1) < 1e-10:
+                            plain_text = "Result: i"
+                        elif abs(imag_val + 1) < 1e-10:
+                            plain_text = "Result: -i"
+                        else:
+                            plain_text = f"Result: {imag_val:.10g}i"
+                    else:
+                        sign = "+" if imag_val >= 0 else "-"
+                        plain_text = f"Result: {real_val:.10g} {sign} {abs(imag_val):.10g}i"
+                except (ValueError, TypeError):
+                    # Fallback to sympy representation
+                    plain_text = f"Result: {evaluated}"
             else:
-                plain_text = f"Result: {float(evaluated):.10g}"
+                # Handle real numbers
+                try:
+                    if evaluated.is_integer:
+                        # For integers, check if it's too large for int conversion
+                        int_val = int(evaluated)
+                        plain_text = f"Result: {int_val}"
+                    else:
+                        # Convert to float for real numbers
+                        float_val = float(evaluated)
+
+                        # Check for NaN
+                        if math.isnan(float_val):
+                            plain_text = "Result: undefined (NaN)"
+                        # Format based on magnitude to avoid unnecessary scientific notation
+                        elif abs(float_val) < 1e-3 and float_val != 0:
+                            plain_text = f"Result: {float_val:.10e}"
+                        elif abs(float_val) > 1e12:
+                            plain_text = f"Result: {float_val:.10e}"
+                        else:
+                            plain_text = f"Result: {float_val:.10g}"
+                except (ValueError, TypeError, OverflowError):
+                    # Fallback for values that can't convert to Python float
+                    plain_text = f"Result: {evaluated}"
 
             if return_latex:
                 latex_expr = self.sympy.latex(result)

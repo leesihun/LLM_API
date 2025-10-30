@@ -138,18 +138,20 @@ class ReActAgent:
             action, action_input = await self._select_action(user_query, thought, self.steps)
             step.action = action
             step.action_input = action_input
-            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:]}...")
+            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:100]}...")
 
             # Check if we're done
             if action == ToolName.FINISH:
                 final_answer = action_input
-                logger.info(f"[ReAct Agent] Finished with answer")
+                step.observation = "Task completed"
+                self.steps.append(step)  # Store the final step before breaking
+                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:100]}...")
                 break
 
             # Step 3: Observation - Execute action and observe result
             observation = await self._execute_action(action, action_input)
             step.observation = observation
-            logger.info(f"[ReAct Agent] Observation: {observation[:]}...")
+            logger.info(f"[ReAct Agent] Observation: {observation[:200]}...")
 
             # Store step
             self.steps.append(step)
@@ -159,9 +161,18 @@ class ReActAgent:
             logger.info(f"[ReAct Agent] Max iterations reached, generating final answer")
             final_answer = await self._generate_final_answer(user_query, self.steps)
 
+        # Final validation: ensure we always have an answer
+        if not final_answer or not final_answer.strip():
+            logger.error(f"[ReAct Agent] Empty final answer detected! Generating fallback response...")
+            final_answer = await self._generate_final_answer(user_query, self.steps)
+            if not final_answer or not final_answer.strip():
+                final_answer = "I apologize, but I was unable to generate a proper response. Please try rephrasing your question."
+
         logger.info(f"[ReAct Agent] Completed after {len(self.steps)} steps")
-        logger.info(f"[ReAct Agent] Final answer: {final_answer[:]}")
-        logger.info(' ------------------------------------------------------------------------------------------------ ')
+        logger.info("=" * 80)
+        logger.info(f"[ReAct Agent] FINAL ANSWER:")
+        logger.info(f"{final_answer}")
+        logger.info("=" * 80)
 
         # Build metadata
         metadata = self._build_metadata()
@@ -275,7 +286,10 @@ Now provide your action (follow the format exactly):"""
 
         # Log raw response for debugging if parsing failed
         if not action:
-            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:]}")
+            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:200]}...")
+
+        if not action_input:
+            logger.warning(f"[ReAct Agent] Failed to parse action input from response: {response[:200]}...")
 
         # Validate action
         valid_actions = [e.value for e in ToolName]
@@ -310,11 +324,17 @@ Now provide your action (follow the format exactly):"""
                 logger.info(f"[ReAct Agent] Fuzzy matched '{action}' to '{matched_action}'")
                 action = matched_action
             else:
-                # Default to finish if invalid
-                logger.warning(f"[ReAct Agent] Invalid action '{action}', defaulting to finish")
+                # Default to finish if invalid - use full response as fallback
+                logger.warning(f"[ReAct Agent] Invalid action '{action}', defaulting to finish with full response")
                 action = ToolName.FINISH
                 if not action_input:
-                    action_input = "I don't have enough information to answer this question."
+                    # Use the full response as action_input if parsing completely failed
+                    action_input = response.strip() if response.strip() else "I don't have enough information to answer this question."
+
+        # Additional check: if action is FINISH but action_input is empty, use full response
+        if action == ToolName.FINISH and not action_input:
+            logger.warning(f"[ReAct Agent] FINISH action with empty input, using full response")
+            action_input = response.strip() if response.strip() else "I don't have enough information to answer this question."
 
         return action, action_input
 
