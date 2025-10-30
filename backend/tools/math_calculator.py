@@ -33,6 +33,46 @@ class MathCalculator:
             logger.warning("SymPy not installed. Install with: pip install sympy")
             self.sympy_available = False
 
+    def _normalize_expression(self, expression: str) -> str:
+        """
+        Normalize mathematical expression by converting unicode symbols to ASCII
+
+        Handles:
+        - Unicode multiplication signs (×) → *
+        - Unicode division signs (÷) → /
+        - Unicode minus signs (−) → -
+        - Full-width digits → half-width digits
+        - Extra whitespace cleanup
+        """
+        # Unicode math symbol mappings
+        replacements = {
+            '×': '*',  # Multiplication sign (U+00D7)
+            '÷': '/',  # Division sign (U+00F7)
+            '−': '-',  # Minus sign (U+2212)
+            '・': '*',  # Katakana middle dot
+            '·': '*',  # Middle dot (U+00B7)
+            '━': '-',  # Heavy horizontal line
+            '—': '-',  # Em dash
+            '–': '-',  # En dash
+        }
+
+        # Apply replacements
+        normalized = expression
+        for unicode_char, ascii_char in replacements.items():
+            normalized = normalized.replace(unicode_char, ascii_char)
+
+        # Convert full-width digits to half-width (e.g., ０ → 0)
+        full_width_digits = '０１２３４５６７８９'
+        half_width_digits = '0123456789'
+        translation_table = str.maketrans(full_width_digits, half_width_digits)
+        normalized = normalized.translate(translation_table)
+
+        # Clean up excessive whitespace but preserve single spaces
+        normalized = ' '.join(normalized.split())
+
+        logger.debug(f"[Math Calculator] Normalized '{expression}' → '{normalized}'")
+        return normalized
+
     async def calculate(self, expression: str, return_latex: bool = False) -> str | Dict[str, str]:
         """
         Evaluate a mathematical expression
@@ -52,8 +92,8 @@ class MathCalculator:
             return {"result": result, "latex": None} if return_latex else result
 
         try:
-            # Clean the expression
-            expression = expression.strip()
+            # Normalize and clean the expression
+            expression = self._normalize_expression(expression.strip())
 
             # Handle special commands - use word boundaries to avoid false matches
             # Check for factorial before factor to avoid conflict

@@ -375,7 +375,10 @@ Now provide your action (follow the format exactly):"""
 
             elif action == ToolName.MATH_CALC:
                 logger.info(f"[ReAct Agent] Calculating: {action_input}")
+                # Log the input before normalization (in case of unicode symbols)
+                logger.debug(f"[ReAct Agent] Math input (raw): {repr(action_input)}")
                 result = await math_calculator.calculate(action_input)
+                logger.info(f"[ReAct Agent] Math result: {result}")
                 return result
 
             else:
