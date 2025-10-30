@@ -550,8 +550,29 @@ async def tool_math(request: MathRequest, _: Dict[str, Any] = Depends(get_curren
 
 @tools_router.post("/websearch", response_model=WebSearchResponse)
 async def tool_websearch(request: WebSearchRequest, _: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Perform web search and generate LLM-based answer from results
+
+    Returns:
+        - results: Raw search results with title, URL, content
+        - answer: LLM-generated answer synthesizing the search results
+        - sources_used: List of URLs used as sources
+    """
+    logger.info(f"[Websearch Endpoint] Query: {request.query}")
+
+    # Get search results
     results = await web_search_tool.search(request.query, max_results=request.max_results)
-    return WebSearchResponse(results=results)
+
+    # Generate LLM answer from results
+    answer, sources_used = await web_search_tool.generate_answer(request.query, results)
+
+    logger.info(f"[Websearch Endpoint] Found {len(results)} results, generated answer with {len(sources_used)} sources")
+
+    return WebSearchResponse(
+        results=results,
+        answer=answer,
+        sources_used=sources_used
+    )
 
 
 @tools_router.get("/rag/search", response_model=RAGSearchResponse)

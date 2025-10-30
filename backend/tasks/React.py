@@ -160,6 +160,8 @@ class ReActAgent:
             final_answer = await self._generate_final_answer(user_query, self.steps)
 
         logger.info(f"[ReAct Agent] Completed after {len(self.steps)} steps")
+        logger.info(f"[ReAct Agent] Final answer: {final_answer[:]}")
+        logger.info(' ------------------------------------------------------------------------------------------------ ')
 
         # Build metadata
         metadata = self._build_metadata()

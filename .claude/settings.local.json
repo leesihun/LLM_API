@@ -8,7 +8,8 @@
       "Bash(\"venv/Scripts/python.exe\" test_notebook_python_coder.py)",
       "Bash(\"venv/Scripts/python.exe\" test_deepseek_examples.py)",
       "Bash(\"venv/Scripts/python.exe\" test_minimal_deepseek.py)",
-      "Bash(\"venv/Scripts/python.exe\" test_deepseek_20min.py)"
+      "Bash(\"venv/Scripts/python.exe\" test_deepseek_20min.py)",
+      "Bash(python -m py_compile:*)"
     ],
     "deny": [],
     "ask": []

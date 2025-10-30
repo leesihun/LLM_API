@@ -245,3 +245,5 @@ class WebSearchRequest(BaseModel):
 
 class WebSearchResponse(BaseModel):
     results: List[SearchResult]
+    answer: str  # LLM-generated answer from search results
+    sources_used: List[str]  # URLs used in the answer

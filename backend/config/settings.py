@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     server_host: str = '0.0.0.0'
 
     # Port - standard HTTP port, change if needed
-    server_port: int = 8000
+    server_port: int = 1007
 
     # SECRET KEY - CRITICAL: Generate a secure 32+ character key for production
     # Use: python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Log level - INFO for production, DEBUG for development
-    log_level: str = 'DEBUG'
+    log_level: str = 'INFO'
 
     # Log file location
     log_file: str = './data/logs/app.log'
