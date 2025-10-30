@@ -247,12 +247,7 @@ Make sure to execute this plan step-by-step using the ReAct framework. Do not sk
 
             # Planning phase data
             "planning": {
-                "raw_plan": plan_data["raw_plan"],
-                "required_tools": plan_data["required_tools"],
-                "complexity": plan_data["complexity"],
-                "steps": plan_data["steps"],
-                "challenges": plan_data["challenges"],
-                "success_criteria": plan_data["success_criteria"]
+                "plan_data": plan_data
             },
 
             # Execution phase data (from ReAct)
@@ -261,51 +256,8 @@ Make sure to execute this plan step-by-step using the ReAct framework. Do not sk
                 "total_iterations": react_metadata.get("total_iterations", 0),
                 "max_iterations": react_metadata.get("max_iterations", 5),
                 "execution_steps": react_metadata.get("execution_steps", [])
-            },
-
-            # Analysis
-            "analysis": {
-                "plan_adherence": self._calculate_plan_adherence(
-                    plan_data["required_tools"],
-                    react_metadata.get("tools_used", [])
-                ),
-                "execution_efficiency": f"{react_metadata.get('total_iterations', 0)} iterations for {len(plan_data['steps'])} planned steps"
             }
         }
-
-    def _calculate_plan_adherence(self, planned_tools: List[str], used_tools: List[str]) -> str:
-        """
-        Calculate how well the execution adhered to the plan
-
-        Args:
-            planned_tools: Tools identified in planning phase
-            used_tools: Tools actually used during execution
-
-        Returns:
-            Adherence assessment string
-        """
-        planned_set = set(planned_tools) - {"chat"}  # Remove chat as it's a default
-        used_set = set(used_tools)
-
-        if not planned_set:
-            return "No specific tools planned (chat-only task)"
-
-        matched = planned_set & used_set
-        missing = planned_set - used_set
-        extra = used_set - planned_set
-
-        adherence_score = len(matched) / len(planned_set) * 100 if planned_set else 100
-
-        details = []
-        if matched:
-            details.append(f"Used {len(matched)}/{len(planned_set)} planned tools")
-        if missing:
-            details.append(f"Missing: {', '.join(missing)}")
-        if extra:
-            details.append(f"Additional: {', '.join(extra)}")
-
-        return f"{adherence_score:.0f}% adherence - {'; '.join(details)}"
-
 
 # Global agentic task instance
 plan_execute_task = PlanExecuteTask()
