@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     # AGENTIC FLOW
 
     # Agentic flow model
-    agentic_classifier_model: str = 'gemma3:12b'
+    agentic_classifier_model: str = 'gpt-oss:20b'
     agentic_classifier_prompt: str = """You are a task classifier. Analyze the user's query and determine if it requires:
 
 1. "agentic" - Use when the query requires agentic flow:

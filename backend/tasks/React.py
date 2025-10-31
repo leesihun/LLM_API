@@ -4,14 +4,14 @@ Implements the Reasoning + Acting pattern with iterative Thought-Action-Observat
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from enum import Enum
 
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from backend.config.settings import settings
-from backend.models.schemas import ChatMessage
+from backend.models.schemas import ChatMessage, PlanStep, StepResult
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.python_executor import python_executor
@@ -270,6 +270,367 @@ class ReActAgent:
         metadata = self._build_metadata()
 
         return final_answer, metadata
+
+    async def execute_with_plan(
+        self,
+        plan_steps: List[PlanStep],
+        messages: List[ChatMessage],
+        session_id: Optional[str],
+        user_id: str,
+        file_paths: Optional[List[str]] = None,
+        max_iterations_per_step: int = 3
+    ) -> Tuple[str, List[StepResult]]:
+        """
+        Execute ReAct in guided mode: execute each plan step one-by-one
+
+        Args:
+            plan_steps: Structured plan steps to execute
+            messages: Conversation messages
+            session_id: Session ID
+            user_id: User identifier
+            file_paths: Optional list of file paths for code execution
+            max_iterations_per_step: Max ReAct iterations per step
+
+        Returns:
+            Tuple of (final_answer, step_results)
+        """
+        # Store file paths and session_id
+        self.file_paths = file_paths
+        self.session_id = session_id
+        self._attempted_coder = False
+
+        logger.info("\n\n\n" + "=" * 100)
+        logger.info("[ReAct Agent: GUIDED MODE] EXECUTION STARTED")
+        logger.info(f"Plan has {len(plan_steps)} steps")
+        if file_paths:
+            logger.info(f"Attached Files: {len(file_paths)} files")
+        logger.info("=" * 100 + "\n\n\n")
+
+        # Extract user query
+        user_query = messages[-1].content
+
+        # Track results from each step
+        step_results: List[StepResult] = []
+        accumulated_observations = []  # Collect observations from all steps
+
+        # Execute each plan step
+        for step_idx, plan_step in enumerate(plan_steps):
+            logger.info("\n" + "#" * 100)
+            logger.info(f"EXECUTING PLAN STEP {plan_step.step_num}/{len(plan_steps)}")
+            logger.info(f"Goal: {plan_step.goal}")
+            logger.info(f"Primary Tools: {plan_step.primary_tools}")
+            logger.info(f"Fallback Tools: {plan_step.fallback_tools}")
+            logger.info("#" * 100 + "\n")
+
+            # Execute this step
+            step_result = await self._execute_step(
+                plan_step=plan_step,
+                user_query=user_query,
+                accumulated_observations=accumulated_observations,
+                max_iterations=max_iterations_per_step
+            )
+
+            step_results.append(step_result)
+
+            # Add observation to accumulated context
+            if step_result.observation:
+                accumulated_observations.append(
+                    f"Step {step_result.step_num} ({step_result.goal}): {step_result.observation}"
+                )
+
+            logger.info(f"\n[ReAct Guided] Step {plan_step.step_num} {'✓ SUCCESS' if step_result.success else '✗ FAILED'}")
+            logger.info(f"Tool used: {step_result.tool_used}")
+            logger.info(f"Attempts: {step_result.attempts}\n")
+
+        # Generate final answer based on all step results
+        logger.info("\n" + "=" * 100)
+        logger.info("[ReAct Guided] Generating final answer from all step results...")
+        logger.info("=" * 100 + "\n")
+
+        final_answer = await self._generate_final_answer_from_steps(
+            user_query=user_query,
+            step_results=step_results,
+            accumulated_observations=accumulated_observations
+        )
+
+        logger.info("\n[ReAct Agent: GUIDED MODE] EXECUTION COMPLETED")
+        logger.info(f"Total steps executed: {len(step_results)}")
+        logger.info(f"Successful steps: {sum(1 for r in step_results if r.success)}/{len(step_results)}\n")
+
+        return final_answer, step_results
+
+    async def _execute_step(
+        self,
+        plan_step: PlanStep,
+        user_query: str,
+        accumulated_observations: List[str],
+        max_iterations: int = 3
+    ) -> StepResult:
+        """
+        Execute a single plan step using ReAct loops with tool fallback
+
+        Args:
+            plan_step: The plan step to execute
+            user_query: Original user query
+            accumulated_observations: Context from previous steps
+            max_iterations: Max iterations for this step
+
+        Returns:
+            StepResult with execution details
+        """
+        logger.info(f"[ReAct Step {plan_step.step_num}] Starting execution...")
+
+        # Build context from previous steps
+        context = "\n".join(accumulated_observations) if accumulated_observations else "This is the first step."
+
+        # Try primary tools first, then fallback tools
+        all_tools = plan_step.primary_tools + plan_step.fallback_tools
+        
+        attempt_count = 0
+        last_error = None
+        last_observation = None
+
+        for tool_idx, tool_name in enumerate(all_tools):
+            attempt_count += 1
+            is_primary = tool_idx < len(plan_step.primary_tools)
+            tool_type = "primary" if is_primary else "fallback"
+
+            logger.info(f"\n[ReAct Step {plan_step.step_num}] Attempt {attempt_count}: Trying {tool_type} tool '{tool_name}'")
+
+            # Execute tool with ReAct-style reasoning
+            try:
+                observation, success = await self._execute_tool_for_step(
+                    tool_name=tool_name,
+                    plan_step=plan_step,
+                    user_query=user_query,
+                    context=context,
+                    max_iterations=max_iterations
+                )
+
+                last_observation = observation
+
+                # Check if step goal is achieved
+                if success:
+                    logger.info(f"[ReAct Step {plan_step.step_num}] SUCCESS with tool '{tool_name}'")
+                    return StepResult(
+                        step_num=plan_step.step_num,
+                        goal=plan_step.goal,
+                        success=True,
+                        tool_used=tool_name,
+                        attempts=attempt_count,
+                        observation=observation,
+                        error=None,
+                        metadata={"tool_type": tool_type}
+                    )
+                else:
+                    logger.info(f"[ReAct Step {plan_step.step_num}] Tool '{tool_name}' did not achieve goal, trying next tool...")
+                    last_error = f"Tool '{tool_name}' executed but did not meet success criteria"
+
+            except Exception as e:
+                logger.error(f"[ReAct Step {plan_step.step_num}] Tool '{tool_name}' failed with error: {e}")
+                last_error = str(e)
+                last_observation = f"Error executing {tool_name}: {str(e)}"
+
+        # All tools failed
+        logger.warning(f"[ReAct Step {plan_step.step_num}] FAILED - All tools exhausted")
+        return StepResult(
+            step_num=plan_step.step_num,
+            goal=plan_step.goal,
+            success=False,
+            tool_used=all_tools[-1] if all_tools else None,
+            attempts=attempt_count,
+            observation=last_observation or "No observation",
+            error=last_error,
+            metadata={"all_tools_tried": all_tools}
+        )
+
+    async def _execute_tool_for_step(
+        self,
+        tool_name: str,
+        plan_step: PlanStep,
+        user_query: str,
+        context: str,
+        max_iterations: int
+    ) -> Tuple[str, bool]:
+        """
+        Execute a specific tool to achieve the step goal
+
+        Args:
+            tool_name: Name of tool to execute
+            plan_step: Current plan step
+            user_query: Original user query
+            context: Context from previous steps
+            max_iterations: Max iterations to try
+
+        Returns:
+            Tuple of (observation, success)
+        """
+        # Map tool names to ToolName enum
+        tool_mapping = {
+            "web_search": ToolName.WEB_SEARCH,
+            "rag_retrieval": ToolName.RAG_RETRIEVAL,
+            "python_code": ToolName.PYTHON_CODE,
+            "python_coder": ToolName.PYTHON_CODER,
+            "finish": ToolName.FINISH
+        }
+
+        tool_enum = tool_mapping.get(tool_name)
+        if not tool_enum:
+            return f"Unknown tool: {tool_name}", False
+
+        # Generate action input for this tool
+        action_input = await self._generate_action_input_for_step(
+            tool_name=tool_enum,
+            plan_step=plan_step,
+            user_query=user_query,
+            context=context
+        )
+
+        # Execute the tool
+        observation = await self._execute_action(tool_enum, action_input)
+
+        # Verify if goal is achieved
+        success = await self._verify_step_success(
+            plan_step=plan_step,
+            observation=observation,
+            tool_used=tool_name
+        )
+
+        return observation, success
+
+    async def _generate_action_input_for_step(
+        self,
+        tool_name: ToolName,
+        plan_step: PlanStep,
+        user_query: str,
+        context: str
+    ) -> str:
+        """
+        Generate appropriate input for a tool based on step goal
+
+        Args:
+            tool_name: Tool to generate input for
+            plan_step: Current plan step
+            user_query: Original user query
+            context: Context from previous steps
+
+        Returns:
+            Action input string for the tool
+        """
+        prompt = f"""You are executing a specific step in a plan.
+
+Original User Query: {user_query}
+
+Current Step Goal: {plan_step.goal}
+Success Criteria: {plan_step.success_criteria}
+Additional Context: {plan_step.context or 'None'}
+
+Previous Steps Context:
+{context}
+
+Tool to use: {tool_name}
+
+Generate the appropriate input for this tool to achieve the step goal.
+Provide ONLY the tool input, no explanations:"""
+
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        return response.content.strip()
+
+    async def _verify_step_success(
+        self,
+        plan_step: PlanStep,
+        observation: str,
+        tool_used: str
+    ) -> bool:
+        """
+        Verify if the step goal was achieved based on observation
+
+        Args:
+            plan_step: Current plan step
+            observation: Observation from tool execution
+            tool_used: Which tool was used
+
+        Returns:
+            True if step goal achieved, False otherwise
+        """
+        # Check for obvious failures
+        if not observation or len(observation.strip()) < 5:
+            return False
+        
+        if "error" in observation.lower() or "failed" in observation.lower():
+            # But allow if there's also success indicators
+            if "success" not in observation.lower():
+                return False
+
+        # For simple cases, use heuristics
+        if "success" in observation.lower() and len(observation) > 50:
+            return True
+
+        # Use LLM to verify goal achievement
+        verification_prompt = f"""Verify if the step goal was achieved.
+
+Step Goal: {plan_step.goal}
+Success Criteria: {plan_step.success_criteria}
+
+Tool Used: {tool_used}
+Observation: {observation[:1000]}
+
+Based on the observation, was the step goal achieved according to the success criteria?
+Answer with "YES" or "NO" and brief reasoning:"""
+
+        response = await self.llm.ainvoke([HumanMessage(content=verification_prompt)])
+        result = response.content.strip().lower()
+        
+        is_success = result.startswith("yes")
+        logger.info(f"[Step Verification] {'SUCCESS' if is_success else 'FAILED'} - {result[:100]}")
+        
+        return is_success
+
+    async def _generate_final_answer_from_steps(
+        self,
+        user_query: str,
+        step_results: List[StepResult],
+        accumulated_observations: List[str]
+    ) -> str:
+        """
+        Generate final answer based on all step results
+
+        Args:
+            user_query: Original user query
+            step_results: Results from all steps
+            accumulated_observations: All observations
+
+        Returns:
+            Final answer string
+        """
+        # Build context from all steps
+        steps_summary = []
+        for result in step_results:
+            status = "✓" if result.success else "✗"
+            steps_summary.append(
+                f"Step {result.step_num} {status}: {result.goal}\n"
+                f"  Tool: {result.tool_used}\n"
+                f"  Result: {result.observation[:300]}"
+            )
+
+        steps_text = "\n\n".join(steps_summary)
+        observations_text = "\n".join(accumulated_observations)
+
+        prompt = f"""You are a helpful AI assistant. Generate a final, comprehensive answer based on the step-by-step execution results.
+
+Original User Query: {user_query}
+
+Execution Steps Summary:
+{steps_text}
+
+All Observations:
+{observations_text}
+
+Based on all the steps executed and their results, provide a clear, complete, and accurate final answer to the user's query.
+Include specific details, numbers, and facts from the observations:"""
+
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        return response.content.strip()
 
     async def _generate_thought(self, query: str, steps: List[ReActStep]) -> str:
         """

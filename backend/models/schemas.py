@@ -137,6 +137,32 @@ class AgentState(BaseModel):
 
 
 # ============================================================================
+# Plan-Execute Models
+# ============================================================================
+
+class PlanStep(BaseModel):
+    """Structured execution plan step"""
+    step_num: int
+    goal: str
+    primary_tools: List[str] = Field(default_factory=list)
+    fallback_tools: List[str] = Field(default_factory=list)
+    success_criteria: str
+    context: Optional[str] = None  # Additional context for this step
+
+
+class StepResult(BaseModel):
+    """Result of executing a plan step"""
+    step_num: int
+    goal: str
+    success: bool
+    tool_used: Optional[str] = None
+    attempts: int = 0  # Number of tool attempts made
+    observation: str
+    error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+# ============================================================================
 # Task Models
 # ============================================================================
 

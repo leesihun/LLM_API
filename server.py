@@ -36,7 +36,7 @@ def main():
         "backend.api.app:app",
         host=settings.server_host,
         port=settings.server_port,
-        reload=True,
+        reload=False,
         log_level=settings.log_level.lower()
     )
 

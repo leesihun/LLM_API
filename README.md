@@ -4,6 +4,33 @@ AI-powered Python code generation and execution API with iterative verification.
 
 ## Version History
 
+### v1.1.1 (2025-10-31)
+**Server Auto-Reload Disabled**
+- **Changed**: Disabled uvicorn auto-reload (`reload=False`) to prevent unnecessary server restarts
+- **Reason**: Reduces shutdown_event log messages and improves stability in production
+- **Impact**: Server no longer automatically restarts on file changes
+- **Files Modified**: `server.py`
+
+### v1.1.0 (2025-10-31)
+**Plan-Execute & ReAct Integration Restructure**
+- **Major Refactor**: Restructured Plan-Execute to create structured, JSON-based execution plans with explicit goals, tools, and fallback options
+- **Added**: New schemas `PlanStep` and `StepResult` for structured planning and execution tracking
+- **Added**: ReAct "guided mode" (`execute_with_plan()`) that executes plan steps one-by-one instead of free-form iteration
+- **Added**: Automatic tool fallback mechanism - each step tries primary tools first, then fallback tools if they fail
+- **Added**: Step-level success verification using LLM to check if step goals are met
+- **Added**: Comprehensive step-by-step execution tracking with detailed metadata
+- **Changed**: Plan-Execute now generates structured JSON plans with primary_tools, fallback_tools, and success_criteria per step
+- **Changed**: Each plan step is executed independently with its own ReAct loop and goal verification
+- **Impact**: Better separation of concerns - planning is strategic, execution is tactical with automatic recovery
+- **Files Modified**: 
+  - `backend/models/schemas.py` - Added PlanStep and StepResult models
+  - `backend/tasks/Plan_execute.py` - Restructured to generate JSON plans and call ReAct guided mode
+  - `backend/tasks/React.py` - Added execute_with_plan(), _execute_step(), _execute_tool_for_step(), _verify_step_success()
+- **Architecture**:
+  - Phase 1 (Planning): LLM generates structured plan with steps, each having goal + tools + fallback + success criteria
+  - Phase 2 (Execution): ReAct executes each step sequentially, trying tools in order until success
+  - Phase 3 (Verification): Each step verified against success criteria; final answer synthesized from all results
+
 ### v1.0.6 (2025-10-31)
 **File-First Agent Behavior + Safe Fallbacks**
 - **Added**: When files are attached, ReAct attempts local analysis first via `python_coder` before other tools.
