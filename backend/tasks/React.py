@@ -128,13 +128,13 @@ class ReActAgent:
             # Step 1: Thought - What should I do next?
             thought = await self._generate_thought(user_query, self.steps)
             step.thought = thought
-            logger.info(f"[ReAct Agent] Thought: {thought[:]}...")
+            logger.info(f"[ReAct Agent] Thought: {thought[:]}")
 
             # Step 2: Action - Select tool and input
             action, action_input = await self._select_action(user_query, thought, self.steps)
             step.action = action
             step.action_input = action_input
-            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:]}...")
+            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:]}")
 
             # Check if we're done
             if action == ToolName.FINISH:
@@ -153,13 +153,13 @@ class ReActAgent:
 
                 step.observation = "Task completed"
                 self.steps.append(step)  # Store the final step before breaking
-                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:100]}...")
+                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:]}")
                 break
 
             # Step 3: Observation - Execute action and observe resul
             observation = await self._execute_action(action, action_input)
             step.observation = observation
-            logger.info(f"[ReAct Agent] Observation: {observation[:]}...")
+            logger.info(f"[ReAct Agent] Observation: {observation[:]}")
 
             # Store step
             self.steps.append(step)
@@ -317,10 +317,10 @@ Now provide your action:"""
 
         # Log raw response for debugging if parsing failed
         if not action:
-            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:]}...")
+            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:]}")
 
         if not action_input:
-            logger.warning(f"[ReAct Agent] Failed to parse action input from response: {response[:]}...")
+            logger.warning(f"[ReAct Agent] Failed to parse action input from response: {response[:]}")
 
         # Validate action
         valid_actions = [e.value for e in ToolName]
@@ -427,12 +427,12 @@ Now provide your action:"""
                 return observation if observation else "No relevant documents found."
 
             elif action == ToolName.PYTHON_CODE:
-                logger.info(f"[ReAct Agent] Executing Python code: {action_input[:50]}...")
+                logger.info(f"[ReAct Agent] Executing Python code: {action_input[:]}")
                 result = await python_executor.execute(action_input)
                 return python_executor.format_result(result)
 
             elif action == ToolName.PYTHON_CODER:
-                logger.info(f"[ReAct Agent] Executing Python coder: {action_input[:50]}...")
+                logger.info(f"[ReAct Agent] Executing Python coder: {action_input[:]}")
                 result = await python_coder_tool.execute_code_task(action_input)
                 if result["success"]:
                     return f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"

@@ -73,7 +73,7 @@ class PlanExecuteTask:
         Returns:
             Dict containing plan, required_tools, estimated_steps, complexity
         """
-        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:100]}...")
+        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:]}")
 
         llm = self._get_llm()
 

@@ -158,7 +158,7 @@ class WebSearchTool:
         if not results:
             return "No search results found to answer your question.", []
 
-        logger.info(f"[WebSearch] Generating answer for query: {query[:100]}")
+        logger.info(f"[WebSearch] Generating answer for query: {query[:]}")
 
         # Get LLM
         llm = self._get_llm()
