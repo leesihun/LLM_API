@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 4096  # Good balance for most use cases
 
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.7  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 0.1  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.9       # Nucleus sampling
     ollama_top_k: int = 40          # Top-k sampling
 
@@ -135,7 +135,7 @@ Unless its absolutely necessary, use "chat" for simple questions.
 Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)."""
 
     # Available tools
-    available_tools: list[str] = ['web_search', 'rag', 'data_analysis', 'python_coder', 'chat']
+    available_tools: list[str] = ['web_search', 'rag', 'data_analysis', 'math_calc', 'python_coder', 'chat']
 
 
 
