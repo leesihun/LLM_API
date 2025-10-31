@@ -53,17 +53,8 @@ class PythonCoderTool:
         context: Optional[str] = None,
         file_paths: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """
-        Main entry point: Execute a code generation and execution task.
 
-        Args:
-            query: User's request describing what code to generate
-            context: Optional additional context
-            file_paths: Optional list of file paths to process
 
-        Returns:
-            Dict with keys: success, code, output, error, iterations, modifications, etc.
-        """
         if not settings.python_code_enabled:
             return {
                 "success": False,
@@ -162,15 +153,8 @@ class PythonCoderTool:
         self,
         file_paths: List[str]
     ) -> Tuple[Dict[str, str], Dict[str, Any]]:
-        """
-        Validate and prepare input files for code execution.
 
-        Args:
-            file_paths: List of file paths to prepare
 
-        Returns:
-            Tuple of (validated_files dict, file_metadata dict)
-        """
         validated_files = {}
         file_metadata = {}
 
@@ -205,15 +189,8 @@ class PythonCoderTool:
         return validated_files, file_metadata
 
     def _extract_file_metadata(self, path: Path) -> Dict[str, Any]:
-        """
-        Extract metadata from a file for code generation context.
+        
 
-        Args:
-            path: Path to file
-
-        Returns:
-            Dict with file metadata
-        """
         metadata = {
             "filename": path.name,
             "extension": path.suffix.lower(),
@@ -287,18 +264,8 @@ class PythonCoderTool:
         validated_files: Dict[str, str],
         file_metadata: Dict[str, Any]
     ) -> str:
-        """
-        Generate Python code based on query and context.
+    
 
-        Args:
-            query: User's request
-            context: Optional additional context
-            validated_files: Dict of validated file paths -> basenames
-            file_metadata: Metadata for each file
-
-        Returns:
-            Generated Python code
-        """
         # Build file context
         file_context = ""
         if validated_files:
@@ -319,11 +286,11 @@ Task: {query}
 {file_context}
 
 Important requirements:
-1. If files are provided, access them by their basename (e.g., 'data.csv', not full path)
+1. If files are provided, access them by their full path
 2. Output results by printing JSON to stdout
 3. Include error handling
 4. Add docstring explaining what the code does
-5. Keep code clean and readable
+5. Keep code clean and readabl
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
@@ -392,13 +359,40 @@ Code:
 ```
 
 Check for:
-1. Does the code match the user's intent?
-2. Are there potential runtime errors?
-3. Is the output format parseable (JSON)?
-4. Are there any security concerns?
-5. Are there any potential performance issues?
-6. Are there any potential memory issues?
-7. Are there any potential file system issues?
+CORRECTNESS & INTENT ALIGNMENT
+Does the code accomplish the user's stated goal?
+Are all required inputs handled (files, parameters)?
+Does the logic flow match the requested behavior?
+Are edge cases addressed (empty data, null values, missing files)?
+RUNTIME ERROR PREVENTION
+Syntax validation (proper indentation, valid Python)
+Import availability (are all imports from whitelisted packages?)
+Error handling (try-except blocks around risky operations)
+Type safety (appropriate type checks before operations)
+Division by zero protection
+Index out of bounds protection
+Null/None checks before attribute access
+OUTPUT FORMAT COMPLIANCE
+Does code output JSON to stdout as required?
+Is the JSON structure valid and parseable?
+Are error states properly communicated in output?
+Does it use print() for output (not return statements)?
+PERFORMANCE & EFFICIENCY
+Reasonable algorithmic complexity (no O(n³) or worse for large data)
+Efficient data structure usage
+Avoid unnecessary loops or redundant operations
+Memory-conscious operations (streaming for large files)
+CODE QUALITY
+Readable variable names
+Proper docstring present and accurate
+Logical structure and flow
+No dead code or unused imports
+Follows Python conventions (PEP 8 style)
+FILE HANDLING (if applicable)
+Uses correct file access methods for file types
+Proper encoding specified (utf-8)
+File handles properly closed (use context managers)
+Validates file existence before reading
 
 Respond with a JSON object:
 {{"verified": true/false, "issues": ["issue1", "issue2", ...]}}

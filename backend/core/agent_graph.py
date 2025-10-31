@@ -188,6 +188,7 @@ async def python_coder_node(state: AgentState) -> Dict[str, Any]:
         return {"python_coder_results": "", "current_agent": "python_coder"}
 
     logger.info("[AGENT: Python Coder] Generating and executing Python code")
+    logger.info(f"[AGENT: Python Coder] User message: {state['messages'][-1].content[:]}\n\n\n\n")
     user_message = state["messages"][-1].content
 
     # Execute code generation task
