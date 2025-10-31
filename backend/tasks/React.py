@@ -176,24 +176,22 @@ class ReActAgent:
 
             step = ReActStep(iteration)
 
-            # Step 1: Thought - What should I do next?
+            # PERFORMANCE OPTIMIZATION: Combined Thought-Action generation (1 LLM call instead of 2)
             logger.info("")
-            logger.info("PHASE 1: THOUGHT GENERATION")
+            logger.info("PHASE: THOUGHT + ACTION GENERATION (COMBINED)")
             logger.info("")
-            thought = await self._generate_thought(user_query, self.steps)
+            thought, action, action_input = await self._generate_thought_and_action(user_query, self.steps)
             step.thought = thought
+            step.action = action
+            step.action_input = action_input
+            
             logger.info("Generated Thought:")
             for _line in thought.splitlines():
                 logger.info(_line)
             logger.info("")
-
-            # Step 2: Action - Select tool and input
+            logger.info(f"Selected Action: {action}")
+            logger.info(f"Action Input: {action_input[:200]}..." if len(action_input) > 200 else f"Action Input: {action_input}")
             logger.info("")
-            logger.info("PHASE 2: ACTION SELECTION")
-            logger.info("")
-            action, action_input = await self._select_action(user_query, thought, self.steps)
-            step.action = action
-            step.action_input = action_input
 
             # Check if we're done
             if action == ToolName.FINISH:
@@ -239,6 +237,12 @@ class ReActAgent:
 
             # Store step
             self.steps.append(step)
+
+            # PERFORMANCE OPTIMIZATION: Early exit if observation contains complete answer
+            if self._should_auto_finish(observation, iteration):
+                logger.info("AUTO-FINISH TRIGGERED - Generating final answer from observation")
+                final_answer = await self._generate_final_answer(user_query, self.steps)
+                break
 
         # If we didn't finish naturally, generate final answer
         if not final_answer:
@@ -344,14 +348,20 @@ class ReActAgent:
 
         # Generate final answer based on all step results
         logger.info("\n" + "=" * 100)
-        logger.info("[ReAct Guided] Generating final answer from all step results...")
+        logger.info("[ReAct Guided] Finalizing answer...")
         logger.info("=" * 100 + "\n")
 
-        final_answer = await self._generate_final_answer_from_steps(
-            user_query=user_query,
-            step_results=step_results,
-            accumulated_observations=accumulated_observations
-        )
+        # PERFORMANCE OPTIMIZATION: Skip final answer generation if last step already contains it
+        if self._is_final_answer_unnecessary(step_results, user_query):
+            final_answer = step_results[-1].observation
+            logger.info("⚡ SKIPPING final answer generation (last step contains sufficient answer)")
+        else:
+            logger.info("Generating comprehensive final answer from all steps...")
+            final_answer = await self._generate_final_answer_from_steps(
+                user_query=user_query,
+                step_results=step_results,
+                accumulated_observations=accumulated_observations
+            )
 
         logger.info("\n[ReAct Agent: GUIDED MODE] EXECUTION COMPLETED")
         logger.info(f"Total steps executed: {len(step_results)}")
@@ -631,6 +641,147 @@ Include specific details, numbers, and facts from the observations:"""
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
+
+    async def _generate_thought_and_action(
+        self,
+        query: str,
+        steps: List[ReActStep]
+    ) -> Tuple[str, str, str]:
+        """
+        PERFORMANCE OPTIMIZATION: Generate thought and action in single LLM call
+        Reduces LLM calls by 50% in free mode execution
+        
+        Args:
+            query: User query
+            steps: Previous ReAct steps
+            
+        Returns:
+            Tuple of (thought, action, action_input)
+        """
+        context = self._format_steps_context(steps)
+        
+        file_guidance = """\nGuidelines:\n- If any files are available, first attempt local analysis using python_coder or python_code.\n- Only use rag_retrieval or web_search if local analysis failed or is insufficient.\n- You may call different tools across iterations to complete the task.""" if self.file_paths else ""
+
+        prompt = f"""You are a helpful AI assistant using the ReAct (Reasoning + Acting) framework.{file_guidance}
+
+Question: {query}
+
+{context}
+
+Think step-by-step and then decide on an action. Provide BOTH your reasoning AND your action in this format:
+
+THOUGHT: [Your step-by-step reasoning about what to do next]
+
+ACTION: [Exactly one of: web_search, rag_retrieval, python_code, python_coder, finish]
+
+ACTION INPUT: [The input for the selected action]
+
+Available Actions:
+1. web_search - Search the web for current information
+2. rag_retrieval - Retrieve relevant documents from uploaded files
+3. python_code - Execute simple Python code
+4. python_coder - Generate and execute complex Python code with file processing
+5. finish - Provide the final answer (use ONLY when you have complete information)
+
+Now provide your thought and action:"""
+
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        response_text = response.content.strip()
+        
+        # Parse the combined response
+        thought, action, action_input = self._parse_thought_and_action(response_text)
+        
+        logger.info("")
+        logger.info("Combined thought-action generation completed")
+        logger.info("")
+        
+        return thought, action, action_input
+
+    def _parse_thought_and_action(self, response: str) -> Tuple[str, str, str]:
+        """
+        Parse combined thought-action response
+        
+        Args:
+            response: LLM response containing thought and action
+            
+        Returns:
+            Tuple of (thought, action, action_input)
+        """
+        import re
+        
+        thought = ""
+        action = ""
+        action_input = ""
+        
+        # Extract thought
+        thought_match = re.search(r'THOUGHT:\s*(.+?)(?=ACTION:|$)', response, re.IGNORECASE | re.DOTALL)
+        if thought_match:
+            thought = thought_match.group(1).strip()
+        
+        # Extract action
+        action_match = re.search(r'ACTION:\s*(\w+)', response, re.IGNORECASE)
+        if action_match:
+            action = action_match.group(1).strip().lower()
+        
+        # Extract action input
+        input_match = re.search(r'ACTION\s+INPUT:\s*(.+?)(?=\n\n|\Z)', response, re.IGNORECASE | re.DOTALL)
+        if input_match:
+            action_input = input_match.group(1).strip()
+        
+        # Fallback parsing if structured format not found
+        if not thought:
+            # Use first paragraph as thought
+            paragraphs = [p.strip() for p in response.split('\n\n') if p.strip()]
+            if paragraphs:
+                thought = paragraphs[0]
+        
+        if not action:
+            # Try to find action using old parsing method
+            action_match = re.search(r'action\s*:\s*(\w+)', response, re.IGNORECASE)
+            if action_match:
+                action = action_match.group(1).strip().lower()
+        
+        if not action_input:
+            # Try old format
+            input_match = re.search(r'action\s+input\s*:\s*(.+?)(?=\n\n|\Z)', response, re.IGNORECASE | re.DOTALL)
+            if input_match:
+                action_input = input_match.group(1).strip()
+        
+        # Validate and apply fuzzy matching for action
+        if action:
+            valid_actions = [e.value for e in ToolName]
+            if action not in valid_actions:
+                # Fuzzy matching
+                action_mapping = {
+                    "web": ToolName.WEB_SEARCH,
+                    "search": ToolName.WEB_SEARCH,
+                    "rag": ToolName.RAG_RETRIEVAL,
+                    "retrieval": ToolName.RAG_RETRIEVAL,
+                    "retrieve": ToolName.RAG_RETRIEVAL,
+                    "document": ToolName.RAG_RETRIEVAL,
+                    "python": ToolName.PYTHON_CODE,
+                    "code": ToolName.PYTHON_CODE,
+                    "coder": ToolName.PYTHON_CODER,
+                    "generate": ToolName.PYTHON_CODER,
+                    "done": ToolName.FINISH,
+                    "answer": ToolName.FINISH,
+                    "complete": ToolName.FINISH,
+                }
+                matched_action = action_mapping.get(action)
+                if matched_action:
+                    action = matched_action
+                else:
+                    action = ToolName.FINISH
+        else:
+            action = ToolName.FINISH
+        
+        # Default values
+        if not thought:
+            thought = "Proceeding with action execution."
+        if not action_input:
+            action_input = "No specific input provided."
+        
+        return thought, action, action_input
 
     async def _generate_thought(self, query: str, steps: List[ReActStep]) -> str:
         """
@@ -1100,14 +1251,50 @@ Based on all the information you've gathered through your actions and observatio
 
     def _format_steps_context(self, steps: List[ReActStep]) -> str:
         """
-        Format previous steps into context string
+        PERFORMANCE OPTIMIZATION: Format previous steps with context pruning
+        
+        - If ≤3 steps: send all steps in full detail
+        - If >3 steps: send summary of early steps + last 2 steps in detail
+        
+        This reduces context size and speeds up LLM processing
         """
         if not steps:
             return ""
 
+        # If few steps, return all details
+        if len(steps) <= 3:
+            return self._format_all_steps(steps)
+        
+        # Context pruning: summary + recent steps
+        context_parts = ["Previous Steps:\n"]
+        
+        # Summary of early steps
+        early_steps = steps[:-2]
+        tools_used = list(set([s.action for s in early_steps if s.action != ToolName.FINISH]))
+        summary = f"Steps 1-{len(early_steps)} completed using: {', '.join(tools_used)}"
+        context_parts.append(f"[Summary] {summary}\n")
+        
+        # Recent steps in full detail
+        context_parts.append("\n[Recent Steps - Full Detail]")
+        recent_steps = steps[-2:]
+        for step in recent_steps:
+            obs_display = step.observation[:500] if len(step.observation) > 500 else step.observation
+            context_parts.append(f"""
+Step {step.step_num}:
+- Thought: {step.thought[:200]}...
+- Action: {step.action}
+- Action Input: {step.action_input[:200] if len(step.action_input) > 200 else step.action_input}
+- Observation: {obs_display}
+""")
+        
+        return "\n".join(context_parts)
+
+    def _format_all_steps(self, steps: List[ReActStep]) -> str:
+        """
+        Format all steps in full detail (used when step count is low)
+        """
         context_parts = ["Previous Steps:"]
         for step in steps:
-            # Increase observation limit to preserve more context (200 -> 1000 chars)
             obs_display = step.observation[:]
             context_parts.append(f"""
 Step {step.step_num}:
@@ -1116,8 +1303,138 @@ Step {step.step_num}:
 - Action Input: {step.action_input}
 - Observation: {obs_display}
 """)
-
         return "\n".join(context_parts)
+
+    def _should_auto_finish(self, observation: str, step_num: int) -> bool:
+        """
+        PERFORMANCE OPTIMIZATION: Detect if observation contains complete answer
+        
+        Early exit optimization - automatically triggers finish if observation
+        appears to contain a complete answer, saving unnecessary iterations.
+        
+        Args:
+            observation: Latest observation from tool execution
+            step_num: Current step number
+            
+        Returns:
+            True if should auto-finish, False to continue iterations
+        """
+        # Need at least 2 steps before considering early exit
+        if step_num < 2:
+            return False
+        
+        # Check minimum length
+        if len(observation) < 200:
+            return False
+        
+        # Skip if observation contains errors
+        if "error" in observation.lower() or "failed" in observation.lower():
+            # But allow if also has success indicators
+            if "success" not in observation.lower():
+                return False
+        
+        # Check for answer indicators
+        answer_phrases = [
+            "the answer",
+            "result is",
+            "therefore",
+            "in conclusion",
+            "based on",
+            "to summarize",
+            "in summary",
+            "concluded",
+            "final result",
+            "outcome is"
+        ]
+        
+        observation_lower = observation.lower()
+        has_answer_phrase = any(phrase in observation_lower for phrase in answer_phrases)
+        
+        # Check for substantive content (numbers, facts, concrete results)
+        has_numbers = any(char.isdigit() for char in observation)
+        is_substantial = len(observation) > 300
+        
+        # Auto-finish if observation looks like a complete answer
+        should_finish = has_answer_phrase or (has_numbers and is_substantial)
+        
+        if should_finish:
+            logger.info("")
+            logger.info("⚡ EARLY EXIT: Observation contains complete answer")
+            logger.info("")
+        
+        return should_finish
+
+    def _is_final_answer_unnecessary(self, step_results: List[StepResult], user_query: str) -> bool:
+        """
+        PERFORMANCE OPTIMIZATION: Check if final answer generation can be skipped
+        
+        Skips final LLM call if the last step already contains a comprehensive answer.
+        
+        Args:
+            step_results: Results from all executed steps
+            user_query: Original user query
+            
+        Returns:
+            True if final answer generation can be skipped, False otherwise
+        """
+        if not step_results:
+            return False
+        
+        last_step = step_results[-1]
+        
+        # Only skip if last step was successful
+        if not last_step.success:
+            return False
+        
+        observation = last_step.observation
+        
+        # Check if observation is substantial
+        if len(observation) < 150:
+            return False
+        
+        # Check if observation appears to be a complete answer (not just raw data)
+        observation_lower = observation.lower()
+        
+        # If it's just code output or raw data, we need synthesis
+        raw_data_indicators = [
+            "dtype:",
+            "columns:",
+            "shape:",
+            "<class",
+            "array(",
+            "dataframe",
+        ]
+        if any(indicator in observation_lower for indicator in raw_data_indicators):
+            return False
+        
+        # If observation contains conclusion/summary phrases, it's likely complete
+        complete_indicators = [
+            "the answer",
+            "in conclusion",
+            "to summarize",
+            "based on the",
+            "the result",
+            "therefore",
+            "this shows",
+            "analysis reveals"
+        ]
+        has_conclusion = any(phrase in observation_lower for phrase in complete_indicators)
+        
+        # If only one step executed and it has a conclusive answer, we can skip
+        if len(step_results) == 1 and has_conclusion:
+            return True
+        
+        # For multi-step executions, only skip if last step is explicitly marked as final/summary
+        last_goal_lower = last_step.goal.lower()
+        is_final_step = any(word in last_goal_lower for word in ["final", "answer", "summary", "synthesize", "combine"])
+        
+        # Skip if it's the final step and has substantial output
+        should_skip = is_final_step and len(observation) > 200
+        
+        if should_skip:
+            logger.info(f"Final answer unnecessary: Last step '{last_step.goal}' contains complete answer ({len(observation)} chars)")
+        
+        return should_skip
 
     def _build_metadata(self) -> Dict[str, Any]:
         """

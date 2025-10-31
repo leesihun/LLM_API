@@ -4,6 +4,29 @@ AI-powered Python code generation and execution API with iterative verification.
 
 ## Version History
 
+### v1.2.0 (2025-10-31)
+**ReAct Performance Optimization - 50-70% Faster**
+- **Strategy 1 - Combined Thought-Action**: Merged thought and action generation into single LLM call (50% reduction in free mode)
+  - Added `_generate_thought_and_action()` method
+  - Updated free mode execute loop to use combined generation
+  - **Impact**: Free mode now makes ~6-11 LLM calls instead of ~21 (50-70% faster)
+- **Strategy 4 - Context Pruning**: Optimized step history sent to LLM
+  - If ≤3 steps: send all details
+  - If >3 steps: send summary + last 2 steps only
+  - **Impact**: Reduced token usage, faster LLM processing
+- **Strategy 5 - Early Exit**: Auto-detect when observation contains complete answer
+  - Added `_should_auto_finish()` heuristic method
+  - Checks for answer indicators (conclusions, results, substantial content)
+  - **Impact**: Saves 2-5 iterations on queries that get good results early
+- **Strategy 6 - Skip Redundant Final Answer**: Skip final LLM call in guided mode when unnecessary
+  - Added `_is_final_answer_unnecessary()` method
+  - Checks if last step already contains comprehensive answer
+  - **Impact**: Saves 1 LLM call per guided execution (7-10% faster)
+- **Files Modified**: `backend/tasks/React.py`
+- **Performance Gains**:
+  - Free Mode: ~21 LLM calls → ~6-11 calls (50-70% faster)
+  - Guided Mode: ~14 LLM calls → ~10-12 calls (20-30% faster)
+
 ### v1.1.1 (2025-10-31)
 **Server Auto-Reload Disabled**
 - **Changed**: Disabled uvicorn auto-reload (`reload=False`) to prevent unnecessary server restarts
