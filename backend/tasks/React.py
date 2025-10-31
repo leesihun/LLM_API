@@ -108,10 +108,18 @@ class ReActAgent:
         Returns:
             Tuple of (final_answer, metadata)
         """
-        logger.info(f"[ReAct Agent] Starting for user: {user_id}, session: {session_id}")
+        logger.info("\n" + "=" * 100)
+        logger.info("[ReAct Agent] EXECUTION STARTED")
+        logger.info("=" * 100)
+        logger.info(f"User ID: {user_id}")
+        logger.info(f"Session ID: {session_id}")
+        logger.info(f"Max Iterations: {self.max_iterations}")
+        logger.info("-" * 100)
 
         # Extract user query
         user_query = messages[-1].content
+        logger.info(f"USER QUERY:\n{user_query}")
+        logger.info("=" * 100 + "\n")
 
         # Initialize
         self.steps = []
@@ -121,66 +129,98 @@ class ReActAgent:
         # ReAct loop
         while iteration < self.max_iterations:
             iteration += 1
-            logger.info(f"[ReAct Agent] Iteration {iteration}/{self.max_iterations}")
+            logger.info("\n" + "#" * 100)
+            logger.info(f"ITERATION {iteration}/{self.max_iterations}")
+            logger.info("#" * 100 + "\n")
 
             step = ReActStep(iteration)
 
             # Step 1: Thought - What should I do next?
+            logger.info("-" * 100)
+            logger.info("PHASE 1: THOUGHT GENERATION")
+            logger.info("-" * 100)
             thought = await self._generate_thought(user_query, self.steps)
             step.thought = thought
-            logger.info(f"[ReAct Agent] Thought: {thought[:]}")
+            logger.info(f"Generated Thought:\n{thought}")
+            logger.info("-" * 100 + "\n")
 
             # Step 2: Action - Select tool and input
+            logger.info("-" * 100)
+            logger.info("PHASE 2: ACTION SELECTION")
+            logger.info("-" * 100)
             action, action_input = await self._select_action(user_query, thought, self.steps)
             step.action = action
             step.action_input = action_input
-            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:]}")
+            logger.info(f"Selected Action: {action}")
+            logger.info(f"Action Input:\n{action_input}")
+            logger.info("-" * 100 + "\n")
 
             # Check if we're done
             if action == ToolName.FINISH:
+                logger.info("\n" + ">" * 100)
+                logger.info("FINISH ACTION DETECTED - GENERATING FINAL ANSWER")
+                logger.info(">" * 100 + "\n")
+
                 # ALWAYS regenerate final answer using all observations to prevent information loss
-                logger.info(f"[ReAct Agent] FINISH action detected, regenerating answer with full context")
                 final_answer = await self._generate_final_answer(user_query, self.steps)
 
                 # If regenerated answer is insufficient, use action_input as fallback
                 if not final_answer or len(final_answer.strip()) < 10:
-                    logger.warning(f"[ReAct Agent] Generated answer insufficient, using action_input as fallback")
+                    logger.warning("\n" + "!" * 100)
+                    logger.warning("WARNING: Generated answer insufficient, using fallback")
+                    logger.warning("!" * 100 + "\n")
                     if action_input and len(action_input.strip()) >= 10:
                         final_answer = action_input
+                        logger.info("Using action_input as fallback answer")
                     else:
                         # Last resort: extract from observations
                         final_answer = self._extract_answer_from_steps(user_query, self.steps)
+                        logger.info("Extracted answer from previous observations")
 
                 step.observation = "Task completed"
                 self.steps.append(step)  # Store the final step before breaking
-                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:]}")
+                logger.info(f"\nFinal Answer Generated:\n{final_answer}")
+                logger.info("\n" + ">" * 100 + "\n")
                 break
 
-            # Step 3: Observation - Execute action and observe resul
+            # Step 3: Observation - Execute action and observe result
+            logger.info("-" * 100)
+            logger.info("PHASE 3: ACTION EXECUTION & OBSERVATION")
+            logger.info("-" * 100)
             observation = await self._execute_action(action, action_input)
             step.observation = observation
-            logger.info(f"[ReAct Agent] Observation: {observation[:]}")
+            logger.info(f"Observation Result:\n{observation}")
+            logger.info("-" * 100 + "\n")
 
             # Store step
             self.steps.append(step)
 
         # If we didn't finish naturally, generate final answer
         if not final_answer:
-            logger.info(f"[ReAct Agent] Max iterations reached, generating final answer")
+            logger.info("\n" + "!" * 100)
+            logger.info("MAX ITERATIONS REACHED - GENERATING FINAL ANSWER")
+            logger.info("!" * 100 + "\n")
             final_answer = await self._generate_final_answer(user_query, self.steps)
 
         # Final validation: ensure we always have an answer
         if not final_answer or not final_answer.strip():
-            logger.error(f"[ReAct Agent] Empty final answer detected! Generating fallback response...")
+            logger.error("\n" + "X" * 100)
+            logger.error("ERROR: EMPTY FINAL ANSWER DETECTED - GENERATING FALLBACK")
+            logger.error("X" * 100 + "\n")
             final_answer = await self._generate_final_answer(user_query, self.steps)
             if not final_answer or not final_answer.strip():
                 final_answer = "I apologize, but I was unable to generate a proper response. Please try rephrasing your question."
 
-        logger.info(f"[ReAct Agent] Completed after {len(self.steps)} steps")
-        logger.info("=" * 80)
-        logger.info(f"[ReAct Agent] FINAL ANSWER:")
+        logger.info("\n" + "=" * 100)
+        logger.info("[ReAct Agent] EXECUTION COMPLETED")
+        logger.info("=" * 100)
+        logger.info(f"Total Steps: {len(self.steps)}")
+        logger.info(f"Total Iterations: {iteration}")
+        logger.info("-" * 100)
+        logger.info("FINAL ANSWER:")
+        logger.info("-" * 100)
         logger.info(f"{final_answer}")
-        logger.info("=" * 80)
+        logger.info("=" * 100 + "\n")
 
         # Build metadata
         metadata = self._build_metadata()
@@ -200,9 +240,9 @@ Question: {query}
 
 {context}
 
-Think step-by-step about what you need to do to answer this question. 
-Break down the task into smaller baby steps. Such as 
-if the question is "Analyze the data", the baby steps could be 
+Think step-by-step about what you need to do to answer this question.
+Break down the task into smaller baby steps. Such as
+if the question is "Analyze the data", the baby steps could be
 
 1. Write down the data to a scratch file.
 2. Load the data from the scratch file.
@@ -219,7 +259,20 @@ What information do you need? What should you do next?
 
 Provide your reasoning:"""
 
+        logger.info("\n" + "~" * 100)
+        logger.info("LLM INPUT (Thought Generation):")
+        logger.info("~" * 100)
+        logger.info(prompt)
+        logger.info("~" * 100 + "\n")
+
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+
+        logger.info("\n" + "~" * 100)
+        logger.info("LLM OUTPUT (Thought Generation):")
+        logger.info("~" * 100)
+        logger.info(response.content.strip())
+        logger.info("~" * 100 + "\n")
+
         return response.content.strip()
 
     async def _select_action(
@@ -277,10 +330,30 @@ Action: search the web
 
 Now provide your action:"""
 
+        logger.info("\n" + "~" * 100)
+        logger.info("LLM INPUT (Action Selection):")
+        logger.info("~" * 100)
+        logger.info(prompt)
+        logger.info("~" * 100 + "\n")
+
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+
+        logger.info("\n" + "~" * 100)
+        logger.info("LLM OUTPUT (Action Selection):")
+        logger.info("~" * 100)
+        logger.info(response.content)
+        logger.info("~" * 100 + "\n")
 
         # Parse response
         action, action_input = self._parse_action_response(response.content)
+
+        logger.info("\n" + "~" * 100)
+        logger.info("PARSED ACTION RESULT:")
+        logger.info("~" * 100)
+        logger.info(f"Action: {action}")
+        logger.info(f"Action Input: {action_input}")
+        logger.info("~" * 100 + "\n")
+
         return action, action_input
 
     def _parse_action_response(self, response: str) -> tuple[str, str]:
@@ -317,10 +390,18 @@ Now provide your action:"""
 
         # Log raw response for debugging if parsing failed
         if not action:
-            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:]}")
+            logger.warning("\n" + "!" * 100)
+            logger.warning("[ReAct Agent] PARSING ERROR - Failed to parse action from response")
+            logger.warning("!" * 100)
+            logger.warning(f"Raw Response:\n{response}")
+            logger.warning("!" * 100 + "\n")
 
         if not action_input:
-            logger.warning(f"[ReAct Agent] Failed to parse action input from response: {response[:]}")
+            logger.warning("\n" + "!" * 100)
+            logger.warning("[ReAct Agent] PARSING ERROR - Failed to parse action input from response")
+            logger.warning("!" * 100)
+            logger.warning(f"Raw Response:\n{response}")
+            logger.warning("!" * 100 + "\n")
 
         # Validate action
         valid_actions = [e.value for e in ToolName]
@@ -345,11 +426,21 @@ Now provide your action:"""
 
             matched_action = action_mapping.get(action, None)
             if matched_action:
-                logger.info(f"[ReAct Agent] Fuzzy matched '{action}' to '{matched_action}'")
+                logger.info("\n" + "~" * 100)
+                logger.info(f"[ReAct Agent] FUZZY MATCH APPLIED")
+                logger.info("~" * 100)
+                logger.info(f"Original: '{action}'")
+                logger.info(f"Matched To: '{matched_action}'")
+                logger.info("~" * 100 + "\n")
                 action = matched_action
             else:
                 # Default to finish if invalid - try to extract answer from response
-                logger.warning(f"[ReAct Agent] Invalid action '{action}', defaulting to finish")
+                logger.warning("\n" + "!" * 100)
+                logger.warning(f"[ReAct Agent] INVALID ACTION - Defaulting to FINISH")
+                logger.warning("!" * 100)
+                logger.warning(f"Invalid Action: '{action}'")
+                logger.warning(f"Valid Actions: {valid_actions}")
+                logger.warning("!" * 100 + "\n")
                 action = ToolName.FINISH
                 if not action_input:
                     # Try to extract answer-like content from response
@@ -357,14 +448,21 @@ Now provide your action:"""
 
         # Additional check: if action is FINISH but action_input is empty/short, try extraction
         if action == ToolName.FINISH and (not action_input or len(action_input.strip()) < 1):
-            logger.warning(f"[ReAct Agent] FINISH action with insufficient input, extracting from response")
+            logger.warning("\n" + "!" * 100)
+            logger.warning("[ReAct Agent] FINISH action with insufficient input")
+            logger.warning("!" * 100)
+            logger.warning("Attempting to extract answer from response...")
+            logger.warning("!" * 100 + "\n")
             extracted = self._extract_answer_from_response(response)
             if extracted and len(extracted.strip()) >= 1:
                 action_input = extracted
+                logger.info(f"Extracted answer: {action_input[:200]}...")
             elif response.strip():
                 action_input = response.strip()
+                logger.info(f"Using full response as answer: {action_input[:200]}...")
             else:
                 action_input = "I don't have enough information to answer this question."
+                logger.warning("No extractable content found, using default message")
 
         return action, action_input
 
@@ -414,36 +512,101 @@ Now provide your action:"""
         Execute the selected action and return observation
         """
         try:
+            logger.info("\n" + "^" * 100)
+            logger.info(f"EXECUTING TOOL: {action}")
+            logger.info("^" * 100)
+            logger.info(f"Tool Input:\n{action_input}")
+            logger.info("^" * 100 + "\n")
+
             if action == ToolName.WEB_SEARCH:
-                logger.info(f"[ReAct Agent] Executing web search: {action_input}")
                 results = await web_search_tool.search(action_input, max_results=5)
                 observation = web_search_tool.format_results(results)
-                return observation if observation else "No web search results found."
+                final_observation = observation if observation else "No web search results found."
+
+                logger.info("\n" + "^" * 100)
+                logger.info("TOOL OUTPUT (Web Search):")
+                logger.info("^" * 100)
+                logger.info(final_observation)
+                logger.info("^" * 100 + "\n")
+
+                return final_observation
 
             elif action == ToolName.RAG_RETRIEVAL:
-                logger.info(f"[ReAct Agent] Executing RAG retrieval: {action_input}")
                 results = await rag_retriever.retrieve(action_input, top_k=5)
                 observation = rag_retriever.format_results(results)
-                return observation if observation else "No relevant documents found."
+                final_observation = observation if observation else "No relevant documents found."
+
+                logger.info("\n" + "^" * 100)
+                logger.info("TOOL OUTPUT (RAG Retrieval):")
+                logger.info("^" * 100)
+                logger.info(final_observation)
+                logger.info("^" * 100 + "\n")
+
+                return final_observation
 
             elif action == ToolName.PYTHON_CODE:
-                logger.info(f"[ReAct Agent] Executing Python code: {action_input[:]}")
                 result = await python_executor.execute(action_input)
-                return python_executor.format_result(result)
+                final_observation = python_executor.format_result(result)
+
+                logger.info("\n" + "^" * 100)
+                logger.info("TOOL OUTPUT (Python Code Execution):")
+                logger.info("^" * 100)
+                logger.info(f"Execution Result:\n{final_observation}")
+                logger.info("^" * 100 + "\n")
+
+                return final_observation
 
             elif action == ToolName.PYTHON_CODER:
-                logger.info(f"[ReAct Agent] Executing Python coder: {action_input[:]}")
                 result = await python_coder_tool.execute_code_task(action_input)
+
+                logger.info("\n" + "^" * 100)
+                logger.info("TOOL OUTPUT (Python Coder - Detailed):")
+                logger.info("^" * 100)
+                logger.info(f"Success: {result['success']}")
+                logger.info(f"Iterations: {result.get('iterations', 'N/A')}")
+                logger.info(f"Execution Time: {result.get('execution_time', 'N/A'):.2f}s" if isinstance(result.get('execution_time'), (int, float)) else f"Execution Time: {result.get('execution_time', 'N/A')}")
+                logger.info("-" * 100)
+
                 if result["success"]:
-                    return f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"
+                    logger.info("Generated Code:")
+                    logger.info(result.get('code', 'N/A'))
+                    logger.info("-" * 100)
+                    logger.info("Execution Output:")
+                    logger.info(result['output'])
+                    logger.info("-" * 100)
+                    if result.get('verification_issues'):
+                        logger.info("Verification Issues:")
+                        logger.info(str(result['verification_issues']))
+                        logger.info("-" * 100)
+
+                    final_observation = f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"
                 else:
-                    return f"Code execution failed: {result.get('error', 'Unknown error')}"
+                    logger.info("Error Details:")
+                    logger.info(result.get('error', 'Unknown error'))
+                    logger.info("-" * 100)
+                    if result.get('code'):
+                        logger.info("Failed Code:")
+                        logger.info(result['code'])
+                        logger.info("-" * 100)
+
+                    final_observation = f"Code execution failed: {result.get('error', 'Unknown error')}"
+
+                logger.info("^" * 100 + "\n")
+                return final_observation
 
             else:
+                logger.warning(f"\n[ReAct Agent] Invalid action attempted: {action}\n")
                 return "Invalid action."
 
         except Exception as e:
-            logger.error(f"[ReAct Agent] Error executing action {action}: {e}")
+            logger.error("\n" + "X" * 100)
+            logger.error(f"ERROR EXECUTING ACTION: {action}")
+            logger.error("X" * 100)
+            logger.error(f"Exception Type: {type(e).__name__}")
+            logger.error(f"Exception Message: {str(e)}")
+            logger.error("X" * 100 + "\n")
+            import traceback
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
             return f"Error executing action: {str(e)}"
 
     async def _generate_final_answer(self, query: str, steps: List[ReActStep]) -> str:
@@ -468,7 +631,20 @@ Your final answer MUST:
 
 Based on all the information you've gathered through your actions and observations, provide a clear, complete, and accurate final answer:"""
 
+        logger.info("\n" + "~" * 100)
+        logger.info("LLM INPUT (Final Answer Generation):")
+        logger.info("~" * 100)
+        logger.info(prompt)
+        logger.info("~" * 100 + "\n")
+
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+
+        logger.info("\n" + "~" * 100)
+        logger.info("LLM OUTPUT (Final Answer Generation):")
+        logger.info("~" * 100)
+        logger.info(response.content.strip())
+        logger.info("~" * 100 + "\n")
+
         return response.content.strip()
 
     def _extract_answer_from_steps(self, query: str, steps: List[ReActStep]) -> str:
