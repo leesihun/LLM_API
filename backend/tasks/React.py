@@ -142,7 +142,15 @@ class ReActAgent:
 
             # Check if we're done
             if action == ToolName.FINISH:
-                final_answer = action_input
+                # Validate that action_input contains a meaningful answer
+                if not action_input or len(action_input.strip()) < 10:
+                    logger.warning(f"[ReAct Agent] FINISH with insufficient input (len={len(action_input.strip())}), generating answer from observations")
+                    final_answer = await self._generate_final_answer(user_query, self.steps)
+                    if not final_answer or len(final_answer.strip()) < 10:
+                        # Last resort: extract from last observation
+                        final_answer = self._extract_answer_from_steps(user_query, self.steps)
+                else:
+                    final_answer = action_input
                 step.observation = "Task completed"
                 self.steps.append(step)  # Store the final step before breaking
                 logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:100]}...")
@@ -229,22 +237,33 @@ Available Actions (choose EXACTLY one of these names):
 4. python_code - Execute simple Python code (use for: quick calculations, simple scripts)
 5. python_coder - Generate, verify, and execute complex Python code with file processing (use for: data analysis, file processing, complex calculations, working with CSV/Excel/PDF files)
 6. math_calc - Perform advanced math calculations (use for: algebra, calculus, equations, symbolic math)
-7. finish - Provide the final answer (use when you have enough information)
+7. finish - Provide the final answer (use ONLY when you have complete information to answer the question)
 
-CRITICAL: You MUST respond with EXACTLY this format (no extra text):
-Action: <one_of_the_action_names_above>
-Action Input: <your_input_here>
+RESPONSE FORMAT - You can think briefly, but you MUST end your response with these two lines:
+Action: <action_name>
+Action Input: <input_for_the_action>
 
-Good example:
+Examples:
+
+Example 1 (Good):
 Action: web_search
 Action Input: current weather in Seoul
 
-Bad example (don't do this):
+Example 2 (Good - with brief reasoning):
+I need current data for this query.
+Action: web_search
+Action Input: latest news about AI
+
+Example 3 (Good - finish action):
+I now have all the information needed.
+Action: finish
+Action Input: The capital of France is Paris, with a population of approximately 2.2 million people.
+
+Example 4 (Bad - don't do this):
 I think we should search the web.
 Action: search the web
-Action Input: weather
 
-Now provide your action (follow the format exactly):"""
+Now provide your action:"""
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
 
@@ -279,8 +298,8 @@ Now provide your action (follow the format exactly):"""
                 action = action_match.group(1).strip().lower()
 
         if not action_input:
-            # Look for "Action Input: <value>" pattern
-            input_match = re.search(r'action\s+input\s*:\s*(.+?)(?:\n|$)', response, re.IGNORECASE)
+            # Look for "Action Input: <value>" pattern - improved to capture multiline
+            input_match = re.search(r'action\s+input\s*:\s*(.+?)(?=\n\n|\naction\s*:|\Z)', response, re.IGNORECASE | re.DOTALL)
             if input_match:
                 action_input = input_match.group(1).strip()
 
@@ -324,19 +343,66 @@ Now provide your action (follow the format exactly):"""
                 logger.info(f"[ReAct Agent] Fuzzy matched '{action}' to '{matched_action}'")
                 action = matched_action
             else:
-                # Default to finish if invalid - use full response as fallback
-                logger.warning(f"[ReAct Agent] Invalid action '{action}', defaulting to finish with full response")
+                # Default to finish if invalid - try to extract answer from response
+                logger.warning(f"[ReAct Agent] Invalid action '{action}', defaulting to finish")
                 action = ToolName.FINISH
                 if not action_input:
-                    # Use the full response as action_input if parsing completely failed
-                    action_input = response.strip() if response.strip() else "I don't have enough information to answer this question."
+                    # Try to extract answer-like content from response
+                    action_input = self._extract_answer_from_response(response)
 
-        # Additional check: if action is FINISH but action_input is empty, use full response
-        if action == ToolName.FINISH and not action_input:
-            logger.warning(f"[ReAct Agent] FINISH action with empty input, using full response")
-            action_input = response.strip() if response.strip() else "I don't have enough information to answer this question."
+        # Additional check: if action is FINISH but action_input is empty/short, try extraction
+        if action == ToolName.FINISH and (not action_input or len(action_input.strip()) < 10):
+            logger.warning(f"[ReAct Agent] FINISH action with insufficient input, extracting from response")
+            extracted = self._extract_answer_from_response(response)
+            if extracted and len(extracted.strip()) >= 10:
+                action_input = extracted
+            elif response.strip():
+                action_input = response.strip()
+            else:
+                action_input = "I don't have enough information to answer this question."
 
         return action, action_input
+
+    def _extract_answer_from_response(self, response: str) -> str:
+        """
+        Extract answer-like content from LLM response when format parsing fails
+        Looks for declarative sentences, conclusions, or final statements
+        """
+        import re
+
+        # Clean up the response
+        text = response.strip()
+
+        # Try to find answer patterns
+        patterns = [
+            r'(?:the answer is|answer:|final answer:|conclusion:|result is?)\s*:?\s*(.+?)(?:\n\n|\Z)',
+            r'(?:therefore|thus|so|hence),?\s+(.+?)(?:\n\n|\Z)',
+            r'(?:in summary|to conclude|in conclusion),?\s+(.+?)(?:\n\n|\Z)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                answer = match.group(1).strip()
+                if len(answer) >= 10:
+                    logger.info(f"[ReAct Agent] Extracted answer from response pattern")
+                    return answer
+
+        # If no patterns match, try to get the last substantial paragraph
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        if paragraphs:
+            last_para = paragraphs[-1]
+            # Avoid action format lines
+            if not re.match(r'action\s*:', last_para, re.IGNORECASE):
+                if len(last_para) >= 20:
+                    logger.info(f"[ReAct Agent] Using last paragraph as answer")
+                    return last_para
+
+        # Fallback: return full response if it's reasonable length
+        if len(text) >= 20:
+            return text
+
+        return ""
 
     async def _execute_action(self, action: str, action_input: str) -> str:
         """
@@ -405,6 +471,29 @@ Based on all the information you've gathered, provide a clear, concise, and accu
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
 
+    def _extract_answer_from_steps(self, query: str, steps: List[ReActStep]) -> str:
+        """
+        Extract answer from observation history when FINISH produces empty result
+        Uses the most recent relevant observation as a fallback answer
+        """
+        if not steps:
+            return "I apologize, but I was unable to generate a proper response. Please try rephrasing your question."
+
+        # Try to find the most informative observation from recent steps
+        for step in reversed(steps):
+            obs = step.observation.strip()
+            # Skip error messages and empty observations
+            if obs and len(obs) >= 20 and not obs.startswith("Error") and not obs.startswith("No "):
+                logger.info(f"[ReAct Agent] Extracted answer from step {step.step_num} observation")
+                return f"Based on my research: {obs}"
+
+        # If no good observation found, summarize what was attempted
+        actions_taken = [step.action for step in steps if step.action != ToolName.FINISH]
+        if actions_taken:
+            return f"I attempted to answer your question using {', '.join(set(actions_taken))}, but was unable to find sufficient information. Please try rephrasing your question or providing more context."
+
+        return "I apologize, but I was unable to generate a proper response. Please try rephrasing your question."
+
     def _format_steps_context(self, steps: List[ReActStep]) -> str:
         """
         Format previous steps into context string
@@ -461,4 +550,4 @@ Step {step.step_num}:
 
 
 # Global ReAct agent instance
-react_agent = ReActAgent(max_iterations=5)
+react_agent = ReActAgent(max_iterations=10)
