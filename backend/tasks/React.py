@@ -79,8 +79,8 @@ class ReActAgent:
 
         # Use AsyncClient for async operations
         async_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=60.0),
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
+            timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=600.0),
+            limits=httpx.Limits(max_keepalive_connections=100, max_connections=200)
         )
 
         self.llm = ChatOllama(
@@ -138,28 +138,28 @@ class ReActAgent:
             action, action_input = await self._select_action(user_query, thought, self.steps)
             step.action = action
             step.action_input = action_input
-            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:100]}...")
+            logger.info(f"[ReAct Agent] Action: {action}, Input: {action_input[:]}...")
 
             # Check if we're done
             if action == ToolName.FINISH:
                 # Validate that action_input contains a meaningful answer
-                if not action_input or len(action_input.strip()) < 10:
+                if not action_input or len(action_input.strip()) < 12:
                     logger.warning(f"[ReAct Agent] FINISH with insufficient input (len={len(action_input.strip())}), generating answer from observations")
                     final_answer = await self._generate_final_answer(user_query, self.steps)
-                    if not final_answer or len(final_answer.strip()) < 10:
+                    if not final_answer or len(final_answer.strip()) < 2:
                         # Last resort: extract from last observation
                         final_answer = self._extract_answer_from_steps(user_query, self.steps)
                 else:
                     final_answer = action_input
                 step.observation = "Task completed"
                 self.steps.append(step)  # Store the final step before breaking
-                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:100]}...")
+                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:]}...")
                 break
 
-            # Step 3: Observation - Execute action and observe result
+            # Step 3: Observation - Execute action and observe resul
             observation = await self._execute_action(action, action_input)
             step.observation = observation
-            logger.info(f"[ReAct Agent] Observation: {observation[:200]}...")
+            logger.info(f"[ReAct Agent] Observation: {observation[:]}...")
 
             # Store step
             self.steps.append(step)
@@ -200,8 +200,22 @@ Question: {query}
 
 {context}
 
-Think step-by-step about what you need to do to answer this question. Do not skip any steps.
-What information do you need? What should you do next? Try to avoid python coder if possible.
+Think step-by-step about what you need to do to answer this question. 
+Break down the task into smaller baby steps. Such as 
+if the question is "Analyze the data", the baby steps could be 
+
+1. Write down the data to a scratch file.
+2. Load the data from the scratch file.
+3. Use math tools to calculate mean, median, etc.
+4. Acquire results from the tools
+5. Append the results to the scratch file.
+6. Read the scratch file and answer the question.
+7. Make sure the answers are adequate to the query.
+8. Finish the task.
+
+These are available tools:
+{settings.available_tools}
+What information do you need? What should you do next?
 
 Provide your reasoning:"""
 
@@ -305,10 +319,10 @@ Now provide your action:"""
 
         # Log raw response for debugging if parsing failed
         if not action:
-            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:200]}...")
+            logger.warning(f"[ReAct Agent] Failed to parse action from response: {response[:]}...")
 
         if not action_input:
-            logger.warning(f"[ReAct Agent] Failed to parse action input from response: {response[:200]}...")
+            logger.warning(f"[ReAct Agent] Failed to parse action input from response: {response[:]}...")
 
         # Validate action
         valid_actions = [e.value for e in ToolName]
@@ -332,7 +346,6 @@ Now provide your action:"""
                 "math": ToolName.MATH_CALC,
                 "calculator": ToolName.MATH_CALC,
                 "calc": ToolName.MATH_CALC,
-                "wiki": ToolName.WIKIPEDIA,
                 "done": ToolName.FINISH,
                 "answer": ToolName.FINISH,
                 "complete": ToolName.FINISH,
