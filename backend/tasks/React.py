@@ -138,18 +138,22 @@ class ReActAgent:
 
             # Check if we're done
             if action == ToolName.FINISH:
-                # Validate that action_input contains a meaningful answer
-                if not action_input or len(action_input.strip()) < 12:
-                    logger.warning(f"[ReAct Agent] FINISH with insufficient input (len={len(action_input.strip())}), generating answer from observations")
-                    final_answer = await self._generate_final_answer(user_query, self.steps)
-                    if not final_answer or len(final_answer.strip()) < 2:
-                        # Last resort: extract from last observation
+                # ALWAYS regenerate final answer using all observations to prevent information loss
+                logger.info(f"[ReAct Agent] FINISH action detected, regenerating answer with full context")
+                final_answer = await self._generate_final_answer(user_query, self.steps)
+
+                # If regenerated answer is insufficient, use action_input as fallback
+                if not final_answer or len(final_answer.strip()) < 10:
+                    logger.warning(f"[ReAct Agent] Generated answer insufficient, using action_input as fallback")
+                    if action_input and len(action_input.strip()) >= 10:
+                        final_answer = action_input
+                    else:
+                        # Last resort: extract from observations
                         final_answer = self._extract_answer_from_steps(user_query, self.steps)
-                else:
-                    final_answer = action_input
+
                 step.observation = "Task completed"
                 self.steps.append(step)  # Store the final step before breaking
-                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:]}...")
+                logger.info(f"[ReAct Agent] Finished with answer: {final_answer[:100]}...")
                 break
 
             # Step 3: Observation - Execute action and observe resul
@@ -454,7 +458,15 @@ Question: {query}
 
 {context}
 
-Based on all the information you've gathered, provide a clear, concise, and accurate final answer to the question:"""
+IMPORTANT: Review ALL the observations above carefully. Each observation contains critical information from tools you executed (web search results, code outputs, document content, etc.).
+
+Your final answer MUST:
+1. Incorporate ALL relevant information from the observations
+2. Be comprehensive and complete
+3. Directly answer the user's question
+4. Include specific details, numbers, facts from the observations
+
+Based on all the information you've gathered through your actions and observations, provide a clear, complete, and accurate final answer:"""
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
@@ -491,12 +503,14 @@ Based on all the information you've gathered, provide a clear, concise, and accu
 
         context_parts = ["Previous Steps:"]
         for step in steps:
+            # Increase observation limit to preserve more context (200 -> 1000 chars)
+            obs_display = step.observation[:]
             context_parts.append(f"""
 Step {step.step_num}:
 - Thought: {step.thought}
 - Action: {step.action}
 - Action Input: {step.action_input}
-- Observation: {step.observation[:]}{"..." if len(step.observation) > 200 else ""}
+- Observation: {obs_display}
 """)
 
         return "\n".join(context_parts)
