@@ -116,12 +116,8 @@ class ReActAgent:
         self.file_paths = file_paths
         self.session_id = session_id
 
-        logger.info("\n" + "=" * 100)
+        logger.info("\n\n\n\n\n" + "=" * 100)
         logger.info("[ReAct Agent] EXECUTION STARTED")
-        logger.info("=" * 100)
-        logger.info(f"User ID: {user_id}")
-        logger.info(f"Session ID: {session_id}")
-        logger.info(f"Max Iterations: {self.max_iterations}")
         if file_paths:
             logger.info(f"Attached Files: {len(file_paths)} files")
         logger.info("-" * 100)
@@ -129,7 +125,7 @@ class ReActAgent:
         # Extract user query
         user_query = messages[-1].content
         logger.info(f"USER QUERY:\n{user_query}")
-        logger.info("=" * 100 + "\n")
+        logger.info("=" * 100 + "\n\n\n\n\n")
 
         # Initialize
         self.steps = []
@@ -161,9 +157,6 @@ class ReActAgent:
             action, action_input = await self._select_action(user_query, thought, self.steps)
             step.action = action
             step.action_input = action_input
-            logger.info(f"Selected Action: {action}")
-            logger.info(f"Action Input:\n{action_input}")
-            logger.info("-" * 100 + "\n")
 
             # Check if we're done
             if action == ToolName.FINISH:
@@ -194,9 +187,9 @@ class ReActAgent:
                 break
 
             # Step 3: Observation - Execute action and observe result
-            logger.info("-" * 100)
+            logger.info("\n\n\n\n\n" + "-" * 100)
             logger.info("PHASE 3: ACTION EXECUTION & OBSERVATION")
-            logger.info("-" * 100)
+            logger.info("-" * 100 + "\n\n\n\n\n")
             observation = await self._execute_action(action, action_input)
             step.observation = observation
             logger.info(f"Observation Result:\n{observation}")
@@ -277,12 +270,6 @@ Provide your reasoning:"""
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
 
-        logger.info("\n" + "~" * 100)
-        logger.info("LLM OUTPUT (Thought Generation):")
-        logger.info("~" * 100)
-        logger.info(response.content.strip())
-        logger.info("~" * 100 + "\n")
-
         return response.content.strip()
 
     async def _select_action(
@@ -348,21 +335,13 @@ Now provide your action:"""
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
 
-        logger.info("\n" + "~" * 100)
-        logger.info("LLM OUTPUT (Action Selection):")
-        logger.info("~" * 100)
-        logger.info(response.content)
-        logger.info("~" * 100 + "\n")
-
         # Parse response
         action, action_input = self._parse_action_response(response.content)
-
-        logger.info("\n" + "~" * 100)
-        logger.info("PARSED ACTION RESULT:")
-        logger.info("~" * 100)
+        
+        logger.info("\n\n\n\n\n" + "~" * 100)
         logger.info(f"Action: {action}")
         logger.info(f"Action Input: {action_input}")
-        logger.info("~" * 100 + "\n")
+        logger.info("~" * 100 + "\n\n\n\n\n")
 
         return action, action_input
 
@@ -522,7 +501,7 @@ Now provide your action:"""
         Execute the selected action and return observation
         """
         try:
-            logger.info("\n" + "^" * 100)
+            logger.info("\n\n\n\n\n" + "^" * 100)
             logger.info(f"EXECUTING TOOL: {action}")
             logger.info("^" * 100)
             logger.info(f"Tool Input:\n{action_input}")

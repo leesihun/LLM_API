@@ -73,7 +73,7 @@ class PlanExecuteTask:
         Returns:
             Dict containing plan, required_tools, estimated_steps, complexity
         """
-        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:]}")
+        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:]}\n\n")
 
         llm = self._get_llm()
 
@@ -91,13 +91,13 @@ Here are a list of Available Tools:
 
 Format your response as a detailed execution plan:
 [Execution Plan]
-1. [First step]
-2. [Second step]
+1. First step
+2. Second step
 ...
-n-1. [Last step]
-n. [Verifying step]
+n-1. Last step
+n. Verifying step
 ...
-When you are done, verify if the required tools are correct. Try to avoid python coder if possible."""
+When you are done, make sure if the required tools are correct."""
 
         response = await llm.ainvoke([HumanMessage(content=planning_prompt)])
         plan_text = response.content
@@ -136,7 +136,7 @@ When you are done, verify if the required tools are correct. Try to avoid python
                 - execution: ReAct execution details (iterations, tools used)
                 - analysis: Plan adherence score and efficiency metrics
         """
-        logger.info(f"[Plan-Execute] Starting workflow for user: {user_id}, session: {session_id}")
+        logger.info(f"\n\n\n[Plan-Execute] Starting workflow for user: {user_id}, session: {session_id}")
         if file_paths:
             logger.info(f"[Plan-Execute] Attached files: {len(file_paths)} files")
 
