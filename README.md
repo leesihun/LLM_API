@@ -4,6 +4,15 @@ AI-powered Python code generation and execution API with iterative verification.
 
 ## Version History
 
+### v1.0.6 (2025-10-31)
+**File-First Agent Behavior + Safe Fallbacks**
+- **Added**: When files are attached, ReAct attempts local analysis first via `python_coder` before other tools.
+- **Added**: Guarded fallback in ReAct to try `python_coder` once before `rag_retrieval`/`web_search`.
+- **Changed**: ReAct action-selection prompt now prefers local file tools when files exist.
+- **Changed**: Plan-and-Execute planning prompt injects file-first guidance when files are present.
+- **Impact**: JSON/Excel analysis reliably uses the uploaded files; gracefully falls back if code fails.
+- **Files Modified**: `backend/tasks/React.py`, `backend/tasks/Plan_execute.py`
+
 ### v1.0.5 (2025-10-31)
 **File Uploads Always Routed to Agentic Workflow**
 - **Fixed**: Attached files were ignored when the query was classified as simple chat, causing replies like "attached file was not provided".

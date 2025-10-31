@@ -92,6 +92,7 @@ class ReActAgent:
         self.steps: List[ReActStep] = []
         self.file_paths: Optional[List[str]] = None  # Store file paths for python_coder
         self.session_id: Optional[str] = None  # Store session_id for python_coder
+        self._attempted_coder: bool = False  # Track whether python_coder was attempted
 
     async def execute(
         self,
@@ -115,6 +116,7 @@ class ReActAgent:
         # Store file paths and session_id for use in python_coder actions
         self.file_paths = file_paths
         self.session_id = session_id
+        self._attempted_coder = False
 
         logger.info("\n\n\n\n\n" + "=" * 100)
         logger.info("[ReAct Agent] EXECUTION STARTED")
@@ -131,6 +133,39 @@ class ReActAgent:
         self.steps = []
         iteration = 0
         final_answer = ""
+
+        # Pre-step: If files are attached, first try python_coder once
+        if self.file_paths:
+            logger.info("[ReAct Agent] Pre-step: Files detected, attempting python_coder before tool loop")
+            try:
+                self._attempted_coder = True
+                coder_result = await python_coder_tool.execute_code_task(
+                    query=user_query,
+                    file_paths=self.file_paths,
+                    session_id=self.session_id
+                )
+
+                # Record as a step for traceability
+                pre_step = ReActStep(0)
+                pre_step.thought = "Files attached; attempt local code analysis first."
+                pre_step.action = ToolName.PYTHON_CODER
+                pre_step.action_input = user_query
+                if coder_result.get("success"):
+                    obs = f"Code executed successfully:\n{coder_result.get('output','')}"
+                else:
+                    obs = f"Code execution failed: {coder_result.get('error','Unknown error')}"
+                pre_step.observation = obs
+                self.steps.append(pre_step)
+
+                if coder_result.get("success") and str(coder_result.get("output", "")).strip():
+                    logger.info("[ReAct Agent] Pre-step succeeded with python_coder; returning result")
+                    final_answer = str(coder_result.get("output", "")).strip()
+                    metadata = self._build_metadata()
+                    return final_answer, metadata
+                else:
+                    logger.info("[ReAct Agent] Pre-step did not yield sufficient result; continuing with tool loop")
+            except Exception as e:
+                logger.warning(f"[ReAct Agent] Pre-step python_coder error: {e}; continuing with tool loop")
 
         # ReAct loop
         while iteration < self.max_iterations:
@@ -291,7 +326,9 @@ Provide your reasoning:"""
         """
         context = self._format_steps_context(steps)
 
-        prompt = f"""You are a helpful AI assistant. Based on your reasoning, select the next action.
+        file_guidance = """\nGuidelines:\n- If any files are available, first attempt local analysis using python_coder or python_code.\n- Only use rag_retrieval or web_search if local analysis failed or is insufficient.\n- You may call different tools across iterations to complete the task.""" if self.file_paths else ""
+
+        prompt = f"""You are a helpful AI assistant. Based on your reasoning, select the next action.{file_guidance}
 
 Question: {query}
 
@@ -527,6 +564,29 @@ Now provide your action:"""
                 return final_observation
 
             elif action == ToolName.RAG_RETRIEVAL:
+                # Guarded fallback: if files exist and python_coder not yet attempted, try it first
+                if self.file_paths and not self._attempted_coder:
+                    logger.info("[ReAct Agent] Guard: Files present and coder not attempted; trying python_coder before RAG")
+                    try:
+                        self._attempted_coder = True
+                        coder_result = await python_coder_tool.execute_code_task(
+                            query=action_input,
+                            file_paths=self.file_paths,
+                            session_id=self.session_id
+                        )
+                        if coder_result.get("success") and str(coder_result.get("output", "")).strip():
+                            final_observation = f"Code executed successfully:\n{coder_result.get('output','')}"
+                            logger.info("")
+                            logger.info("TOOL OUTPUT (Python Coder via Guard):")
+                            for _line in str(final_observation).splitlines():
+                                logger.info(_line)
+                            logger.info("")
+                            return final_observation
+                        else:
+                            logger.info("[ReAct Agent] Guard coder attempt insufficient; proceeding with RAG")
+                    except Exception as e:
+                        logger.warning(f"[ReAct Agent] Guard coder attempt failed: {e}; proceeding with RAG")
+
                 results = await rag_retriever.retrieve(action_input, top_k=5)
                 observation = rag_retriever.format_results(results)
                 final_observation = observation if observation else "No relevant documents found."
@@ -559,6 +619,7 @@ Now provide your action:"""
                     file_paths=self.file_paths,
                     session_id=self.session_id
                 )
+                self._attempted_coder = True
 
                 logger.info("")
                 logger.info("TOOL OUTPUT (Python Coder - Detailed):")

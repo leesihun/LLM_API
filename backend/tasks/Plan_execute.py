@@ -62,7 +62,7 @@ class PlanExecuteTask:
             )
         return self.llm
 
-    async def _create_execution_plan(self, query: str, conversation_history: str) -> Dict[str, Any]:
+    async def _create_execution_plan(self, query: str, conversation_history: str, has_files: bool = False) -> Dict[str, Any]:
         """
         Step 1: Create detailed execution plan by analyzing the query
 
@@ -77,7 +77,9 @@ class PlanExecuteTask:
 
         llm = self._get_llm()
 
-        planning_prompt = f"""You are an AI planning expert. Analyze this user query and create a detailed execution plan.
+        file_first_note = "\nIMPORTANT: There are attached files for this task. Prefer local file analysis FIRST using python_coder or python_code. Only fall back to rag_retrieval or web_search if local analysis fails or is insufficient." if has_files else ""
+
+        planning_prompt = f"""You are an AI planning expert. Analyze this user query and create a detailed execution plan.{file_first_note}
 
 Conversation History:
 {conversation_history}
@@ -149,7 +151,7 @@ When you are done, make sure if the required tools are correct."""
 
         # ====== PHASE 1: PLANNING ======
         logger.info("[Plan-Execute] Phase 1: Creating execution plan...")
-        plan_data = await self._create_execution_plan(user_query, conversation_history)
+        plan_data = await self._create_execution_plan(user_query, conversation_history, has_files=bool(file_paths))
 
         # ====== PHASE 2: EXECUTION with ReAct Agent ======
         logger.info("[Plan-Execute] Phase 2: Executing plan with ReAct Agent...")
