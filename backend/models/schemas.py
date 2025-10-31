@@ -60,6 +60,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = None
     stream: bool = False
     agent_type: Optional[Literal["auto", "react", "plan_execute"]] = "auto"
+    attached_files: Optional[List[str]] = None  # List of file paths to attach (e.g., uploaded files)
 
 
 class ChatCompletionResponse(BaseModel):

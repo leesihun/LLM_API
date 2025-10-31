@@ -90,12 +90,15 @@ class ReActAgent:
             async_client=async_client
         )
         self.steps: List[ReActStep] = []
+        self.file_paths: Optional[List[str]] = None  # Store file paths for python_coder
+        self.session_id: Optional[str] = None  # Store session_id for python_coder
 
     async def execute(
         self,
         messages: List[ChatMessage],
         session_id: Optional[str],
-        user_id: str
+        user_id: str,
+        file_paths: Optional[List[str]] = None
     ) -> tuple[str, Dict[str, Any]]:
         """
         Execute ReAct loop
@@ -104,16 +107,23 @@ class ReActAgent:
             messages: Conversation messages
             session_id: Session ID
             user_id: User identifier
+            file_paths: Optional list of file paths for code execution
 
         Returns:
             Tuple of (final_answer, metadata)
         """
+        # Store file paths and session_id for use in python_coder actions
+        self.file_paths = file_paths
+        self.session_id = session_id
+
         logger.info("\n" + "=" * 100)
         logger.info("[ReAct Agent] EXECUTION STARTED")
         logger.info("=" * 100)
         logger.info(f"User ID: {user_id}")
         logger.info(f"Session ID: {session_id}")
         logger.info(f"Max Iterations: {self.max_iterations}")
+        if file_paths:
+            logger.info(f"Attached Files: {len(file_paths)} files")
         logger.info("-" * 100)
 
         # Extract user query
@@ -557,7 +567,12 @@ Now provide your action:"""
                 return final_observation
 
             elif action == ToolName.PYTHON_CODER:
-                result = await python_coder_tool.execute_code_task(action_input)
+                # Pass attached file paths and session_id to python_coder
+                result = await python_coder_tool.execute_code_task(
+                    query=action_input,
+                    file_paths=self.file_paths,
+                    session_id=self.session_id
+                )
 
                 logger.info("\n" + "^" * 100)
                 logger.info("TOOL OUTPUT (Python Coder - Detailed):")
@@ -565,6 +580,8 @@ Now provide your action:"""
                 logger.info(f"Success: {result['success']}")
                 logger.info(f"Iterations: {result.get('iterations', 'N/A')}")
                 logger.info(f"Execution Time: {result.get('execution_time', 'N/A'):.2f}s" if isinstance(result.get('execution_time'), (int, float)) else f"Execution Time: {result.get('execution_time', 'N/A')}")
+                if self.file_paths:
+                    logger.info(f"Files Used: {len(self.file_paths)} files")
                 logger.info("-" * 100)
 
                 if result["success"]:

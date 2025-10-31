@@ -157,7 +157,7 @@ Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)
     python_code_max_memory: int = 5120
 
     # Temporary execution directory for code execution
-    python_code_execution_dir: str = './data/code_execution'
+    python_code_execution_dir: str = './data/scratch'
 
     # Maximum verification-modification loop iterations
     python_code_max_iterations: int = 10

@@ -51,7 +51,8 @@ class PythonCoderTool:
         self,
         query: str,
         context: Optional[str] = None,
-        file_paths: Optional[List[str]] = None
+        file_paths: Optional[List[str]] = None,
+        session_id: Optional[str] = None
     ) -> Dict[str, Any]:
 
 
@@ -133,7 +134,7 @@ class PythonCoderTool:
                     }
 
         # Phase 3: Execute code
-        execution_result = self.executor.execute_code(code, validated_files)
+        execution_result = self.executor.execute_code(code, validated_files, session_id=session_id)
 
         # Phase 4: Format and return result
         return {

@@ -43,7 +43,7 @@ class PythonExecutor:
         self,
         timeout: int = 30,
         max_memory_mb: int = 512,
-        execution_base_dir: str = "./data/code_execution"
+        execution_base_dir: str = "./data/scratch"
     ):
         """
         Initialize Python executor.
@@ -51,14 +51,14 @@ class PythonExecutor:
         Args:
             timeout: Maximum execution time in seconds
             max_memory_mb: Maximum memory usage in MB (future: cgroups)
-            execution_base_dir: Base directory for temporary execution folders
+            execution_base_dir: Base directory for temporary execution folders (default: ./data/scratch)
         """
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
         self.execution_base_dir = Path(execution_base_dir).resolve()
         self.execution_base_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"[PythonExecutor] Initialized with timeout={timeout}s, max_memory={max_memory_mb}MB")
+        logger.info(f"[PythonExecutor] Initialized with timeout={timeout}s, max_memory={max_memory_mb}MB, base_dir={execution_base_dir}")
 
     def validate_imports(self, code: str) -> Tuple[bool, List[str]]:
         """
@@ -102,7 +102,8 @@ class PythonExecutor:
     def execute_code(
         self,
         code: str,
-        input_files: Optional[Dict[str, str]] = None
+        input_files: Optional[Dict[str, str]] = None,
+        session_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Execute Python code in isolated subprocess.
@@ -110,19 +111,24 @@ class PythonExecutor:
         Args:
             code: Python code to execute
             input_files: Optional dict mapping original file paths to their basenames
+            session_id: Optional session ID to use as execution directory name
 
         Returns:
             Dict with keys: success, output, error, execution_time
         """
         import time
 
-        execution_id = uuid.uuid4().hex
+        # Use session_id if provided, otherwise generate unique ID
+        execution_id = session_id if session_id else uuid.uuid4().hex
         execution_dir = self.execution_base_dir / execution_id
 
         try:
             # Create execution directory
             execution_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"[PythonExecutor] Created execution directory: {execution_dir}")
+            if session_id:
+                logger.info(f"[PythonExecutor] Using session directory: {execution_dir}")
+            else:
+                logger.info(f"[PythonExecutor] Created temporary execution directory: {execution_dir}")
 
             # Copy input files to execution directory
             if input_files:
@@ -178,13 +184,16 @@ class PythonExecutor:
             }
 
         finally:
-            # Cleanup execution directory
-            try:
-                if execution_dir.exists():
-                    shutil.rmtree(execution_dir)
-                    logger.debug(f"[PythonExecutor] Cleaned up {execution_dir}")
-            except Exception as e:
-                logger.warning(f"[PythonExecutor] Failed to cleanup {execution_dir}: {e}")
+            # Cleanup execution directory (only if temporary, not session-based)
+            if not session_id:
+                try:
+                    if execution_dir.exists():
+                        shutil.rmtree(execution_dir)
+                        logger.debug(f"[PythonExecutor] Cleaned up temporary directory {execution_dir}")
+                except Exception as e:
+                    logger.warning(f"[PythonExecutor] Failed to cleanup {execution_dir}: {e}")
+            else:
+                logger.debug(f"[PythonExecutor] Keeping session directory {execution_dir}")
 
     def validate_file_type(self, file_path: str) -> bool:
         """

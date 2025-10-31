@@ -3,8 +3,8 @@ API Routes
 OpenAI-compatible endpoints and authentication
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from typing import Dict, Any, List, Optional
 import time
 import uuid
 from pathlib import Path
@@ -170,22 +170,71 @@ async def list_models(current_user: Dict[str, Any] = Depends(get_current_user)):
 
 @openai_router.post("/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(
-    request: ChatCompletionRequest,
+    model: str = Form(...),
+    messages: str = Form(...),  # JSON string
+    session_id: Optional[str] = Form(None),
+    agent_type: str = Form("auto"),
+    files: Optional[List[UploadFile]] = File(None),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
-    OpenAI-compatible chat completions endpoint
+    OpenAI-compatible chat completions endpoint with multipart/form-data support
     Automatically routes to appropriate task based on query analysis
+    Supports direct file uploads via multipart form
+
+    Parameters:
+        - model: Model name (form field)
+        - messages: JSON string of message array (form field)
+        - session_id: Optional session ID (form field)
+        - agent_type: "auto", "react", or "plan_execute" (form field)
+        - files: Optional file uploads (multipart files)
     """
     user_id = current_user["username"]
-    session_id = request.session_id
+
+    # Parse messages JSON
+    try:
+        messages_list = json.loads(messages)
+        from backend.models.schemas import ChatMessage
+        parsed_messages = [ChatMessage(**msg) for msg in messages_list]
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid messages JSON: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid message format: {str(e)}")
 
     # Create new session if none provided
     if not session_id:
         session_id = conversation_store.create_session(user_id)
 
+    # Handle file uploads - save to temp location
+    file_paths = []
+    if files:
+        uploads_path = Path(settings.uploads_path) / user_id
+        uploads_path.mkdir(parents=True, exist_ok=True)
+
+        for file in files:
+            try:
+                # Save with unique temp ID
+                temp_id = uuid.uuid4().hex[:8]
+                temp_filename = f"temp_{temp_id}_{file.filename}"
+                temp_path = uploads_path / temp_filename
+
+                with open(temp_path, "wb") as f:
+                    content = await file.read()
+                    f.write(content)
+
+                file_paths.append(str(temp_path))
+                logger.info(f"[Chat] Saved temp file: {temp_filename}")
+
+            except Exception as e:
+                logger.error(f"[Chat] Error saving file {file.filename}: {e}")
+                # Continue with other files
+                continue
+
+        if file_paths:
+            logger.info(f"[Chat] Prepared {len(file_paths)} files for session {session_id}")
+
     # Determine task type based on query
-    user_message = request.messages[-1].content if request.messages else ""
+    user_message = parsed_messages[-1].content if parsed_messages else ""
     task_type = await determine_task_type(user_message)
 
     # Execute appropriate task
@@ -195,17 +244,18 @@ async def chat_completions(
         if task_type == "agentic":
             # Use smart agent (auto-selects ReAct or Plan-and-Execute)
             logger.info(f"[Task Classifier] Using agentic worflow for query: {user_message[:]}")
-            agent_type = AgentType(request.agent_type) if request.agent_type else AgentType.AUTO
+            selected_agent_type = AgentType(agent_type) if agent_type else AgentType.AUTO
             response_text, agent_metadata = await smart_agent_task.execute(
-                messages=request.messages,
+                messages=parsed_messages,
                 session_id=session_id,
                 user_id=user_id,
-                agent_type=agent_type
+                agent_type=selected_agent_type,
+                file_paths=file_paths if file_paths else None
             )
         else:
             # Use simple chat
             response_text = await chat_task.execute(
-                messages=request.messages,
+                messages=parsed_messages,
                 session_id=session_id,
                 use_memory=(session_id is not None)
             )
@@ -214,11 +264,20 @@ async def chat_completions(
         conversation_store.add_message(session_id, "user", user_message)
         conversation_store.add_message(session_id, "assistant", response_text)
 
+        # Cleanup temp files after execution
+        if file_paths:
+            for temp_path in file_paths:
+                try:
+                    Path(temp_path).unlink(missing_ok=True)
+                    logger.debug(f"[Chat] Cleaned up temp file: {temp_path}")
+                except Exception as e:
+                    logger.warning(f"[Chat] Failed to cleanup temp file {temp_path}: {e}")
+
         # Build OpenAI-compatible response
         return ChatCompletionResponse(
             id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
             created=int(time.time()),
-            model=request.model,
+            model=model,
             choices=[
                 {
                     "index": 0,
@@ -339,152 +398,6 @@ async def get_history(session_id: str, current_user: Dict[str, Any] = Depends(ge
     if conv is None or conv.user_id != current_user["username"]:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return ConversationHistoryResponse(session_id=session_id, messages=conv.messages)
-
-
-# ============================================================================
-# File Upload Endpoints
-# ============================================================================
-
-@files_router.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    current_user: Dict[str, Any] = Depends(get_current_user)
-):
-    """
-    Upload a document for RAG processing (user-isolated)
-    """
-    try:
-        # Create user-specific upload folder
-        user_id = current_user["username"]
-        uploads_path = Path(settings.uploads_path) / user_id
-        uploads_path.mkdir(parents=True, exist_ok=True)
-
-        # Save file with unique ID
-        file_id = uuid.uuid4().hex[:8]
-        file_path = uploads_path / f"{file_id}_{file.filename}"
-
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-
-        # Index document
-        doc_id = await rag_retriever.index_document(file_path)
-
-        return {
-            "success": True,
-            "file_id": file_id,
-            "doc_id": doc_id,
-            "filename": file.filename,
-            "size": len(content),
-            "message": "File uploaded and indexed successfully"
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error uploading file: {str(e)}"
-        )
-
-
-@files_router.get("/documents")
-async def list_documents(
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    page: int = 1,
-    page_size: int = 20
-):
-    """
-    List uploaded documents with pagination (user-isolated)
-
-    Args:
-        page: Page number (starts at 1)
-        page_size: Number of items per page (max 100)
-
-    Returns:
-        Paginated document list with metadata
-    """
-    user_id = current_user["username"]
-    uploads_path = Path(settings.uploads_path) / user_id
-
-    if not uploads_path.exists():
-        return {
-            "documents": [],
-            "total": 0,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": 0
-        }
-
-    # Limit page_size to prevent abuse
-    page_size = min(page_size, 100)
-    page = max(page, 1)  # Ensure page is at least 1
-
-    documents = []
-    for file_path in uploads_path.iterdir():
-        if file_path.is_file():
-            # Parse file_id from filename (format: {file_id}_{original_name})
-            filename_parts = file_path.name.split("_", 1)
-            file_id = filename_parts[0] if len(filename_parts) > 0 else ""
-            original_name = filename_parts[1] if len(filename_parts) > 1 else file_path.name
-
-            documents.append({
-                "file_id": file_id,
-                "filename": original_name,
-                "full_path": file_path.name,
-                "size": file_path.stat().st_size,
-                "created": file_path.stat().st_ctime
-            })
-
-    # Sort by creation time (newest first)
-    documents.sort(key=lambda x: x["created"], reverse=True)
-
-    # Calculate pagination
-    total = len(documents)
-    total_pages = (total + page_size - 1) // page_size  # Ceiling division
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-
-    # Get page of results
-    paginated_documents = documents[start_idx:end_idx]
-
-    return {
-        "documents": paginated_documents,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages
-    }
-
-
-@files_router.delete("/documents/{file_id}")
-async def delete_document(
-    file_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
-):
-    """Delete a user's document"""
-    user_id = current_user["username"]
-    uploads_path = Path(settings.uploads_path) / user_id
-
-    if not uploads_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No documents found"
-        )
-
-    # Find file with matching file_id
-    deleted = False
-    for file_path in uploads_path.iterdir():
-        if file_path.is_file() and file_path.name.startswith(f"{file_id}_"):
-            file_path.unlink()
-            deleted = True
-            break
-
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found"
-        )
-
-    return {"success": True, "message": "File deleted successfully"}
 
 
 # ============================================================================

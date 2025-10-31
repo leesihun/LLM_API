@@ -111,6 +111,7 @@ When you are done, verify if the required tools are correct. Try to avoid python
         messages: List[ChatMessage],
         session_id: Optional[str],
         user_id: str,
+        file_paths: Optional[List[str]] = None,
         max_iterations: int = 3
     ) -> tuple[str, dict]:
         """
@@ -124,6 +125,7 @@ When you are done, verify if the required tools are correct. Try to avoid python
             messages: List of chat messages (conversation history)
             session_id: Session ID for conversation tracking
             user_id: User identifier
+            file_paths: Optional list of file paths for code execution
             max_iterations: Not used (kept for API compatibility, ReAct uses its own max_iterations=5)
 
         Returns:
@@ -135,6 +137,8 @@ When you are done, verify if the required tools are correct. Try to avoid python
                 - analysis: Plan adherence score and efficiency metrics
         """
         logger.info(f"[Plan-Execute] Starting workflow for user: {user_id}, session: {session_id}")
+        if file_paths:
+            logger.info(f"[Plan-Execute] Attached files: {len(file_paths)} files")
 
         # Extract user query and conversation history
         user_query = messages[-1].content
@@ -154,11 +158,12 @@ When you are done, verify if the required tools are correct. Try to avoid python
         # Create enhanced prompt for ReAct agent with the plan
         plan_aware_messages = self._create_plan_aware_messages(messages, plan_data)
 
-        # Execute ReAct agent with the plan
+        # Execute ReAct agent with the plan and file_paths
         final_output, react_metadata = await react_agent.execute(
             messages=plan_aware_messages,
             session_id=session_id,
-            user_id=user_id
+            user_id=user_id,
+            file_paths=file_paths
         )
 
         # ====== PHASE 3: MONITORING & VERIFICATION ======

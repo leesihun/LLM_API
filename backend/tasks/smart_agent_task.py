@@ -41,7 +41,8 @@ class SmartAgentTask:
         messages: List[ChatMessage],
         session_id: Optional[str],
         user_id: str,
-        agent_type: AgentType = AgentType.AUTO
+        agent_type: AgentType = AgentType.AUTO,
+        file_paths: Optional[List[str]] = None
     ) -> tuple[str, dict]:
         """
         Execute task using the appropriate agent
@@ -51,6 +52,7 @@ class SmartAgentTask:
             session_id: Session ID
             user_id: User identifier
             agent_type: Which agent to use (auto, react, plan_execute)
+            file_paths: Optional list of file paths for code execution
 
         Returns:
             Tuple of (AI response, metadata)
@@ -65,10 +67,10 @@ class SmartAgentTask:
         # Route to appropriate agent
         if selected_agent == AgentType.REACT:
             logger.info(f"[Smart Agent] Using ReAct (Reasoning + Acting)")
-            response, metadata = await react_agent.execute(messages, session_id, user_id)
+            response, metadata = await react_agent.execute(messages, session_id, user_id, file_paths)
         else:
             logger.info(f"[Smart Agent] Using Plan-and-Execute")
-            response, metadata = await plan_execute_task.execute(messages, session_id, user_id)
+            response, metadata = await plan_execute_task.execute(messages, session_id, user_id, file_paths)
 
         # Add selection info to metadata
         metadata["agent_selected"] = selected_agent.value
