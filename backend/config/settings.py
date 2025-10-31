@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 4096  # Good balance for most use cases
 
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.1  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 0.3  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.9       # Nucleus sampling
     ollama_top_k: int = 40          # Top-k sampling
 
@@ -124,6 +124,7 @@ class Settings(BaseSettings):
    - Multi-step reasoning with tools
    - Research, comparison, or investigation
    - Any query mentioning: search, find, research, analyze, current, latest, news, documents, files, code, calculate
+   - Requires precise computation or analysis
 
 2. "chat" - Use when the query is:
    - Simple conversation
@@ -135,7 +136,7 @@ Unless its absolutely necessary, use "chat" for simple questions.
 Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)."""
 
     # Available tools
-    available_tools: list[str] = ['web_search', 'rag', 'data_analysis', 'math_calc', 'python_coder', 'chat']
+    available_tools: list[str] = ['web_search', 'rag', 'python_coder', 'chat']
 
 
 

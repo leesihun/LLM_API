@@ -14,10 +14,8 @@ from backend.config.settings import settings
 from backend.models.schemas import ChatMessage
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
-from backend.tools.data_analysis import data_analysis_tool
 from backend.tools.python_executor import python_executor
 from backend.tools.python_coder_tool import python_coder_tool
-from backend.tools.math_calculator import math_calculator
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +23,8 @@ class ToolName(str, Enum):
     """Available tools for ReAct agent"""
     WEB_SEARCH = "web_search"
     RAG_RETRIEVAL = "rag_retrieval"
-    DATA_ANALYSIS = "data_analysis"
     PYTHON_CODE = "python_code"
     PYTHON_CODER = "python_coder"
-    MATH_CALC = "math_calc"
     FINISH = "finish"
 
 
@@ -247,11 +243,9 @@ Your Thought: {thought}
 Available Actions (choose EXACTLY one of these names):
 1. web_search - Search the web for current information (use for: news, current events, latest data)
 2. rag_retrieval - Retrieve relevant documents from uploaded files (use for: document queries, file content)
-3. data_analysis - Analyze large structured data format JSON data with statistics (use for: min, max, mean, count, sum)
-4. python_code - Execute simple Python code (use for: quick calculations, simple scripts)
-5. python_coder - Generate, verify, and execute complex Python code with file processing (use for: data analysis, file processing, complex calculations, working with CSV/Excel/PDF files)
-6. math_calc - Perform math calculations (use for: algebra, calculus, equations, symbolic math)
-7. finish - Provide the final answer (use ONLY when you have complete information to answer the question)
+3. python_code - Execute simple Python code (use for: quick calculations, simple scripts)
+4. python_coder - Generate, verify, and execute complex Python code with file processing (use for: data analysis, file processing, complex calculations, working with CSV/Excel/PDF files)
+5. finish - Provide the final answer (use ONLY when you have complete information to answer the question)
 
 RESPONSE FORMAT - You can think briefly, but you MUST end your response with these two lines:
 Action: <action_name>
@@ -335,17 +329,11 @@ Now provide your action:"""
                 "retrieval": ToolName.RAG_RETRIEVAL,
                 "retrieve": ToolName.RAG_RETRIEVAL,
                 "document": ToolName.RAG_RETRIEVAL,
-                "data": ToolName.DATA_ANALYSIS,
-                "analyze": ToolName.DATA_ANALYSIS,
-                "analysis": ToolName.DATA_ANALYSIS,
                 "python": ToolName.PYTHON_CODE,
                 "code": ToolName.PYTHON_CODE,
                 "coder": ToolName.PYTHON_CODER,
                 "generate": ToolName.PYTHON_CODER,
                 "generate_code": ToolName.PYTHON_CODER,
-                "math": ToolName.MATH_CALC,
-                "calculator": ToolName.MATH_CALC,
-                "calc": ToolName.MATH_CALC,
                 "done": ToolName.FINISH,
                 "answer": ToolName.FINISH,
                 "complete": ToolName.FINISH,
@@ -434,11 +422,6 @@ Now provide your action:"""
                 observation = rag_retriever.format_results(results)
                 return observation if observation else "No relevant documents found."
 
-            elif action == ToolName.DATA_ANALYSIS:
-                logger.info(f"[ReAct Agent] Executing data analysis: {action_input}")
-                result = await data_analysis_tool.analyze_json(action_input)
-                return result
-
             elif action == ToolName.PYTHON_CODE:
                 logger.info(f"[ReAct Agent] Executing Python code: {action_input[:50]}...")
                 result = await python_executor.execute(action_input)
@@ -451,14 +434,6 @@ Now provide your action:"""
                     return f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"
                 else:
                     return f"Code execution failed: {result.get('error', 'Unknown error')}"
-
-            elif action == ToolName.MATH_CALC:
-                logger.info(f"[ReAct Agent] Calculating: {action_input}")
-                # Log the input before normalization (in case of unicode symbols)
-                logger.debug(f"[ReAct Agent] Math input (raw): {repr(action_input)}")
-                result = await math_calculator.calculate(action_input)
-                logger.info(f"[ReAct Agent] Math result: {result}")
-                return result
 
             else:
                 return "Invalid action."

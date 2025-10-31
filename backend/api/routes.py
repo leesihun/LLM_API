@@ -37,7 +37,6 @@ from backend.tasks.chat_task import chat_task
 from backend.tasks.Plan_execute import PlanExecuteTask
 from backend.tasks.smart_agent_task import smart_agent_task, AgentType
 from backend.tools.rag_retriever import rag_retriever
-from backend.tools.math_calculator import math_calculator
 from backend.tools.web_search import web_search_tool
 from backend.config.settings import settings
 import logging
@@ -528,24 +527,13 @@ async def list_tools(_: Dict[str, Any] = Depends(get_current_user)):
     tools = [
         ToolInfo(name="web_search", description="Search the web for current information"),
         ToolInfo(name="rag_retrieval", description="Retrieve from your uploaded documents"),
-        ToolInfo(name="data_analysis", description="Analyze tabular data"),
         ToolInfo(name="python_code", description="Run safe Python code snippets"),
-        ToolInfo(name="math_calc", description="Symbolic and numeric math calculations"),
+        ToolInfo(name="python_coder", description="Generate and execute complex Python code"),
         ToolInfo(name="wikipedia", description="Search summaries from Wikipedia"),
         ToolInfo(name="weather", description="Get weather for a location"),
         ToolInfo(name="sql_query", description="Run parameterized SQL queries (configured)"),
     ]
     return ToolListResponse(tools=tools)
-
-
-@tools_router.post("/math", response_model=MathResponse)
-async def tool_math(request: MathRequest, _: Dict[str, Any] = Depends(get_current_user)):
-    result = await math_calculator.calculate(request.expression, request.return_latex)
-
-    if request.return_latex and isinstance(result, dict):
-        return MathResponse(result=result["result"], latex=result.get("latex"))
-    else:
-        return MathResponse(result=result if isinstance(result, str) else result["result"])
 
 
 @tools_router.post("/websearch", response_model=WebSearchResponse)
