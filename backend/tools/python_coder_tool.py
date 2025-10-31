@@ -288,7 +288,7 @@ Task: {query}
 
 Important requirements:
 1. If files are provided, access them by their full path
-2. Output results by printing JSON to stdout
+2. Output results by using prints
 3. Include error handling
 4. Add docstring explaining what the code does
 5. Keep code clean and readabl
@@ -373,11 +373,10 @@ Type safety (appropriate type checks before operations)
 Division by zero protection
 Index out of bounds protection
 Null/None checks before attribute access
-OUTPUT FORMAT COMPLIANCE
-Does code output JSON to stdout as required?
-Is the JSON structure valid and parseable?
-Are error states properly communicated in output?
-Does it use print() for output (not return statements)?
+OUTPUT FORMAT
+Does code use print() statements to display results?
+Are outputs clear and informative?
+Are error states properly communicated?
 PERFORMANCE & EFFICIENCY
 Reasonable algorithmic complexity (no O(n³) or worse for large data)
 Efficient data structure usage
