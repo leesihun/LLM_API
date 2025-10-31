@@ -247,10 +247,10 @@ Your Thought: {thought}
 Available Actions (choose EXACTLY one of these names):
 1. web_search - Search the web for current information (use for: news, current events, latest data)
 2. rag_retrieval - Retrieve relevant documents from uploaded files (use for: document queries, file content)
-3. data_analysis - Analyze JSON data with statistics (use for: min, max, mean, count, sum)
+3. data_analysis - Analyze large structured data format JSON data with statistics (use for: min, max, mean, count, sum)
 4. python_code - Execute simple Python code (use for: quick calculations, simple scripts)
 5. python_coder - Generate, verify, and execute complex Python code with file processing (use for: data analysis, file processing, complex calculations, working with CSV/Excel/PDF files)
-6. math_calc - Perform advanced math calculations (use for: algebra, calculus, equations, symbolic math)
+6. math_calc - Perform math calculations (use for: algebra, calculus, equations, symbolic math)
 7. finish - Provide the final answer (use ONLY when you have complete information to answer the question)
 
 RESPONSE FORMAT - You can think briefly, but you MUST end your response with these two lines:
