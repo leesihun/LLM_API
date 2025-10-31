@@ -75,12 +75,21 @@ class PythonExecutor:
         """
         Create a safe global namespace with restricted built-ins
         """
-        # Start with safe built-ins
-        safe_builtins = {
-            name: getattr(__builtins__, name)
-            for name in dir(__builtins__)
-            if not name.startswith('_') and name not in self.FORBIDDEN_BUILTINS
-        }
+        # Handle both dict and module types for __builtins__
+        if isinstance(__builtins__, dict):
+            # When __builtins__ is a dict, access directly
+            safe_builtins = {
+                name: __builtins__[name]
+                for name in __builtins__
+                if not name.startswith('_') and name not in self.FORBIDDEN_BUILTINS
+            }
+        else:
+            # When __builtins__ is a module, use getattr
+            safe_builtins = {
+                name: getattr(__builtins__, name)
+                for name in dir(__builtins__)
+                if not name.startswith('_') and name not in self.FORBIDDEN_BUILTINS
+            }
 
         # Add safe modules
         safe_globals = {'__builtins__': safe_builtins}

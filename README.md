@@ -4,6 +4,17 @@ AI-powered Python code generation and execution API with iterative verification.
 
 ## Version History
 
+### v1.0.2 (2025-10-31)
+**Python Executor - Fixed NameError for Built-in Functions**
+- **Fixed**: `NameError: name 'print' is not defined` when executing code via PYTHON_CODE tool
+- **Reason**: `__builtins__` can be either a dict or module depending on execution context; the code only handled the module case
+- **Impact**: Built-in functions like `print`, `len`, `str`, `int`, etc. now work correctly in executed code
+- **Files Modified**: `backend/tools/python_executor.py`
+- **Details**: 
+  - Updated `_create_safe_globals()` method to handle both dict and module types for `__builtins__`
+  - Adds type checking: uses dict access when `__builtins__` is dict, getattr when it's a module
+  - Ensures all non-forbidden built-in functions are available in the execution environment
+
 ### v1.0.1 (2025-10-31)
 **Python Coder Tool - Output Format Simplification**
 - **Changed**: Removed JSON output requirement from code verification prompt
