@@ -142,27 +142,29 @@ class ReActAgent:
             step = ReActStep(iteration)
 
             # Step 1: Thought - What should I do next?
-            logger.info("-" * 100)
+            logger.info("")
             logger.info("PHASE 1: THOUGHT GENERATION")
-            logger.info("-" * 100)
+            logger.info("")
             thought = await self._generate_thought(user_query, self.steps)
             step.thought = thought
-            logger.info(f"Generated Thought:\n{thought}")
-            logger.info("-" * 100 + "\n")
+            logger.info("Generated Thought:")
+            for _line in thought.splitlines():
+                logger.info(_line)
+            logger.info("")
 
             # Step 2: Action - Select tool and input
-            logger.info("-" * 100)
+            logger.info("")
             logger.info("PHASE 2: ACTION SELECTION")
-            logger.info("-" * 100)
+            logger.info("")
             action, action_input = await self._select_action(user_query, thought, self.steps)
             step.action = action
             step.action_input = action_input
 
             # Check if we're done
             if action == ToolName.FINISH:
-                logger.info("\n" + ">" * 100)
+                logger.info("")
                 logger.info("FINISH ACTION DETECTED - GENERATING FINAL ANSWER")
-                logger.info(">" * 100 + "\n")
+                logger.info("")
 
                 # ALWAYS regenerate final answer using all observations to prevent information loss
                 final_answer = await self._generate_final_answer(user_query, self.steps)
@@ -182,27 +184,32 @@ class ReActAgent:
 
                 step.observation = "Task completed"
                 self.steps.append(step)  # Store the final step before breaking
-                logger.info(f"\nFinal Answer Generated:\n{final_answer}")
-                logger.info("\n" + ">" * 100 + "\n")
+                logger.info("")
+                logger.info("Final Answer Generated:")
+                for _line in str(final_answer).splitlines():
+                    logger.info(_line)
+                logger.info("")
                 break
 
             # Step 3: Observation - Execute action and observe result
-            logger.info("\n\n\n\n\n" + "-" * 100)
+            logger.info("")
             logger.info("PHASE 3: ACTION EXECUTION & OBSERVATION")
-            logger.info("-" * 100 + "\n\n\n\n\n")
+            logger.info("")
             observation = await self._execute_action(action, action_input)
             step.observation = observation
-            logger.info(f"Observation Result:\n{observation}")
-            logger.info("-" * 100 + "\n")
+            logger.info("Observation Result:")
+            for _line in str(observation).splitlines():
+                logger.info(_line)
+            logger.info("")
 
             # Store step
             self.steps.append(step)
 
         # If we didn't finish naturally, generate final answer
         if not final_answer:
-            logger.info("\n" + "!" * 100)
+            logger.info("")
             logger.info("MAX ITERATIONS REACHED - GENERATING FINAL ANSWER")
-            logger.info("!" * 100 + "\n")
+            logger.info("")
             final_answer = await self._generate_final_answer(user_query, self.steps)
 
         # Final validation: ensure we always have an answer
@@ -214,16 +221,15 @@ class ReActAgent:
             if not final_answer or not final_answer.strip():
                 final_answer = "I apologize, but I was unable to generate a proper response. Please try rephrasing your question."
 
-        logger.info("\n" + "=" * 100)
+        logger.info("")
         logger.info("[ReAct Agent] EXECUTION COMPLETED")
-        logger.info("=" * 100)
+        logger.info("")
         logger.info(f"Total Steps: {len(self.steps)}")
         logger.info(f"Total Iterations: {iteration}")
-        logger.info("-" * 100)
         logger.info("FINAL ANSWER:")
-        logger.info("-" * 100)
-        logger.info(f"{final_answer}")
-        logger.info("=" * 100 + "\n")
+        for _line in str(final_answer).splitlines():
+            logger.info(_line)
+        logger.info("")
 
         # Build metadata
         metadata = self._build_metadata()
@@ -262,11 +268,10 @@ What information do you need? What should you do next?
 
 Provide your reasoning:"""
 
-        logger.info("\n" + "~" * 100)
-        logger.info("LLM INPUT (Thought Generation):")
-        logger.info("~" * 100)
-        logger.info(prompt)
-        logger.info("~" * 100 + "\n")
+        # Intentionally do not log system prompt. Inputs are already captured elsewhere.
+        logger.info("")
+        logger.info("Thought generation requested")
+        logger.info("")
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
 
@@ -327,21 +332,20 @@ Action: search the web
 
 Now provide your action:"""
 
-        logger.info("\n" + "~" * 100)
-        logger.info("LLM INPUT (Action Selection):")
-        logger.info("~" * 100)
-        logger.info(prompt)
-        logger.info("~" * 100 + "\n")
+        # Intentionally do not log system prompt for action selection
+        logger.info("")
+        logger.info("Action selection requested")
+        logger.info("")
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
 
         # Parse response
         action, action_input = self._parse_action_response(response.content)
         
-        logger.info("\n\n\n\n\n" + "~" * 100)
+        logger.info("")
         logger.info(f"Action: {action}")
         logger.info(f"Action Input: {action_input}")
-        logger.info("~" * 100 + "\n\n\n\n\n")
+        logger.info("")
 
         return action, action_input
 
@@ -501,22 +505,24 @@ Now provide your action:"""
         Execute the selected action and return observation
         """
         try:
-            logger.info("\n\n\n\n\n" + "^" * 100)
+            logger.info("")
             logger.info(f"EXECUTING TOOL: {action}")
-            logger.info("^" * 100)
-            logger.info(f"Tool Input:\n{action_input}")
-            logger.info("^" * 100 + "\n")
+            logger.info("")
+            logger.info("Tool Input:")
+            for _line in str(action_input).splitlines():
+                logger.info(_line)
+            logger.info("")
 
             if action == ToolName.WEB_SEARCH:
                 results = await web_search_tool.search(action_input, max_results=5)
                 observation = web_search_tool.format_results(results)
                 final_observation = observation if observation else "No web search results found."
 
-                logger.info("\n" + "^" * 100)
+                logger.info("")
                 logger.info("TOOL OUTPUT (Web Search):")
-                logger.info("^" * 100)
-                logger.info(final_observation)
-                logger.info("^" * 100 + "\n")
+                for _line in str(final_observation).splitlines():
+                    logger.info(_line)
+                logger.info("")
 
                 return final_observation
 
@@ -525,11 +531,11 @@ Now provide your action:"""
                 observation = rag_retriever.format_results(results)
                 final_observation = observation if observation else "No relevant documents found."
 
-                logger.info("\n" + "^" * 100)
+                logger.info("")
                 logger.info("TOOL OUTPUT (RAG Retrieval):")
-                logger.info("^" * 100)
-                logger.info(final_observation)
-                logger.info("^" * 100 + "\n")
+                for _line in str(final_observation).splitlines():
+                    logger.info(_line)
+                logger.info("")
 
                 return final_observation
 
@@ -537,11 +543,12 @@ Now provide your action:"""
                 result = await python_executor.execute(action_input)
                 final_observation = python_executor.format_result(result)
 
-                logger.info("\n" + "^" * 100)
+                logger.info("")
                 logger.info("TOOL OUTPUT (Python Code Execution):")
-                logger.info("^" * 100)
-                logger.info(f"Execution Result:\n{final_observation}")
-                logger.info("^" * 100 + "\n")
+                logger.info("Execution Result:")
+                for _line in str(final_observation).splitlines():
+                    logger.info(_line)
+                logger.info("")
 
                 return final_observation
 
@@ -553,41 +560,45 @@ Now provide your action:"""
                     session_id=self.session_id
                 )
 
-                logger.info("\n" + "^" * 100)
+                logger.info("")
                 logger.info("TOOL OUTPUT (Python Coder - Detailed):")
-                logger.info("^" * 100)
                 logger.info(f"Success: {result['success']}")
                 logger.info(f"Iterations: {result.get('iterations', 'N/A')}")
                 logger.info(f"Execution Time: {result.get('execution_time', 'N/A'):.2f}s" if isinstance(result.get('execution_time'), (int, float)) else f"Execution Time: {result.get('execution_time', 'N/A')}")
                 if self.file_paths:
                     logger.info(f"Files Used: {len(self.file_paths)} files")
-                logger.info("-" * 100)
+                logger.info("")
 
                 if result["success"]:
                     logger.info("Generated Code:")
-                    logger.info(result.get('code', 'N/A'))
-                    logger.info("-" * 100)
+                    for _line in str(result.get('code', 'N/A')).splitlines():
+                        logger.info(_line)
+                    logger.info("")
                     logger.info("Execution Output:")
-                    logger.info(result['output'])
-                    logger.info("-" * 100)
+                    for _line in str(result['output']).splitlines():
+                        logger.info(_line)
+                    logger.info("")
                     if result.get('verification_issues'):
                         logger.info("Verification Issues:")
-                        logger.info(str(result['verification_issues']))
-                        logger.info("-" * 100)
+                        for _line in str(result['verification_issues']).splitlines():
+                            logger.info(_line)
+                        logger.info("")
 
                     final_observation = f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"
                 else:
                     logger.info("Error Details:")
-                    logger.info(result.get('error', 'Unknown error'))
-                    logger.info("-" * 100)
+                    for _line in str(result.get('error', 'Unknown error')).splitlines():
+                        logger.info(_line)
+                    logger.info("")
                     if result.get('code'):
                         logger.info("Failed Code:")
-                        logger.info(result['code'])
-                        logger.info("-" * 100)
+                        for _line in str(result['code']).splitlines():
+                            logger.info(_line)
+                        logger.info("")
 
                     final_observation = f"Code execution failed: {result.get('error', 'Unknown error')}"
 
-                logger.info("^" * 100 + "\n")
+                logger.info("")
                 return final_observation
 
             else:
@@ -595,14 +606,14 @@ Now provide your action:"""
                 return "Invalid action."
 
         except Exception as e:
-            logger.error("\n" + "X" * 100)
+            logger.error("")
             logger.error(f"ERROR EXECUTING ACTION: {action}")
-            logger.error("X" * 100)
             logger.error(f"Exception Type: {type(e).__name__}")
             logger.error(f"Exception Message: {str(e)}")
-            logger.error("X" * 100 + "\n")
             import traceback
-            logger.error(f"Traceback:\n{traceback.format_exc()}")
+            logger.error("Traceback:")
+            for _line in traceback.format_exc().splitlines():
+                logger.error(_line)
             return f"Error executing action: {str(e)}"
 
     async def _generate_final_answer(self, query: str, steps: List[ReActStep]) -> str:
@@ -627,19 +638,18 @@ Your final answer MUST:
 
 Based on all the information you've gathered through your actions and observations, provide a clear, complete, and accurate final answer:"""
 
-        logger.info("\n" + "~" * 100)
-        logger.info("LLM INPUT (Final Answer Generation):")
-        logger.info("~" * 100)
-        logger.info(prompt)
-        logger.info("~" * 100 + "\n")
+        # Intentionally do not log system prompt for final answer generation
+        logger.info("")
+        logger.info("Final answer generation requested")
+        logger.info("")
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
 
-        logger.info("\n" + "~" * 100)
+        logger.info("")
         logger.info("LLM OUTPUT (Final Answer Generation):")
-        logger.info("~" * 100)
-        logger.info(response.content.strip())
-        logger.info("~" * 100 + "\n")
+        for _line in response.content.strip().splitlines():
+            logger.info(_line)
+        logger.info("")
 
         return response.content.strip()
 

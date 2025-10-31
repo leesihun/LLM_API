@@ -237,6 +237,11 @@ async def chat_completions(
     user_message = parsed_messages[-1].content if parsed_messages else ""
     task_type = await determine_task_type(user_message)
 
+    # If files are attached, force agentic workflow to ensure file handling
+    if file_paths:
+        logger.info("[Chat] Files attached; forcing agentic workflow")
+        task_type = "agentic"
+
     # Execute appropriate task
     try:
         agent_metadata = None

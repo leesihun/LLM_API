@@ -18,35 +18,58 @@ from backend.api.routes import auth_router, openai_router, files_router, admin_r
 # ============================================================================
 
 def setup_logging():
-    """Configure application logging with proper Unicode handling for Windows"""
+    """Configure application logging with readable, consistent formatting."""
     import sys
+
+    class ReadabilityFilter(logging.Filter):
+        """Reduce noisy logs: drop banner/separator lines and collapse long/multiline messages."""
+        SEPARATOR_CHARS = set("=~^!-#>X")
+
+        def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
+            try:
+                if isinstance(record.msg, str):
+                    msg = record.msg.strip()
+                    # Skip empty or banner-only lines (e.g., "====...", "-----...")
+                    if msg and len(msg) >= 10 and all(ch in self.SEPARATOR_CHARS for ch in set(msg)):
+                        return False
+                    # Collapse multiline logs to first line with an indicator
+                    if "\n" in msg:
+                        first_line = msg.splitlines()[0].strip()
+                        msg = f"{first_line} [...]"
+                    # Truncate overly long messages
+                    if len(msg) > 400:
+                        msg = msg[:400] + "..."
+                    record.msg = msg
+            except Exception:
+                # Never block logging if the filter has an issue
+                pass
+            return True
 
     log_path = Path(settings.log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    log_format = '%(asctime)s %(levelname)s %(name)s:%(funcName)s:%(lineno)d - %(message)s'
+
     # Create console handler with UTF-8 encoding for Windows compatibility
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(getattr(logging, settings.log_level))
-    console_handler.setFormatter(
-        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    )
+    console_handler.setFormatter(logging.Formatter(log_format))
+    console_handler.addFilter(ReadabilityFilter())
 
     # Force UTF-8 encoding on the stream to handle Unicode characters
     if hasattr(console_handler.stream, 'reconfigure'):
-        # Python 3.7+ on Windows
         console_handler.stream.reconfigure(encoding='utf-8', errors='replace')
 
     # Create file handler with UTF-8 encoding
     file_handler = logging.FileHandler(settings.log_file, encoding='utf-8')
     file_handler.setLevel(getattr(logging, settings.log_level))
-    file_handler.setFormatter(
-        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    )
+    file_handler.setFormatter(logging.Formatter(log_format))
+    file_handler.addFilter(ReadabilityFilter())
 
     # Configure root logger
     logging.basicConfig(
         level=getattr(logging, settings.log_level),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format=log_format,
         handlers=[file_handler, console_handler]
     )
 

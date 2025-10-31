@@ -4,6 +4,33 @@ AI-powered Python code generation and execution API with iterative verification.
 
 ## Version History
 
+### v1.0.5 (2025-10-31)
+**File Uploads Always Routed to Agentic Workflow**
+- **Fixed**: Attached files were ignored when the query was classified as simple chat, causing replies like "attached file was not provided".
+- **Changed**: If files are attached to `/v1/chat/completions`, the request now forces the agentic workflow to ensure file handling.
+- **Impact**: JSON/Excel analysis examples reliably access the uploaded files.
+- **Files Modified**: `backend/api/routes.py`
+
+### v1.0.3 (2025-10-31)
+**Logging Readability Overhaul**
+- **Changed**: Standardized log format to include timestamp, level, module, function, and line
+- **Added**: Global readability filter that removes banner/separator lines, collapses multi-line messages to a single-line preview, and truncates overly long entries
+- **Impact**: `logger.info` output across the entire app is significantly cleaner and easier to scan
+- **Files Modified**: `backend/api/app.py`
+- **Details**:
+  - Introduced `ReadabilityFilter` applied to both console and file handlers
+  - New format: `%(asctime)s %(levelname)s %(name)s:%(funcName)s:%(lineno)d - %(message)s`
+
+### v1.0.4 (2025-10-31)
+**ReAct Logging: Inputs/Outputs Only + Line Breaks**
+- **Changed**: Removed logging of full LLM system prompts in ReAct agent
+- **Added**: Line-by-line logging for LLM/tool outputs and extra blank lines between phases for readability
+- **Impact**: Clearer logs showing only inputs and outputs, without verbose prompt templates
+- **Files Modified**: `backend/tasks/React.py`
+- **Details**:
+  - Replaced multi-line single log entries with per-line logs to avoid collapsing
+  - Omitted prompt bodies in thought/action/final-answer generation logs
+
 ### v1.0.2 (2025-10-31)
 **Python Executor - Fixed NameError for Built-in Functions**
 - **Fixed**: `NameError: name 'print' is not defined` when executing code via PYTHON_CODE tool
