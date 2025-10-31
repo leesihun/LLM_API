@@ -352,10 +352,10 @@ Now provide your action:"""
                     action_input = self._extract_answer_from_response(response)
 
         # Additional check: if action is FINISH but action_input is empty/short, try extraction
-        if action == ToolName.FINISH and (not action_input or len(action_input.strip()) < 10):
+        if action == ToolName.FINISH and (not action_input or len(action_input.strip()) < 1):
             logger.warning(f"[ReAct Agent] FINISH action with insufficient input, extracting from response")
             extracted = self._extract_answer_from_response(response)
-            if extracted and len(extracted.strip()) >= 10:
+            if extracted and len(extracted.strip()) >= 1:
                 action_input = extracted
             elif response.strip():
                 action_input = response.strip()
