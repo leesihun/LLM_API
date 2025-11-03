@@ -4,6 +4,11 @@ Run this before using the Jupyter notebook
 """
 
 import sys
+import os
+
+# Fix encoding for Windows console
+if sys.platform == 'win32':
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 def check_dependencies():
     """Check if required packages are installed"""
@@ -20,19 +25,19 @@ def check_dependencies():
     for package, install_name in required_packages.items():
         try:
             __import__(package)
-            print(f"✓ {install_name} is installed")
+            print(f"[OK] {install_name} is installed")
         except ImportError:
-            print(f"✗ {install_name} is NOT installed")
+            print(f"[MISSING] {install_name} is NOT installed")
             if 'optional' not in install_name:
                 all_good = False
 
     print("\n" + "="*60)
 
     if all_good:
-        print("✓ All required dependencies are installed!")
+        print("[SUCCESS] All required dependencies are installed!")
         print("\nYou can now run: jupyter notebook test_search_engines.ipynb")
     else:
-        print("⚠ Missing dependencies detected")
+        print("[WARNING] Missing dependencies detected")
         print("\nInstall missing packages with:")
         print("  pip install langchain-community duckduckgo-search tavily-python")
 
@@ -51,17 +56,21 @@ def test_duckduckgo():
         search = DuckDuckGoSearchAPIWrapper(max_results=3)
         results = search.results("Python programming", 3)
 
-        print(f"✓ DuckDuckGo search successful! Found {len(results)} results:\n")
+        print(f"[SUCCESS] DuckDuckGo search successful! Found {len(results)} results:\n")
 
         for i, result in enumerate(results, 1):
-            print(f"{i}. {result.get('title', 'No title')}")
-            print(f"   URL: {result.get('link', 'No URL')}")
-            print(f"   {result.get('snippet', 'No snippet')[:100]}...\n")
+            title = result.get('title', 'No title').encode('utf-8', errors='ignore').decode('utf-8')
+            url = result.get('link', 'No URL')
+            snippet = result.get('snippet', 'No snippet')[:100].encode('utf-8', errors='ignore').decode('utf-8')
+
+            print(f"{i}. {title}")
+            print(f"   URL: {url}")
+            print(f"   {snippet}...\n")
 
         return True
 
     except Exception as e:
-        print(f"✗ DuckDuckGo search failed: {e}")
+        print(f"[ERROR] DuckDuckGo search failed: {e}")
         return False
 
 
@@ -71,5 +80,5 @@ if __name__ == "__main__":
     if deps_ok:
         test_duckduckgo()
     else:
-        print("\n⚠ Please install missing dependencies first")
+        print("\n[WARNING] Please install missing dependencies first")
         sys.exit(1)
