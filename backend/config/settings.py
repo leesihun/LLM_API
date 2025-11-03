@@ -45,12 +45,12 @@ class Settings(BaseSettings):
     ollama_timeout: int = 3000000  # 50 minutes
 
     # Context window - balance between capability and memory usage
-    ollama_num_ctx: int = 4096  # Good balance for most use cases
+    ollama_num_ctx: int = 16384  # Good balance for most use cases
 
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.3  # 0.1=conservative, 1.0=creative
-    ollama_top_p: float = 0.9       # Nucleus sampling
-    ollama_top_k: int = 40          # Top-k sampling
+    ollama_temperature: float = 0.1  # 0.1=conservative, 1.0=creative
+    ollama_top_p: float = 1.0      # Nucleus sampling
+    ollama_top_k: int = 0          # Top-k sampling
 
     # ============================================================================
     # API Keys - SECURE THESE IN PRODUCTION
