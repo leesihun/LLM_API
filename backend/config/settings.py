@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # Sampling parameters - optimized for coherent responses
     ollama_temperature: float = 0.1  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 1.0      # Nucleus sampling
-    ollama_top_k: int = 100          # Top-k sampling
+    ollama_top_k: int = 0          # Top-k sampling
 
     # ============================================================================
     # API Keys - SECURE THESE IN PRODUCTION
