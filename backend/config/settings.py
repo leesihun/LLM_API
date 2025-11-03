@@ -151,7 +151,7 @@ Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)
     python_code_enabled: bool = True
 
     # Maximum execution time for generated code (seconds)
-    python_code_timeout: int = 300
+    python_code_timeout: int = 3000
 
     # Maximum memory usage (MB) - future: cgroups for true enforcement
     python_code_max_memory: int = 5120
@@ -160,10 +160,10 @@ Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)
     python_code_execution_dir: str = './data/scratch'
 
     # Maximum verification-modification loop iterations
-    python_code_max_iterations: int = 10
+    python_code_max_iterations: int = 5
 
     # Execute code even if minor issues remain after max iterations
-    python_code_allow_partial_execution: bool = False
+    python_code_allow_partial_execution: bool = True
 
     # Maximum input file size (MB) for code execution
     python_code_max_file_size: int = 500

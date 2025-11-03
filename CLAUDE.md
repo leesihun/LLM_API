@@ -4,341 +4,341 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an **Agentic AI Backend** built with FastAPI that provides OpenAI-compatible APIs. The system uses **LangGraph** for orchestrating multi-step reasoning workflows and implements two distinct agent architectures: **ReAct** (Reasoning + Acting) and **Plan-and-Execute**. A smart router automatically selects the optimal agent based on query characteristics.
+This is an **AI-powered LLM API server** with sophisticated **agentic workflow capabilities**. The system integrates Large Language Models (via Ollama) with multi-agent reasoning patterns (ReAct, Plan-Execute) to handle complex tasks including web search, document retrieval (RAG), and autonomous Python code generation/execution.
 
-**Core Stack:**
-- FastAPI with OpenAI-compatible endpoints
-- LangGraph for agent workflow orchestration
-- Ollama (local LLM: gemma3:12b default)
-- FAISS/Chroma for vector storage
-- JWT authentication with plaintext passwords (dev mode)
-- Static frontend (HTML/CSS/JS)
+**Key Technologies:**
+- Backend: FastAPI + LangChain + LangGraph
+- LLM: Ollama (default model: gemma3:12b)
+- Agent Patterns: ReAct (Reasoning + Acting), Plan-Execute
+- Tools: Web search (Tavily), RAG (FAISS), Python code generation/execution
 
-## Common Commands
+## Essential Commands
 
-### Running the Application
+### Development Workflow
 
+**Start the backend server:**
 ```bash
-# Backend (FastAPI server on port 1007)
-python run_backend.py              # Launcher with checks
-python server.py                   # Direct server start
-python -m uvicorn backend.api.app:app --reload  # Uvicorn directly
+python run_backend.py
+# Or use the main entry point:
+python server.py
+```
+Server runs at: `http://0.0.0.0:1007`
 
-# Frontend (Static server on port 3000)
-python run_frontend.py             # Serve static files
-python run_frontend.py --no-browser  # Don't auto-open browser
+**Start the frontend (separate terminal):**
+```bash
+python run_frontend.py
+```
+Frontend runs at: `http://localhost:3000`
 
-# Dependencies
+**Prerequisites:**
+- Ollama must be running: `ollama serve`
+- Required models must be pulled:
+  ```bash
+  ollama pull gemma3:12b
+  ollama pull gpt-oss:20b
+  ollama pull bge-m3:latest
+  ```
+
+**Environment Setup:**
+```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Configuration is in backend/config/settings.py
+# .env file is OPTIONAL - only override specific values if needed
 ```
 
-### Ollama Setup
+### Testing
 
+**Manual testing with Jupyter:**
 ```bash
-ollama serve                       # Start Ollama service
-ollama list                        # List installed models
-ollama pull gemma3:12b            # Download the default model
+jupyter notebook API_examples.ipynb
 ```
 
-### Configuration
-
-The system uses a **forced defaults** design - all settings in [backend/config/settings.py](backend/config/settings.py:14-180) have hardcoded defaults. The settings system **actively removes** environment variables that might interfere (lines 188-192).
-
-**Critical variables:**
-- `secret_key` - JWT signing key (default: 'dev-secret-key-change-in-production-please')
-- `tavily_api_key` - Required for web search functionality (has dev default)
-- `ollama_host` - Ollama endpoint (default: http://127.0.0.1:11434)
-- `ollama_model` - Model name (default: gemma3:12b)
-- `server_host` - Host binding (default: 0.0.0.0)
-- `server_port` - Server port (default: 1007)
-
-**Python Code Execution Settings:**
-- `python_code_enabled` - Enable/disable code execution (default: True)
-- `python_code_timeout` - Max execution time in seconds (default: 300)
-- `python_code_max_memory` - Memory limit in MB (default: 5120)
-- `python_code_execution_dir` - Temp directory (default: ./data/code_execution)
-- `python_code_max_iterations` - Max verification-modification loops (default: 10)
-- `python_code_allow_partial_execution` - Execute with minor issues (default: False)
-- `python_code_max_file_size` - Max input file size in MB (default: 500)
-
-## Architecture
-
-### Request Flow
-
-```
-User Query → determine_task_type() → "chat" or "agentic"
-                                           ↓
-                        "agentic" → SmartAgentTask → Plan-and-Execute (auto)
-                                                   → ReAct (manual selection)
-                        "chat" → ChatTask (direct Ollama call)
+**Check Ollama connection:**
+```bash
+curl http://127.0.0.1:11434/api/tags
 ```
 
-**Task classification** ([routes.py](backend/api/routes.py:256-323)):
-- Uses LLM classifier (gemma3:12b) with configurable prompt from settings
-- Falls back to keyword matching if LLM fails/timeouts (10s timeout)
-- Agentic triggers: search, find, research, analyze, current, latest, news, document, file, code, python, calculate, data
+## Architecture Overview
 
-### Agent System Architecture
+### High-Level System Flow
 
-**Smart Agent Router** ([smart_agent_task.py](backend/tasks/smart_agent_task.py)):
-- Currently **defaults to Plan-and-Execute** for AUTO mode (line 61)
-- Can manually select agents via `agent_type` parameter in API request
-- Routes to either ReAct or Plan-and-Execute based on selection
+```
+User Request → Classifier → [Agentic Flow vs Simple Chat]
+                ↓
+         Agentic Flow:
+         1. Task Detection (chat_task.py)
+         2. ReAct Agent (React.py) OR Smart Agent (smart_agent_task.py)
+         3. Tool Execution (web_search, rag, python_coder)
+         4. Response Synthesis
+```
 
-**1. Plan-and-Execute Agent** ([Plan_execute.py](backend/tasks/Plan_execute.py)) - **Default**
-- **Pattern:** Hybrid architecture - Planning phase + ReAct execution
-- **Phase 1 (Planning):** LLM analyzes query and creates detailed execution plan (lines 65-108)
-- **Phase 2 (Execution):** Injects plan into ReAct agent for guided execution (lines 150-162)
-- **Phase 3 (Monitoring):** Verifies execution and builds comprehensive metadata (lines 164-181)
-- **Best for:** Complex queries, batch operations, multi-tool tasks
-- **Example:** "Search weather AND analyze data AND retrieve documents"
-- **Max iterations:** Controlled by embedded ReAct agent (10 iterations)
+### Critical Architecture Patterns
 
-**2. ReAct Agent** ([React.py](backend/tasks/React.py))
-- **Pattern:** Iterative Thought → Action → Observation loops
-- **Best for:** Exploratory queries, sequential reasoning, dynamic tool selection, Python code generation
-- **Example:** "Find the capital of France, then search for its population, then calculate if it's larger than London"
-- **Max iterations:** 10 (configurable via constructor line 72)
-- **How it works:**
-  1. `_generate_thought()` - Reason about what to do next (line 186)
-  2. `_select_action()` - Choose tool and input (4 available actions, line 221)
-  3. `_execute_action()` - Run tool and observe result (line 408)
-  4. Repeat until `finish` action or max iterations reached
-- **Available tools:** web_search, rag_retrieval, python_code, python_coder, finish (ToolName enum line 22)
+**1. Task Classification (backend/tasks/chat_task.py)**
+- Every user message first goes through the classifier
+- Classifier decides: "agentic" (requires tools) vs "chat" (simple response)
+- Classifier model: `gpt-oss:20b` (configurable in settings.py)
+- Triggers: keywords like "search", "analyze", "code", "calculate", "current", "latest"
 
-### Available Tools
+**2. ReAct Agent Pattern (backend/tasks/React.py)**
+- The primary agentic execution engine
+- Implements Thought → Action → Observation loop
+- Max iterations: 10 (configurable via `max_iterations` parameter)
+- Tools available: `web_search`, `rag_retrieval`, `python_coder`, `finish`
+- **Critical optimization:** Combined thought-action generation (1 LLM call instead of 2)
+- **Early exit:** Auto-finish when observation contains complete answer
+- **Context pruning:** If >3 steps, summarizes early steps and keeps last 2 in detail
 
-All tools are in [backend/tools/](backend/tools/). Each tool has async methods:
+**3. Python Code Generation (backend/tools/python_coder_tool.py)**
+- **Unified architecture** (v1.2.0): Single file for generation + execution
+- **Verification phase:** Max 3 iterations, focused ONLY on "Does code answer user's question?"
+- **Execution retry:** Max 5 attempts with auto-fixing between retries
+- **File handling:** Supports CSV, Excel, JSON, PDF, images, etc.
+- **Security:** Sandboxed execution, import restrictions, timeout controls
+- Important: Uses session-based execution directories (persisted if session_id provided)
 
-1. **web_search.py** - Tavily API for web search with LLM answer generation
-2. **rag_retriever.py** - Document Q&A with FAISS/Chroma vector DB
-3. **python_executor.py** - Safe Python code execution (simple scripts)
-4. **python_coder_tool.py** - AI-driven Python code generator with iterative verification/modification
-5. **python_executor_engine.py** - Subprocess execution engine for isolated code execution
+**4. Dual Agent Strategy (backend/tasks/smart_agent_task.py)**
+- For complex multi-step tasks
+- Planner creates structured plan with steps
+- Executor (ReAct agent) executes each step with tool fallback
+- Each step has: goal, success_criteria, primary_tools, fallback_tools
 
-#### Python Code Generator Tool
+### Key Configuration Files
 
-The **python_coder_tool** is an advanced code generation system that:
-- Generates Python code based on natural language descriptions
-- Performs static analysis and LLM-based verification
-- Iteratively modifies code to fix issues (up to 10 iterations by default)
-- Executes code in isolated subprocess sandboxes
-- Supports file processing (CSV, Excel, PDF, JSON, etc.)
+**backend/config/settings.py:**
+- Central configuration - ALL defaults defined here
+- `.env` file is OPTIONAL (only for overrides)
+- Critical settings:
+  - `ollama_model`: Default 'gemma3:12b'
+  - `python_code_max_iterations`: 5 (was 3, updated for better verification)
+  - `python_code_timeout`: 3000 seconds
+  - `python_code_allow_partial_execution`: True
+  - `agentic_classifier_prompt`: Controls when to use agentic vs chat flow
 
-**Security features:**
-- Whitelisted packages only (40+ safe packages including numpy, pandas, matplotlib)
-- Blocked imports (socket, subprocess, eval, exec, pickle)
-- Timeout enforcement (default: 300s)
-- Filesystem isolation (temporary execution directories)
-- Automatic cleanup after execution
+**Important:** System forces settings.py defaults over environment variables to prevent conflicts.
 
-**Workflow:**
-1. Generate code using LLM
-2. Verify code (static + semantic checks)
-3. Modify if issues found (max 10 iterations)
-4. Execute in isolated subprocess
-5. Return results with full audit trail
+### Directory Structure
 
-### API Endpoints
+```
+backend/
+├── api/              # FastAPI routes and application
+│   ├── app.py       # Main FastAPI app, CORS, middleware, startup
+│   └── routes.py    # API endpoints (chat, auth, files, admin, tools)
+├── config/
+│   └── settings.py  # Centralized configuration (all defaults here)
+├── core/
+│   └── agent_graph.py  # LangGraph workflow (alternative to ReAct)
+├── tasks/
+│   ├── chat_task.py        # Entry point: task classification
+│   ├── React.py            # PRIMARY: ReAct agent implementation
+│   ├── smart_agent_task.py # Plan-Execute workflow
+│   └── Plan_execute.py     # Legacy plan-execute
+├── tools/
+│   ├── python_coder_tool.py  # Python code gen/exec (unified v1.2.0)
+│   ├── web_search.py         # Tavily web search
+│   └── rag_retriever.py      # Document retrieval (FAISS)
+├── storage/
+│   └── conversation_store.py  # Conversation persistence
+├── models/
+│   └── schemas.py            # Pydantic data models
+└── utils/
+    └── auth.py               # JWT authentication
 
-**Authentication** (`/api/auth/`):
-- `POST /api/auth/login` - Returns JWT token + user data (plaintext password check)
-- `POST /api/auth/signup` - Create new user (stores plaintext password)
-- `GET /api/auth/me` - Get current user info
+data/
+├── conversations/    # Stored chat history (JSON files)
+├── uploads/          # User uploaded files
+├── scratch/          # Code execution workspace (session-based)
+└── logs/             # Application logs
+```
 
-**OpenAI-Compatible** (`/v1/`):
-- `POST /v1/chat/completions` - Main chat endpoint
-  - Optional param: `agent_type` ("auto", "react", "plan_execute")
-  - Auto-creates `session_id` if not provided
-  - Returns OpenAI-compatible response with `x_session_id` and `x_agent_metadata`
-- `GET /v1/models` - List available models
+## Working with Python Code Tool
 
-**File Management** (`/api/files/`):
-- `POST /api/files/upload` - Upload document (user-isolated to `uploads/<username>/`)
-- `GET /api/files/documents?page=1&page_size=20` - List documents (paginated)
-- `DELETE /api/files/documents/{file_id}` - Delete document
+### Code Generation Flow
+1. **File Preparation:** Validate file types, extract metadata (columns, dtypes, preview)
+2. **Code Generation:** LLM generates code with file context
+3. **Verification Loop (max 3):**
+   - Static analysis (import checks)
+   - LLM semantic check: "Does code answer question?"
+   - Modify code if issues found
+4. **Execution Loop (max 5):**
+   - Execute code in subprocess
+   - On failure: LLM analyzes error and fixes code
+   - Retry with fixed code
 
-**Chat Management** (`/api/chat/`):
-- `GET /api/chat/sessions` - List user sessions
-- `GET /api/chat/history/{session_id}` - Get conversation history
+### When Modifying python_coder_tool.py:
+- **CodeExecutor class:** Low-level execution (subprocess, file handling, import validation)
+- **PythonCoderTool class:** High-level orchestration (generation, verification, retry)
+- Backward compatibility: `PythonExecutor = CodeExecutor` (legacy alias)
+- File metadata extraction is critical for good code generation (see `_extract_file_metadata`)
 
-**Admin** (`/api/admin/`):
-- `POST /api/admin/model` - Change active Ollama model (admin only)
+### Security Considerations:
+- Blocked imports: socket, subprocess, eval, exec, pickle, etc.
+- Execution timeout enforced via subprocess
+- Session-based directories prevent cross-contamination
+- Import validation uses AST parsing (not runtime)
 
-**Tools** (`/api/tools/`):
-- `GET /api/tools/list` - List available tools
-- `POST /api/tools/websearch` - Direct web search endpoint
-- `GET /api/tools/rag/search` - Direct RAG search endpoint
+## Working with ReAct Agent
 
-**Health:**
-- `GET /` - API info
-- `GET /health` - Health check with Ollama status
+### Key Methods in React.py:
+- `execute()`: Main entry point, runs full ReAct loop
+- `execute_with_plan()`: Guided mode for structured plan execution
+- `_generate_thought_and_action()`: Combined LLM call (performance optimization)
+- `_execute_action()`: Routes to appropriate tool (web_search, rag, python_coder)
+- `_generate_final_answer()`: Synthesizes observations into final response
 
-**Default credentials:**
-- Stored in `data/users/users.json` (created on first run)
-- Default users depend on initial setup
+### ReAct Execution Optimizations:
+1. **Pre-step file handling:** If files attached, tries python_coder before starting loop
+2. **Combined thought-action:** Single LLM call instead of separate thought + action calls
+3. **Context pruning:** Summarizes old steps, keeps recent 2 in full detail
+4. **Early exit:** Auto-finish if observation contains complete answer (≥200 chars, answer phrases)
+5. **Guard logic:** If RAG requested but files exist, tries python_coder first
 
-### Data Storage
+### Common ReAct Issues:
+- **Empty final answers:** Check `_generate_final_answer()`, uses observations from all steps
+- **Infinite loops:** Check `_should_auto_finish()` logic and max_iterations
+- **Tool selection:** LLM decides via `_parse_thought_and_action()`, fuzzy matching applied
 
-All data organized under `./data/`:
-- `data/vector_db/` - FAISS/Chroma embeddings
-- `data/conversations/` - Chat history (JSON files per session)
-- `data/uploads/<username>/` - User-isolated uploaded documents
-- `data/users/users.json` - User authentication database (plaintext passwords)
-- `data/sessions/sessions.json` - Session management
-- `data/logs/app.log` - Application logs
-- `data/code_execution/` - Temporary Python code execution sandbox
+## API Endpoints
 
-## Key Implementation Details
-
-### Adding New Tools
-
-1. Create tool file in [backend/tools/](backend/tools/) with async methods
-2. Register tool in **ReAct Agent** ([backend/tasks/React.py](backend/tasks/React.py)):
-   - Add to `ToolName` enum (line 22)
-   - Add execution logic in `_execute_action()` (line 408)
-   - Update tool list in `_select_action()` prompt (line 243)
-3. Optionally add to [backend/config/settings.py](backend/config/settings.py) `available_tools` list (line 139)
-
-### Modifying Agent Selection Logic
-
-**Current behavior:** Smart agent always selects Plan-and-Execute for AUTO mode ([smart_agent_task.py](backend/tasks/smart_agent_task.py:61))
-
-**To change default agent:**
-- Modify line 61 in smart_agent_task.py from `AgentType.PLAN_EXECUTE` to `AgentType.REACT`
-
-**To implement intelligent routing:**
-- Add scoring logic in `execute()` method before line 61
-- Analyze query characteristics (sequential vs parallel, exploratory vs comprehensive)
-- Example indicators:
-  - ReAct: "then", "after that", "step by step", "if", "depending on"
-  - Plan-Execute: " and ", "both", "comprehensive", "full report"
-
-### LangGraph State Management (Plan-and-Execute)
-
-The Plan-and-Execute agent embeds the ReAct agent, so it doesn't use a traditional LangGraph StateGraph. Instead, it:
-1. Creates execution plan via LLM call
-2. Injects plan into ReAct agent via enhanced messages
-3. Monitors ReAct execution and builds combined metadata
-
-The old LangGraph implementation is in [agent_graph.py](backend/core/agent_graph.py) but is **not currently used** by the system.
-
-### ReAct Execution Tracing
-
-The ReAct agent stores full execution history in `self.steps`:
-
+**Main Chat Endpoint:**
 ```python
-react_agent.get_trace()  # Returns formatted Thought-Action-Observation log
+POST /api/chat
+{
+  "message": "user message",
+  "session_id": "optional-session-id",
+  "user_id": "user-id",
+  "file_paths": ["optional", "file", "paths"]  # Uploaded file references
+}
 ```
 
-Each step is a `ReActStep` object ([React.py](backend/tasks/React.py:31-58)) containing:
-- `thought` - Reasoning about next action
-- `action` - Selected tool name
-- `action_input` - Tool input
-- `observation` - Tool execution result
-
-### Multi-User Isolation
-
-**Files:** User-specific folders prevent cross-user access
-- Upload path: `uploads/<username>/<file_id>_<filename>`
-- File listing/deletion scoped by JWT token
-
-**Conversations:** Session IDs globally unique, associated with user_id via conversation_store
-
-**Vector DB:** Currently shared across users (no user_id filtering - all users see same documents)
-
-### Authentication Flow
-
-All protected endpoints require:
+**File Upload:**
 ```python
-Authorization: Bearer <jwt_token>
+POST /api/upload
+# Multipart form data with files
+# Returns file paths for use in /api/chat
 ```
 
-JWT tokens ([backend/utils/auth.py](backend/utils/auth.py)):
-- Signed with `secret_key` (HS256 algorithm)
-- Expire after `jwt_expiration_hours` (default: 24)
-- Include `{"sub": username}` payload
-- Validated by `get_current_user()` dependency
-- **Note:** Passwords stored in plaintext in users.json (development mode)
-
-### Conversation History
-
-Managed by [backend/storage/conversation_store.py](backend/storage/conversation_store.py):
-- JSON-based file storage (one file per session_id)
-- User-isolated (keyed by user_id)
-- Auto-loaded when `session_id` provided in requests
-- Auto-created for new conversations
-
-### Document Processing (RAG)
-
-Pipeline in [backend/tools/rag_retriever.py](backend/tools/rag_retriever.py):
-1. Upload → User-specific folder `uploads/<username>/`
-2. Load document (supports PDF, DOCX, TXT, JSON)
-3. Text chunking with `RecursiveCharacterTextSplitter`
-4. Embedding with model specified in `embedding_model` (default: bge-m3:latest)
-5. Vector storage (FAISS or Chroma based on `vector_db_type`)
-6. Retrieval with similarity search (top_k=5)
-
-### Logging
-
-Logger instances per module:
+**Conversation History:**
 ```python
-logger = logging.getLogger(__name__)
-logger.info(f"[Component Name] Message")
+GET /api/conversations?user_id=<id>
 ```
 
-Log levels (set via `log_level` in settings):
-- DEBUG: Detailed execution traces
-- INFO: High-level operation flow (default)
-- WARNING: Production-friendly (minimal output)
+**Health Check:**
+```python
+GET /health
+# Returns Ollama connection status
+```
 
-Logs written to both console and `./data/logs/app.log`
+## Important Implementation Details
 
-## Important Notes
+### Ollama Configuration
+- Default timeout: 3000 seconds (50 minutes)
+- Context window: 4096 tokens
+- Temperature: 0.3 (conservative for code generation)
+- Connection tested on startup (see app.py startup_event)
 
-### Configuration System
+### LangGraph vs ReAct
+- **agent_graph.py:** LangGraph implementation (structured workflow with verification node)
+- **React.py:** Direct ReAct implementation (more flexible, currently primary)
+- Both are available; ReAct is the current production choice
 
-Settings priority:
-1. [backend/config/settings.py](backend/config/settings.py) (hardcoded defaults)
-2. .env file is **NOT used** - system actively removes conflicting env vars (lines 188-192)
+### Session Management
+- User authentication via JWT (utils/auth.py)
+- Session data stored in `data/conversations/`
+- File format: `{user_id}_{timestamp}_{session_id}.json`
 
-**The system will ALWAYS use settings.py defaults.** This is intentional - settings.py has forced environment variable cleanup to prevent conflicts.
+### Conversation Storage
+- Each message saved with: role, content, timestamp, metadata
+- Tools track execution history (steps, observations, code, etc.)
+- Retrieval by user_id or session_id
 
-### Error Handling
+## Common Development Tasks
 
-- All async tool calls use try/except with logging
-- Return user-friendly messages (don't expose internals)
-- FastAPI automatically converts `HTTPException` to proper responses
-- Global exception handler in [backend/api/app.py](backend/api/app.py)
+### Adding a New Tool
+1. Create tool class in `backend/tools/`
+2. Add to `ToolName` enum in `React.py`
+3. Add execution logic in `ReActAgent._execute_action()`
+4. Update tool selection in `_generate_thought_and_action()` prompt
+5. Add to `settings.available_tools` list
 
-### Frontend Structure
+### Modifying Agentic Classifier
+- Edit `settings.agentic_classifier_prompt` in settings.py
+- Controls when to trigger agentic flow vs simple chat
+- Be conservative: agentic flow is slower but more capable
 
-Static files served from [frontend/static/](frontend/static/):
-- `index.html` - Main chat interface
-- `login.html` - Login page
-- `index_legacy.html` - Legacy chat interface
-- `config.js` - Frontend configuration
+### Changing Verification/Retry Limits
+```python
+# In settings.py:
+python_code_max_iterations: int = 5  # Verification iterations
+# In python_coder_tool.py:
+self.max_execution_attempts = 5      # Execution retry attempts
+# In React.py:
+react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
+```
 
-Frontend communicates with backend via:
-- `/api/auth/login` - Authentication
-- `/v1/chat/completions` - Chat interactions
-- `/api/files/*` - File management
-- `/api/chat/*` - Session/history management
+### Debugging Execution Issues
+- Check logs in `data/logs/app.log`
+- Python code execution dirs: `data/scratch/<session_id>/`
+- Execution preserves directory if session_id provided
+- Review `verification_history` and `execution_attempts_history` in tool response
 
-### Known Limitations
+## Version History & Breaking Changes
 
-1. **Plaintext passwords** - Authentication uses plaintext passwords in users.json (dev mode only)
-2. **Vector DB sharing** - No user_id filtering in vector search (all users see same documents in vector DB)
-3. **No agent selection heuristics** - Smart agent always defaults to Plan-and-Execute in AUTO mode (manual override required for ReAct)
-4. **Environment variable conflicts** - System forcefully removes OLLAMA_HOST, OLLAMA_MODEL, SERVER_HOST, SERVER_PORT env vars to use settings.py defaults
-5. **Timeout issues** - Large models or complex queries may timeout. Increase `ollama_timeout` in settings.py
+### Version 1.2.0 (October 31, 2024)
+**Major unification of Python code tools:**
+- Merged `python_coder_tool.py` and `python_executor_engine.py` into single file
+- Removed `python_executor.py` (unused legacy)
+- Reduced verification iterations: 10 → 3
+- Added execution retry logic: max 5 attempts with auto-fixing
+- `ToolName.PYTHON_CODE` removed → use `ToolName.PYTHON_CODER`
+- Import changes: `PythonExecutor` now alias for `CodeExecutor`
 
-### Testing Agent Selection
+### Critical Breaking Changes from v1.1.0:
+- Old import: `from backend.tools.python_executor_engine import PythonExecutor`
+- New import: `from backend.tools.python_coder_tool import CodeExecutor` (or use `PythonExecutor` alias)
 
-When testing:
-- **Plan-and-Execute (default):** Test with multi-tool queries ("search AND analyze AND retrieve")
-- **ReAct (manual):** Test with sequential queries ("first do X, then Y") by setting `agent_type="react"` in request
-- **Python code generation:** Test with various complexity levels (simple calculations, data analysis, file processing)
-  - Verify iterative verification-modification loops in logs
-  - Check execution isolation and cleanup in `data/code_execution/`
-- **Agent metadata:** Check response `x_agent_metadata` field for execution details, tool usage, iteration count
+## Performance Tips
+
+### Reducing LLM Calls
+- Combined thought-action generation saves 50% calls in ReAct loop
+- Early exit with auto-finish prevents unnecessary iterations
+- Context pruning reduces token usage for long conversations
+
+### Optimizing Python Code Execution
+- Set realistic timeouts (default 3000s is generous)
+- Use session-based directories to cache file processing
+- Extract file metadata to guide code generation (reduces verification failures)
+
+### When to Use Which Agent
+- **Simple tasks:** Direct chat (no agentic flow)
+- **Single tool tasks:** ReAct agent (fast, flexible)
+- **Complex multi-step:** Smart agent with Plan-Execute (structured, reliable)
+
+## Troubleshooting
+
+**Ollama Connection Errors:**
+- Verify Ollama is running: `ollama serve`
+- Check settings.ollama_host (default: http://127.0.0.1:11434)
+- Settings.py forces this default even if env vars exist
+
+**Code Execution Timeouts:**
+- Increase settings.python_code_timeout
+- Check for infinite loops in generated code
+- Review execution directory: data/scratch/<session_id>/
+
+**Empty or Incomplete Responses:**
+- Check agentic classifier - may need to adjust prompt
+- Review ReAct final answer generation (`_generate_final_answer`)
+- Verify observations contain data (check tool execution logs)
+
+**Import Errors in Generated Code:**
+- Review BLOCKED_IMPORTS in python_coder_tool.py
+- Ensure required packages installed in environment
+- Check AST validation in `CodeExecutor.validate_imports()`
+
+---
+
+**Last Updated:** January 2025
+**Version:** 1.2.0

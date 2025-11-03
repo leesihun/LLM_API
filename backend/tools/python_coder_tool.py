@@ -1,15 +1,20 @@
 """
-Python Coder Tool
+Python Coder Tool - Unified Implementation
 
-Main entry point for AI-driven Python code generation with iterative verification and modification.
-This tool orchestrates the full workflow: file preparation, code generation, verification,
-modification loops, execution, and result formatting.
+Combines code generation, verification, and execution in a single module.
+This tool orchestrates the full workflow: file preparation, code generation,
+verification (focused on answering user's question), execution with retry logic.
 """
 
+import ast
 import json
 import logging
 import os
 import shutil
+import subprocess
+import tempfile
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -17,14 +22,216 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
 from backend.config.settings import settings
-from backend.tools.python_executor_engine import PythonExecutor, SUPPORTED_FILE_TYPES
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# Constants and Configuration
+# ============================================================================
+
+BLOCKED_IMPORTS = [
+    "socket", "subprocess", "os.system", "eval", "exec",
+    "__import__", "importlib", "shutil.rmtree", "pickle",
+]
+
+SUPPORTED_FILE_TYPES = [
+    ".txt", ".md", ".log", ".rtf",  # Text
+    ".csv", ".tsv", ".json", ".xml", ".yaml", ".yml",  # Data
+    ".xlsx", ".xls", ".xlsm", ".docx", ".doc",  # Office
+    ".pdf",  # PDF
+    ".dat", ".h5", ".hdf5", ".nc", ".parquet", ".feather",  # Scientific
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".svg",  # Images
+    ".zip", ".tar", ".gz", ".bz2", ".7z",  # Compressed
+]
+
+
+# ============================================================================
+# Code Executor (Low-level subprocess execution)
+# ============================================================================
+
+class CodeExecutor:
+    """
+    Executes Python code in isolated subprocess with security restrictions.
+    """
+
+    def __init__(
+        self,
+        timeout: int = 30,
+        max_memory_mb: int = 512,
+        execution_base_dir: str = "./data/scratch"
+    ):
+        """
+        Initialize code executor.
+
+        Args:
+            timeout: Maximum execution time in seconds
+            max_memory_mb: Maximum memory usage in MB
+            execution_base_dir: Base directory for temporary execution folders
+        """
+        self.timeout = timeout
+        self.max_memory_mb = max_memory_mb
+        self.execution_base_dir = Path(execution_base_dir).resolve()
+        self.execution_base_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"[CodeExecutor] Initialized with timeout={timeout}s, max_memory={max_memory_mb}MB")
+
+    def validate_imports(self, code: str) -> Tuple[bool, List[str]]:
+        """
+        Validate that code only imports safe packages.
+
+        Args:
+            code: Python code to validate
+
+        Returns:
+            Tuple of (is_valid, list of issues)
+        """
+        issues = []
+
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as e:
+            return False, [f"Syntax error: {e}"]
+
+        for node in ast.walk(tree):
+            # Check imports
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    module = alias.name.split('.')[0]
+                    if module in BLOCKED_IMPORTS:
+                        issues.append(f"Blocked import detected: {module}")
+
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module.split('.')[0] if node.module else ''
+                if module in BLOCKED_IMPORTS:
+                    issues.append(f"Blocked import detected: {module}")
+
+            # Check for dangerous function calls
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    if node.func.id in ['eval', 'exec', '__import__']:
+                        issues.append(f"Dangerous function call detected: {node.func.id}")
+
+        is_valid = len(issues) == 0
+        return is_valid, issues
+
+    def execute(
+        self,
+        code: str,
+        input_files: Optional[Dict[str, str]] = None,
+        session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute Python code in isolated subprocess.
+
+        Args:
+            code: Python code to execute
+            input_files: Optional dict mapping original file paths to their basenames
+            session_id: Optional session ID to use as execution directory name
+
+        Returns:
+            Dict with keys: success, output, error, execution_time, return_code
+        """
+        # Use session_id if provided, otherwise generate unique ID
+        execution_id = session_id if session_id else uuid.uuid4().hex
+        execution_dir = self.execution_base_dir / execution_id
+
+        try:
+            # Create execution directory
+            execution_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[CodeExecutor] Using execution directory: {execution_dir}")
+
+            # Copy input files to execution directory
+            if input_files:
+                for original_path, basename in input_files.items():
+                    target_path = execution_dir / basename
+                    shutil.copy2(original_path, target_path)
+                    logger.debug(f"[CodeExecutor] Copied {original_path} -> {target_path}")
+
+            # Write code to script.py
+            script_path = execution_dir / "script.py"
+            script_path.write_text(code, encoding='utf-8')
+            logger.debug(f"[CodeExecutor] Wrote code to {script_path}")
+
+            # Execute code
+            start_time = time.time()
+            result = subprocess.run(
+                ["python", str(script_path)],
+                capture_output=True,
+                timeout=self.timeout,
+                cwd=str(execution_dir),
+                text=True
+            )
+            execution_time = time.time() - start_time
+
+            logger.info(f"[CodeExecutor] Execution completed in {execution_time:.2f}s (return code: {result.returncode})")
+
+            return {
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr if result.returncode != 0 else None,
+                "execution_time": execution_time,
+                "return_code": result.returncode
+            }
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"[CodeExecutor] Execution timeout after {self.timeout}s")
+            return {
+                "success": False,
+                "output": "",
+                "error": f"Execution timeout after {self.timeout} seconds",
+                "execution_time": self.timeout,
+                "return_code": -1
+            }
+
+        except Exception as e:
+            logger.error(f"[CodeExecutor] Execution failed: {e}")
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "execution_time": 0,
+                "return_code": -1
+            }
+
+        finally:
+            # Cleanup execution directory (only if temporary, not session-based)
+            if not session_id:
+                try:
+                    if execution_dir.exists():
+                        shutil.rmtree(execution_dir)
+                        logger.debug(f"[CodeExecutor] Cleaned up temporary directory {execution_dir}")
+                except Exception as e:
+                    logger.warning(f"[CodeExecutor] Failed to cleanup {execution_dir}: {e}")
+            else:
+                logger.debug(f"[CodeExecutor] Keeping session directory {execution_dir}")
+
+    def validate_file_type(self, file_path: str) -> bool:
+        """
+        Check if file type is supported.
+
+        Args:
+            file_path: Path to file
+
+        Returns:
+            True if file type is supported
+        """
+        ext = Path(file_path).suffix.lower()
+        return ext in SUPPORTED_FILE_TYPES
+
+
+# ============================================================================
+# Main Python Coder Tool
+# ============================================================================
 
 class PythonCoderTool:
     """
-    Python code generator tool with iterative verification and modification.
+    Python code generator tool with iterative verification and execution with retry logic.
+    
+    Features:
+    - Code generation using LLM
+    - Verification focused on answering user's question (max 3 iterations)
+    - Code execution with retry on failure (max 5 attempts)
+    - File handling and metadata extraction
     """
 
     def __init__(self):
@@ -37,15 +244,18 @@ class PythonCoderTool:
             top_p=settings.ollama_top_p,
             top_k=settings.ollama_top_k
         )
-        self.executor = PythonExecutor(
+        self.executor = CodeExecutor(
             timeout=settings.python_code_timeout,
             max_memory_mb=settings.python_code_max_memory,
             execution_base_dir=settings.python_code_execution_dir
         )
-        self.max_iterations = settings.python_code_max_iterations
+        # Verifier max iterations: 3
+        self.max_verification_iterations = 3
+        # Execution retry max attempts: 5
+        self.max_execution_attempts = 5
         self.allow_partial_execution = settings.python_code_allow_partial_execution
 
-        logger.info("[PythonCoderTool] Initialized with max_iterations=%d", self.max_iterations)
+        logger.info(f"[PythonCoderTool] Initialized with verification_iterations={self.max_verification_iterations}, execution_attempts={self.max_execution_attempts}")
 
     async def execute_code_task(
         self,
@@ -54,8 +264,18 @@ class PythonCoderTool:
         file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None
     ) -> Dict[str, Any]:
+        """
+        Main entry point for code generation and execution.
 
+        Args:
+            query: User's question/task
+            context: Optional additional context
+            file_paths: Optional list of input file paths
+            session_id: Optional session ID
 
+        Returns:
+            Dict with execution results
+        """
         if not settings.python_code_enabled:
             return {
                 "success": False,
@@ -64,7 +284,7 @@ class PythonCoderTool:
                 "output": ""
             }
 
-        logger.info(f"[PythonCoderTool] Executing task: {query[:]}...")
+        logger.info(f"[PythonCoderTool] Executing task: {query[:100]}...")
 
         # Phase 0: Prepare input files
         validated_files = {}
@@ -89,15 +309,16 @@ class PythonCoderTool:
                 "output": ""
             }
 
-        # Phase 2: Iterative verification and modification
+        # Phase 2: Iterative verification (max 3 iterations)
+        # Focus: Does the code answer the user's question?
         verification_history = []
         modifications = []
 
-        for iteration in range(self.max_iterations):
-            logger.info(f"[PythonCoderTool] Verification iteration {iteration + 1}/{self.max_iterations}")
+        for iteration in range(self.max_verification_iterations):
+            logger.info(f"[PythonCoderTool] Verification iteration {iteration + 1}/{self.max_verification_iterations}")
 
-            # Verify code
-            verified, issues = await self._verify_code(code, query)
+            # Verify code (focused on answering user's question)
+            verified, issues = await self._verify_code_answers_question(code, query)
 
             verification_history.append({
                 "iteration": iteration + 1,
@@ -117,24 +338,41 @@ class PythonCoderTool:
             verification_history[-1]["action"] = "modified"
 
             # Check if we've reached max iterations
-            if iteration == self.max_iterations - 1:
-                if self.allow_partial_execution and self._only_minor_issues(issues):
-                    logger.warning("[PythonCoderTool] Max iterations reached, executing with minor issues")
+            if iteration == self.max_verification_iterations - 1:
+                if self.allow_partial_execution:
+                    logger.warning("[PythonCoderTool] Max verification iterations reached, proceeding with execution")
                     break
                 else:
-                    return {
-                        "success": False,
-                        "error": f"Failed verification after {self.max_iterations} iterations",
-                        "issues": issues,
-                        "code": code,
-                        "output": "",
-                        "iterations": iteration + 1,
-                        "modifications": modifications,
-                        "verification_history": verification_history
-                    }
+                    logger.warning("[PythonCoderTool] Max verification iterations reached but partial execution not allowed")
+                    # Continue to execution anyway, let retry handle failures
 
-        # Phase 3: Execute code
-        execution_result = self.executor.execute_code(code, validated_files, session_id=session_id)
+        # Phase 3: Execute code with retry logic (max 5 attempts)
+        execution_result = None
+        execution_attempts = []
+
+        for attempt in range(self.max_execution_attempts):
+            logger.info(f"[PythonCoderTool] Execution attempt {attempt + 1}/{self.max_execution_attempts}")
+
+            execution_result = self.executor.execute(code, validated_files, session_id=session_id)
+            execution_attempts.append({
+                "attempt": attempt + 1,
+                "success": execution_result["success"],
+                "error": execution_result.get("error"),
+                "execution_time": execution_result["execution_time"]
+            })
+
+            if execution_result["success"]:
+                logger.info(f"[PythonCoderTool] Execution succeeded on attempt {attempt + 1}")
+                break
+
+            # If failed and not last attempt, try to fix the code
+            if attempt < self.max_execution_attempts - 1:
+                logger.warning(f"[PythonCoderTool] Execution failed on attempt {attempt + 1}, attempting to fix code")
+                error_message = execution_result.get("error", "Unknown error")
+                code, fix_changes = await self._fix_execution_error(code, query, error_message)
+                modifications.extend(fix_changes)
+            else:
+                logger.error(f"[PythonCoderTool] Execution failed after {self.max_execution_attempts} attempts")
 
         # Phase 4: Format and return result
         return {
@@ -143,19 +381,28 @@ class PythonCoderTool:
             "output": execution_result["output"],
             "error": execution_result.get("error"),
             "execution_time": execution_result["execution_time"],
-            "iterations": len(verification_history),
+            "verification_iterations": len(verification_history),
+            "execution_attempts": len(execution_attempts),
             "modifications": modifications,
             "input_files": list(validated_files.keys()),
             "file_metadata": file_metadata,
-            "verification_history": verification_history
+            "verification_history": verification_history,
+            "execution_attempts_history": execution_attempts
         }
 
     def _prepare_files(
         self,
         file_paths: List[str]
     ) -> Tuple[Dict[str, str], Dict[str, Any]]:
+        """
+        Prepare and validate input files.
 
+        Args:
+            file_paths: List of file paths
 
+        Returns:
+            Tuple of (validated_files, file_metadata)
+        """
         validated_files = {}
         file_metadata = {}
 
@@ -190,8 +437,15 @@ class PythonCoderTool:
         return validated_files, file_metadata
 
     def _extract_file_metadata(self, path: Path) -> Dict[str, Any]:
-        
+        """
+        Extract metadata from file for better code generation.
 
+        Args:
+            path: Path to file
+
+        Returns:
+            Dict with metadata
+        """
         metadata = {
             "filename": path.name,
             "extension": path.suffix.lower(),
@@ -248,7 +502,7 @@ class PythonCoderTool:
                     metadata.update({
                         "type": "text",
                         "line_count": len(lines),
-                        "preview": ''.join(lines[:])[:]
+                        "preview": ''.join(lines[:5])[:200]
                     })
                 except Exception as e:
                     logger.warning(f"[PythonCoderTool] Could not extract text metadata: {e}")
@@ -265,8 +519,18 @@ class PythonCoderTool:
         validated_files: Dict[str, str],
         file_metadata: Dict[str, Any]
     ) -> str:
-    
+        """
+        Generate Python code using LLM.
 
+        Args:
+            query: User's question
+            context: Optional additional context
+            validated_files: Dict of validated files
+            file_metadata: Metadata for files
+
+        Returns:
+            Generated code
+        """
         # Build file context
         file_context = ""
         if validated_files:
@@ -275,9 +539,9 @@ class PythonCoderTool:
                 metadata = file_metadata.get(original_path, {})
                 file_context += f"- {basename}: {metadata.get('type', 'unknown')} ({metadata.get('size_mb', 0)}MB)\n"
                 if 'columns' in metadata:
-                    file_context += f"  Columns: {', '.join(metadata['columns'][:])}\n"
+                    file_context += f"  Columns: {', '.join(metadata['columns'][:10])}\n"
                 if 'preview' in metadata:
-                    file_context += f"  Preview: {metadata['preview'][:]}...\n"
+                    file_context += f"  Preview: {metadata['preview'][:100]}...\n"
 
         prompt = f"""You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:
 
@@ -288,10 +552,10 @@ Task: {query}
 
 Important requirements:
 1. If files are provided, access them by their full path
-2. Output results by using prints
+2. Output results using print() statements
 3. Include error handling
 4. Add docstring explaining what the code does
-5. Keep code clean and readabl
+5. Keep code clean and readable
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
@@ -307,16 +571,17 @@ Generate ONLY the Python code, no explanations or markdown:"""
                 code = code.split("```")[0]
 
             code = code.strip()
-            logger.info(f"\n\n\n[PythonCoderTool] Generated code: {code[:]}\n\n\n")
+            logger.info(f"[PythonCoderTool] Generated code ({len(code)} chars)")
             return code
 
         except Exception as e:
             logger.error(f"[PythonCoderTool] Failed to generate code: {e}")
             return ""
 
-    async def _verify_code(self, code: str, query: str) -> Tuple[bool, List[str]]:
+    async def _verify_code_answers_question(self, code: str, query: str) -> Tuple[bool, List[str]]:
         """
-        Verify code for safety and correctness.
+        Verify code focuses on answering user's question.
+        Simplified verification focused on the core goal.
 
         Args:
             code: Python code to verify
@@ -327,21 +592,22 @@ Generate ONLY the Python code, no explanations or markdown:"""
         """
         issues = []
 
-        # Static analysis checks
+        # Static analysis checks (safety)
         is_valid, static_issues = self.executor.validate_imports(code)
         if not is_valid:
             issues.extend(static_issues)
 
-        # LLM-based semantic checks
-        semantic_issues = await self._llm_verify_code(code, query)
+        # LLM-based semantic check: Does it answer the question?
+        semantic_issues = await self._llm_verify_answers_question(code, query)
         issues.extend(semantic_issues)
 
         is_verified = len(issues) == 0
         return is_verified, issues
 
-    async def _llm_verify_code(self, code: str, query: str) -> List[str]:
+    async def _llm_verify_answers_question(self, code: str, query: str) -> List[str]:
         """
-        Use LLM to verify code semantically.
+        Use LLM to verify if code answers the user's question.
+        Simplified verification focused on core requirements.
 
         Args:
             code: Python code to verify
@@ -350,54 +616,26 @@ Generate ONLY the Python code, no explanations or markdown:"""
         Returns:
             List of issues found
         """
-        prompt = f"""Review this Python code for potential issues:
+        prompt = f"""Review this Python code and determine if it correctly answers the user's question.
 
-Original request: {query}
+User Question: {query}
 
 Code:
 ```python
 {code}
 ```
 
-Check for:
-CORRECTNESS & INTENT ALIGNMENT
-Does the code accomplish the user's stated goal?
-Are all required inputs handled (files, parameters)?
-Does the logic flow match the requested behavior?
-Are edge cases addressed (empty data, null values, missing files)?
-RUNTIME ERROR PREVENTION
-Syntax validation (proper indentation, valid Python)
-Import availability (are all imports from whitelisted packages?)
-Error handling (try-except blocks around risky operations)
-Type safety (appropriate type checks before operations)
-Division by zero protection
-Index out of bounds protection
-Null/None checks before attribute access
-OUTPUT FORMAT
-Does code use print() statements to display results?
-Are outputs clear and informative?
-Are error states properly communicated?
-PERFORMANCE & EFFICIENCY
-Reasonable algorithmic complexity (no O(n³) or worse for large data)
-Efficient data structure usage
-Avoid unnecessary loops or redundant operations
-Memory-conscious operations (streaming for large files)
-CODE QUALITY
-Readable variable names
-Proper docstring present and accurate
-Logical structure and flow
-No dead code or unused imports
-Follows Python conventions (PEP 8 style)
-FILE HANDLING (if applicable)
-Uses correct file access methods for file types
-Proper encoding specified (utf-8)
-File handles properly closed (use context managers)
-Validates file existence before reading
+Check ONLY these critical points:
+1. Does the code address the user's specific question?
+2. Will the code produce output that answers the question (using print statements)?
+3. Are there any obvious syntax errors?
+4. Are any imports from blocked/dangerous modules?
 
 Respond with a JSON object:
 {{"verified": true/false, "issues": ["issue1", "issue2", ...]}}
 
-If code is good, return {{"verified": true, "issues": []}}"""
+If code correctly answers the question, return {{"verified": true, "issues": []}}
+Only report issues that prevent answering the user's question."""
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
@@ -469,26 +707,69 @@ Generate the corrected Python code. Output ONLY the code, no explanations:"""
             logger.error(f"[PythonCoderTool] Failed to modify code: {e}")
             return code, []  # Return original code if modification fails
 
-    def _only_minor_issues(self, issues: List[str]) -> bool:
+    async def _fix_execution_error(
+        self,
+        code: str,
+        query: str,
+        error_message: str
+    ) -> Tuple[str, List[str]]:
         """
-        Check if issues are minor enough to allow execution.
+        Fix code based on execution error.
 
         Args:
-            issues: List of issues
+            code: Current Python code
+            query: Original user query
+            error_message: Error from execution
 
         Returns:
-            True if all issues are minor
+            Tuple of (fixed_code, list of changes made)
         """
-        # Define major issue keywords
-        major_keywords = ['security', 'unsafe', 'blocked', 'dangerous', 'syntax error']
+        prompt = f"""Fix the following Python code that failed during execution:
 
-        for issue in issues:
-            issue_lower = issue.lower()
-            if any(keyword in issue_lower for keyword in major_keywords):
-                return False
+Original request: {query}
 
-        return True
+Current code:
+```python
+{code}
+```
+
+Execution error:
+{error_message}
+
+Analyze the error and fix the code. Output ONLY the corrected code, no explanations:"""
+
+        try:
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            # Extract code
+            fixed_code = response.content.strip()
+            if fixed_code.startswith("```python"):
+                fixed_code = fixed_code.split("```python")[1].split("```")[0]
+            elif fixed_code.startswith("```"):
+                fixed_code = fixed_code.split("```")[1].split("```")[0]
+
+            fixed_code = fixed_code.strip()
+
+            changes = [f"Fixed execution error: {error_message[:100]}"]
+            logger.info(f"[PythonCoderTool] Fixed code after execution error")
+
+            return fixed_code, changes
+
+        except Exception as e:
+            logger.error(f"[PythonCoderTool] Failed to fix execution error: {e}")
+            return code, []  # Return original code if fix fails
 
 
-# Global instance
+# ============================================================================
+# Global Instance
+# ============================================================================
+
 python_coder_tool = PythonCoderTool()
+
+
+# ============================================================================
+# Backward Compatibility Exports
+# ============================================================================
+
+# For backward compatibility with existing imports
+PythonExecutor = CodeExecutor
+SUPPORTED_FILE_TYPES = SUPPORTED_FILE_TYPES

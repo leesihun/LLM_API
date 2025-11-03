@@ -1,124 +1,302 @@
-# LLM_API
+# LLM API Project
 
-AI-powered Python code generation and execution API with iterative verification.
+Python-based LLM API server with agentic workflow capabilities.
+
+## Overview
+
+This project provides an AI-powered API service that leverages Large Language Models (LLMs) through Ollama, with sophisticated agentic capabilities including web search, document retrieval (RAG), and Python code generation/execution.
+
+## Features
+
+- **Multi-Agent Architecture**: ReAct and Plan-Execute patterns for complex task handling
+- **Python Code Generation**: AI-driven code generation with iterative verification and execution
+- **Web Search Integration**: Real-time information retrieval via Tavily API
+- **RAG (Retrieval Augmented Generation)**: Document-based context retrieval
+- **Session Management**: User authentication and conversation history
+- **File Upload Support**: Process various file formats (CSV, Excel, JSON, PDF, etc.)
+- **Security**: Sandboxed code execution with import restrictions and timeouts
+
+## Architecture
+
+```
+LLM_API/
+├── backend/
+│   ├── api/              # FastAPI routes and application
+│   ├── config/           # Configuration and settings
+│   ├── core/             # Core agentic graph logic
+│   ├── models/           # Pydantic schemas
+│   ├── storage/          # Conversation persistence
+│   ├── tasks/            # Task handlers (ReAct, Plan-Execute, Smart Agent)
+│   ├── tools/            # Tool implementations
+│   │   ├── python_coder_tool.py    # Unified Python code generation & execution
+│   │   ├── rag_retriever.py        # Document retrieval
+│   │   └── web_search.py           # Web search
+│   └── utils/            # Authentication utilities
+├── frontend/
+│   └── static/           # Web interface
+├── data/
+│   ├── conversations/    # Conversation history
+│   ├── uploads/          # User uploaded files
+│   ├── scratch/          # Temporary code execution
+│   └── logs/             # Application logs
+└── requirements.txt
+```
+
+## Installation
+
+### Prerequisites
+
+- Python 3.9+
+- Ollama (for LLM inference)
+- Tavily API key (for web search)
+
+### Setup
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd LLM_API
+```
+
+2. Create and activate virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+4. Configure Ollama:
+```bash
+# Install Ollama from https://ollama.ai/
+# Pull required models
+ollama pull gemma3:12b
+ollama pull gpt-oss:20b
+ollama pull bge-m3:latest
+```
+
+5. Configure settings:
+Edit `backend/config/settings.py` to customize:
+- Ollama host and model
+- API keys (Tavily)
+- Server host and port
+- Python code execution limits
+
+## Usage
+
+### Start the Server
+
+```bash
+python run_backend.py
+```
+
+Or for frontend:
+```bash
+python run_frontend.py
+```
+
+Default server runs at: `http://0.0.0.0:1007`
+
+### API Endpoints
+
+- `POST /api/chat` - Send chat message with agentic capabilities
+- `POST /api/upload` - Upload files for processing
+- `POST /api/auth/login` - User authentication
+- `GET /api/conversations` - Retrieve conversation history
+
+### Example Request
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:1007/api/chat",
+    json={
+        "message": "Analyze the uploaded CSV file and show statistics",
+        "session_id": "test-session",
+        "user_id": "admin"
+    }
+)
+```
+
+## Configuration
+
+Key settings in `backend/config/settings.py`:
+
+```python
+# Ollama Configuration
+ollama_host: str = 'http://127.0.0.1:11434'
+ollama_model: str = 'gemma3:12b'
+ollama_num_ctx: int = 4096
+
+# Python Code Execution
+python_code_enabled: bool = True
+python_code_timeout: int = 300
+python_code_max_memory: int = 5120
+python_code_max_iterations: int = 3
+
+# Security
+secret_key: str = 'your-secret-key-here'
+jwt_expiration_hours: int = 24
+```
+
+## Python Code Execution
+
+The system can generate and execute Python code safely:
+
+### Features
+- **Unified Tool**: Single integrated tool for code generation, verification, and execution
+- **Iterative Verification**: Up to 3 iterations to ensure code answers user's question
+- **Execution Retry**: Up to 5 retry attempts on execution failure with auto-fixing
+- **Sandboxed Execution**: Isolated subprocess execution with security restrictions
+- **File Support**: Process multiple file formats (CSV, Excel, JSON, etc.)
+
+### Security Measures
+- Import restrictions (blocked: socket, subprocess, eval, exec, etc.)
+- Execution timeout (default: 300 seconds)
+- Memory limits
+- Isolated temporary directories
+- Static code analysis before execution
 
 ## Version History
 
-### v1.2.0 (2025-10-31)
-**ReAct Performance Optimization - 50-70% Faster**
-- **Strategy 1 - Combined Thought-Action**: Merged thought and action generation into single LLM call (50% reduction in free mode)
-  - Added `_generate_thought_and_action()` method
-  - Updated free mode execute loop to use combined generation
-  - **Impact**: Free mode now makes ~6-11 LLM calls instead of ~21 (50-70% faster)
-- **Strategy 4 - Context Pruning**: Optimized step history sent to LLM
-  - If ≤3 steps: send all details
-  - If >3 steps: send summary + last 2 steps only
-  - **Impact**: Reduced token usage, faster LLM processing
-- **Strategy 5 - Early Exit**: Auto-detect when observation contains complete answer
-  - Added `_should_auto_finish()` heuristic method
-  - Checks for answer indicators (conclusions, results, substantial content)
-  - **Impact**: Saves 2-5 iterations on queries that get good results early
-- **Strategy 6 - Skip Redundant Final Answer**: Skip final LLM call in guided mode when unnecessary
-  - Added `_is_final_answer_unnecessary()` method
-  - Checks if last step already contains comprehensive answer
-  - **Impact**: Saves 1 LLM call per guided execution (7-10% faster)
-- **Files Modified**: `backend/tasks/React.py`
-- **Performance Gains**:
-  - Free Mode: ~21 LLM calls → ~6-11 calls (50-70% faster)
-  - Guided Mode: ~14 LLM calls → ~10-12 calls (20-30% faster)
+### Version 1.2.0 (2024-10-31)
 
-### v1.1.1 (2025-10-31)
-**Server Auto-Reload Disabled**
-- **Changed**: Disabled uvicorn auto-reload (`reload=False`) to prevent unnecessary server restarts
-- **Reason**: Reduces shutdown_event log messages and improves stability in production
-- **Impact**: Server no longer automatically restarts on file changes
-- **Files Modified**: `server.py`
+**Major Changes: Python Code Tool Unification**
 
-### v1.1.0 (2025-10-31)
-**Plan-Execute & ReAct Integration Restructure**
-- **Major Refactor**: Restructured Plan-Execute to create structured, JSON-based execution plans with explicit goals, tools, and fallback options
-- **Added**: New schemas `PlanStep` and `StepResult` for structured planning and execution tracking
-- **Added**: ReAct "guided mode" (`execute_with_plan()`) that executes plan steps one-by-one instead of free-form iteration
-- **Added**: Automatic tool fallback mechanism - each step tries primary tools first, then fallback tools if they fail
-- **Added**: Step-level success verification using LLM to check if step goals are met
-- **Added**: Comprehensive step-by-step execution tracking with detailed metadata
-- **Changed**: Plan-Execute now generates structured JSON plans with primary_tools, fallback_tools, and success_criteria per step
-- **Changed**: Each plan step is executed independently with its own ReAct loop and goal verification
-- **Impact**: Better separation of concerns - planning is strategic, execution is tactical with automatic recovery
-- **Files Modified**: 
-  - `backend/models/schemas.py` - Added PlanStep and StepResult models
-  - `backend/tasks/Plan_execute.py` - Restructured to generate JSON plans and call ReAct guided mode
-  - `backend/tasks/React.py` - Added execute_with_plan(), _execute_step(), _execute_tool_for_step(), _verify_step_success()
-- **Architecture**:
-  - Phase 1 (Planning): LLM generates structured plan with steps, each having goal + tools + fallback + success criteria
-  - Phase 2 (Execution): ReAct executes each step sequentially, trying tools in order until success
-  - Phase 3 (Verification): Each step verified against success criteria; final answer synthesized from all results
+1. **Unified Python Code Tool**
+   - Merged `python_coder_tool.py` and `python_executor_engine.py` into a single module
+   - Removed redundant `python_executor.py` (unused legacy code)
+   - Simplified architecture with `CodeExecutor` class for low-level execution
+   - Single `PythonCoderTool` class for high-level code generation and orchestration
 
-### v1.0.6 (2025-10-31)
-**File-First Agent Behavior + Safe Fallbacks**
-- **Added**: When files are attached, ReAct attempts local analysis first via `python_coder` before other tools.
-- **Added**: Guarded fallback in ReAct to try `python_coder` once before `rag_retrieval`/`web_search`.
-- **Changed**: ReAct action-selection prompt now prefers local file tools when files exist.
-- **Changed**: Plan-and-Execute planning prompt injects file-first guidance when files are present.
-- **Impact**: JSON/Excel analysis reliably uses the uploaded files; gracefully falls back if code fails.
-- **Files Modified**: `backend/tasks/React.py`, `backend/tasks/Plan_execute.py`
+2. **Verification System Redesign**
+   - **Reduced scope**: Verifier now focuses ONLY on "Does the code answer the user's question?"
+   - **Reduced iterations**: Maximum verification iterations reduced from 10 to 3
+   - Removed overly detailed checks (performance, code quality, file handling details)
+   - Simplified verification prompt for faster and more focused validation
 
-### v1.0.5 (2025-10-31)
-**File Uploads Always Routed to Agentic Workflow**
-- **Fixed**: Attached files were ignored when the query was classified as simple chat, causing replies like "attached file was not provided".
-- **Changed**: If files are attached to `/v1/chat/completions`, the request now forces the agentic workflow to ensure file handling.
-- **Impact**: JSON/Excel analysis examples reliably access the uploaded files.
-- **Files Modified**: `backend/api/routes.py`
+3. **Execution Retry Logic**
+   - Added automatic retry mechanism for failed code execution
+   - Maximum 5 execution attempts with auto-fixing between retries
+   - New `_fix_execution_error()` method uses LLM to analyze and fix runtime errors
+   - Execution history tracking for debugging
 
-### v1.0.3 (2025-10-31)
-**Logging Readability Overhaul**
-- **Changed**: Standardized log format to include timestamp, level, module, function, and line
-- **Added**: Global readability filter that removes banner/separator lines, collapses multi-line messages to a single-line preview, and truncates overly long entries
-- **Impact**: `logger.info` output across the entire app is significantly cleaner and easier to scan
-- **Files Modified**: `backend/api/app.py`
-- **Details**:
-  - Introduced `ReadabilityFilter` applied to both console and file handlers
-  - New format: `%(asctime)s %(levelname)s %(name)s:%(funcName)s:%(lineno)d - %(message)s`
+4. **Code Quality Improvements**
+   - Consolidated constants (`BLOCKED_IMPORTS`, `SUPPORTED_FILE_TYPES`)
+   - Better separation of concerns (CodeExecutor vs PythonCoderTool)
+   - Improved logging and error messages
+   - Backward compatibility exports for existing imports
 
-### v1.0.4 (2025-10-31)
-**ReAct Logging: Inputs/Outputs Only + Line Breaks**
-- **Changed**: Removed logging of full LLM system prompts in ReAct agent
-- **Added**: Line-by-line logging for LLM/tool outputs and extra blank lines between phases for readability
-- **Impact**: Clearer logs showing only inputs and outputs, without verbose prompt templates
-- **Files Modified**: `backend/tasks/React.py`
-- **Details**:
-  - Replaced multi-line single log entries with per-line logs to avoid collapsing
-  - Omitted prompt bodies in thought/action/final-answer generation logs
+5. **Configuration Updates**
+   - `settings.py`: `python_code_max_iterations` default changed from 10 to 3
+   - Removed obsolete `python_executor` references from `React.py`
+   - Consolidated `PYTHON_CODE` and `PYTHON_CODER` tool types into single `PYTHON_CODER`
 
-### v1.0.2 (2025-10-31)
-**Python Executor - Fixed NameError for Built-in Functions**
-- **Fixed**: `NameError: name 'print' is not defined` when executing code via PYTHON_CODE tool
-- **Reason**: `__builtins__` can be either a dict or module depending on execution context; the code only handled the module case
-- **Impact**: Built-in functions like `print`, `len`, `str`, `int`, etc. now work correctly in executed code
-- **Files Modified**: `backend/tools/python_executor.py`
-- **Details**: 
-  - Updated `_create_safe_globals()` method to handle both dict and module types for `__builtins__`
-  - Adds type checking: uses dict access when `__builtins__` is dict, getattr when it's a module
-  - Ensures all non-forbidden built-in functions are available in the execution environment
+6. **File Cleanup**
+   - Deleted: `backend/tools/python_executor_engine.py`
+   - Deleted: `backend/tools/python_executor.py` (unused)
+   - Updated: `backend/tasks/React.py` (removed python_executor imports)
+   - Updated: `backend/tools/python_coder_tool.py` (unified implementation)
 
-### v1.0.1 (2025-10-31)
-**Python Coder Tool - Output Format Simplification**
-- **Changed**: Removed JSON output requirement from code verification prompt
-- **Reason**: Eliminated inconsistency between code generation (which instructed to use prints) and verification (which checked for JSON output)
-- **Impact**: Generated code now consistently uses simple `print()` statements for output instead of JSON formatting
-- **Files Modified**: `backend/tools/python_coder_tool.py`
-- **Details**: 
-  - Updated verification prompt "OUTPUT FORMAT COMPLIANCE" section to "OUTPUT FORMAT"
-  - Now verifies that code uses print() statements, outputs are clear, and errors are communicated
-  - Removes unnecessary complexity of JSON formatting in generated code
+**Benefits:**
+- Faster verification (3 iterations vs 10)
+- More reliable execution (5 retry attempts with auto-fixing)
+- Simpler codebase (1 file instead of 3)
+- Focused verification on core goal (answering user's question)
+- Better error recovery through retry logic
 
-### v1.0.0 (Initial)
-- Python code generation with LLM (Ollama)
-- Iterative code verification and modification
-- Secure Python code execution with sandboxing
-- File upload and processing support
-- User authentication and session management
-- Conversation history storage
-- Web search integration
-- RAG (Retrieval Augmented Generation) capabilities
+**Breaking Changes:**
+- `python_executor_engine.PythonExecutor` moved to `python_coder_tool.CodeExecutor`
+- `ToolName.PYTHON_CODE` removed, use `ToolName.PYTHON_CODER` instead
+- Import changes required in custom code using these tools
+
+---
+
+### Version 1.1.0 (Previous)
+- Multi-agent architecture implementation
+- ReAct pattern for reasoning and acting
+- Plan-Execute workflow for complex tasks
+- Web search and RAG integration
+
+### Version 1.0.0 (Initial)
+- Basic LLM API server
+- Ollama integration
+- Simple chat functionality
+
+## Development
+
+### Project Structure
+
+- **API Layer** (`backend/api/`): FastAPI routes and HTTP handling
+- **Agent Layer** (`backend/tasks/`, `backend/core/`): Agentic reasoning and task execution
+- **Tool Layer** (`backend/tools/`): External integrations (web, RAG, code execution)
+- **Storage Layer** (`backend/storage/`): Data persistence
+
+### Adding New Tools
+
+1. Create tool in `backend/tools/`
+2. Register in `backend/tasks/React.py` or `backend/core/agent_graph.py`
+3. Add to `ToolName` enum if needed
+
+### Testing
+
+```bash
+# Run API tests
+python -m pytest tests/
+
+# Manual testing with Jupyter notebook
+jupyter notebook API_examples.ipynb
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Ollama Connection Error**
+   - Ensure Ollama is running: `ollama serve`
+   - Check `ollama_host` in settings
+
+2. **Code Execution Timeout**
+   - Increase `python_code_timeout` in settings
+   - Check for infinite loops in generated code
+
+3. **Import Errors in Generated Code**
+   - Review `BLOCKED_IMPORTS` in `python_coder_tool.py`
+   - Required packages must be installed in environment
+
+4. **Memory Issues**
+   - Reduce `ollama_num_ctx` for lower memory usage
+   - Increase `python_code_max_memory` if needed
+
+## Security Considerations
+
+- **Never expose** the server directly to the internet without proper authentication
+- **Change** `secret_key` in production
+- **Review** `BLOCKED_IMPORTS` before modifying
+- **Monitor** code execution logs for suspicious activity
+- **Limit** file upload sizes and types
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit changes with clear messages
+4. Submit a pull request
+
+## License
+
+[Your License Here]
+
+## Contact
+
+[Your Contact Information]
+
+---
+
+**Last Updated**: October 31, 2024
+**Version**: 1.2.0
 

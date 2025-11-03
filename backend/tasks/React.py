@@ -14,7 +14,6 @@ from backend.config.settings import settings
 from backend.models.schemas import ChatMessage, PlanStep, StepResult
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
-from backend.tools.python_executor import python_executor
 from backend.tools.python_coder_tool import python_coder_tool
 
 logger = logging.getLogger(__name__)
@@ -23,7 +22,6 @@ class ToolName(str, Enum):
     """Available tools for ReAct agent"""
     WEB_SEARCH = "web_search"
     RAG_RETRIEVAL = "rag_retrieval"
-    PYTHON_CODE = "python_code"
     PYTHON_CODER = "python_coder"
     FINISH = "finish"
 
@@ -479,7 +477,7 @@ class ReActAgent:
         tool_mapping = {
             "web_search": ToolName.WEB_SEARCH,
             "rag_retrieval": ToolName.RAG_RETRIEVAL,
-            "python_code": ToolName.PYTHON_CODE,
+            "python_code": ToolName.PYTHON_CODER,
             "python_coder": ToolName.PYTHON_CODER,
             "finish": ToolName.FINISH
         }
@@ -759,8 +757,8 @@ Now provide your thought and action:"""
                     "retrieval": ToolName.RAG_RETRIEVAL,
                     "retrieve": ToolName.RAG_RETRIEVAL,
                     "document": ToolName.RAG_RETRIEVAL,
-                    "python": ToolName.PYTHON_CODE,
-                    "code": ToolName.PYTHON_CODE,
+                    "python": ToolName.PYTHON_CODER,
+                    "code": ToolName.PYTHON_CODER,
                     "coder": ToolName.PYTHON_CODER,
                     "generate": ToolName.PYTHON_CODER,
                     "done": ToolName.FINISH,
@@ -956,8 +954,8 @@ Now provide your action:"""
                 "retrieval": ToolName.RAG_RETRIEVAL,
                 "retrieve": ToolName.RAG_RETRIEVAL,
                 "document": ToolName.RAG_RETRIEVAL,
-                "python": ToolName.PYTHON_CODE,
-                "code": ToolName.PYTHON_CODE,
+                "python": ToolName.PYTHON_CODER,
+                "code": ToolName.PYTHON_CODER,
                 "coder": ToolName.PYTHON_CODER,
                 "generate": ToolName.PYTHON_CODER,
                 "generate_code": ToolName.PYTHON_CODER,
@@ -1105,19 +1103,6 @@ Now provide your action:"""
 
                 logger.info("")
                 logger.info("TOOL OUTPUT (RAG Retrieval):")
-                for _line in str(final_observation).splitlines():
-                    logger.info(_line)
-                logger.info("")
-
-                return final_observation
-
-            elif action == ToolName.PYTHON_CODE:
-                result = await python_executor.execute(action_input)
-                final_observation = python_executor.format_result(result)
-
-                logger.info("")
-                logger.info("TOOL OUTPUT (Python Code Execution):")
-                logger.info("Execution Result:")
                 for _line in str(final_observation).splitlines():
                     logger.info(_line)
                 logger.info("")
