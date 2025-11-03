@@ -486,6 +486,20 @@ class ReActAgent:
         if not tool_enum:
             return f"Unknown tool: {tool_name}", False
 
+        # Special handling for FINISH tool - it doesn't execute, it generates final answer
+        if tool_enum == ToolName.FINISH:
+            logger.info(f"[ReAct Step {plan_step.step_num}] FINISH tool selected - generating final answer from context")
+
+            # Generate final answer based on all previous context
+            final_answer = await self._generate_final_answer_for_finish_step(
+                user_query=user_query,
+                plan_step=plan_step,
+                context=context
+            )
+
+            # FINISH always succeeds - it's the termination condition
+            return final_answer, True
+
         # Generate action input for this tool
         action_input = await self._generate_action_input_for_step(
             tool_name=tool_enum,
@@ -505,6 +519,44 @@ class ReActAgent:
         )
 
         return observation, success
+
+    async def _generate_final_answer_for_finish_step(
+        self,
+        user_query: str,
+        plan_step: PlanStep,
+        context: str
+    ) -> str:
+        """
+        Generate final answer when FINISH tool is selected in plan execution.
+
+        Args:
+            user_query: Original user query
+            plan_step: Current plan step (should be finish step)
+            context: Context from all previous steps
+
+        Returns:
+            Final answer string
+        """
+        prompt = f"""You are completing a multi-step task. Generate a final, comprehensive answer based on all the work done so far.
+
+Original User Query: {user_query}
+
+Final Step Goal: {plan_step.goal}
+
+All Previous Steps and Their Results:
+{context}
+
+Based on all the steps executed and their results above, provide a clear, complete, and accurate final answer to the user's query.
+Your answer should:
+1. Directly address the user's original question
+2. Synthesize information from all previous steps
+3. Include specific details, numbers, and facts from the observations
+4. Be well-organized and easy to understand
+
+Provide your final answer:"""
+
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        return response.content.strip()
 
     async def _generate_action_input_for_step(
         self,
@@ -1121,7 +1173,8 @@ Now provide your action:"""
                 logger.info("")
                 logger.info("TOOL OUTPUT (Python Coder - Detailed):")
                 logger.info(f"Success: {result['success']}")
-                logger.info(f"Iterations: {result.get('iterations', 'N/A')}")
+                logger.info(f"Verification Iterations: {result.get('verification_iterations', 'N/A')}")
+                logger.info(f"Execution Attempts: {result.get('execution_attempts', 'N/A')}")
                 logger.info(f"Execution Time: {result.get('execution_time', 'N/A'):.2f}s" if isinstance(result.get('execution_time'), (int, float)) else f"Execution Time: {result.get('execution_time', 'N/A')}")
                 if self.file_paths:
                     logger.info(f"Files Used: {len(self.file_paths)} files")
@@ -1142,7 +1195,17 @@ Now provide your action:"""
                             logger.info(_line)
                         logger.info("")
 
-                    final_observation = f"Code executed successfully:\n{result['output']}\n\nExecution details: {result['iterations']} iterations, {result['execution_time']:.2f}s"
+                    # Build execution details string safely
+                    exec_details_parts = []
+                    if result.get('verification_iterations'):
+                        exec_details_parts.append(f"{result['verification_iterations']} verification iterations")
+                    if result.get('execution_attempts'):
+                        exec_details_parts.append(f"{result['execution_attempts']} execution attempts")
+                    if isinstance(result.get('execution_time'), (int, float)):
+                        exec_details_parts.append(f"{result['execution_time']:.2f}s")
+
+                    exec_details = ", ".join(exec_details_parts) if exec_details_parts else "completed"
+                    final_observation = f"Code executed successfully:\n{result['output']}\n\nExecution details: {exec_details}"
                 else:
                     logger.info("Error Details:")
                     for _line in str(result.get('error', 'Unknown error')).splitlines():
