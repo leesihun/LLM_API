@@ -619,6 +619,7 @@ Important requirements:
 Generate ONLY the Python code, no explanations or markdown:"""
 
         try:
+            logger.info(f"\n\n\[PythonCoderTool] Generating code with prompt: {prompt[:]}...\n\n")
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
             # Extract code from response (remove markdown if present)
             code = response.content.strip()
