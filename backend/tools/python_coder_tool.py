@@ -610,11 +610,12 @@ Task: {query}
 {file_context}
 
 Important requirements:
-1. Use the EXACT filenames shown above (they are in the current directory)
-2. Output results using print() statements
-3. Include error handling (try/except)
-4. Add a docstring explaining what the code does
-5. Keep code clean and readable
+- Never add raw data to the code, always use the filenames to read the data
+- Use the EXACT filenames shown above (they are in the current directory)
+- Output results using print() statements
+- Include error handling (try/except)
+- Add a docstring explaining what the code does
+- Keep code clean and readable
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
