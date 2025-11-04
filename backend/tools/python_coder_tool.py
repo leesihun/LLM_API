@@ -616,6 +616,7 @@ Important requirements:
 - Include error handling (try/except)
 - Add a docstring explaining what the code does
 - Keep code clean and readable
+- Always use the real data. NEVER makeup data and ask user to input data.
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
