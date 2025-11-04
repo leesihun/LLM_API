@@ -621,7 +621,9 @@ Important requirements:
 Generate ONLY the Python code, no explanations or markdown:"""
 
         try:
-            logger.info(f"\n\n\[PythonCoderTool] Generating code with prompt: {prompt}...\n\n")
+            logger.info(f"\n\n\[PythonCoderTool] Generating code with prompt: {prompt}...\n\n", prompt)
+            logger.info(f"File context: {file_context}")
+            logger.info(f"context: {context}")
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
             # Extract code from response (remove markdown if present)
             code = response.content.strip()
