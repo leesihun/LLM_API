@@ -299,6 +299,9 @@ class PythonCoderTool:
                     "output": ""
                 }
 
+        # Build file context (reused in both generation and verification)
+        file_context = self._build_file_context(validated_files, file_metadata)
+
         # Phase 1: Generate initial code
         code = await self._generate_code(query, context, validated_files, file_metadata)
         if not code:
@@ -318,7 +321,7 @@ class PythonCoderTool:
             logger.info(f"[PythonCoderTool] Verification iteration {iteration + 1}/{self.max_verification_iterations}")
 
             # Verify code (focused on answering user's question)
-            verified, issues = await self._verify_code_answers_question(code, query)
+            verified, issues = await self._verify_code_answers_question(code, query, context, file_context)
 
             verification_history.append({
                 "iteration": iteration + 1,
@@ -539,6 +542,67 @@ class PythonCoderTool:
         # If no temp_ prefix, return as-is
         return temp_filename
 
+    def _build_file_context(
+        self,
+        validated_files: Dict[str, str],
+        file_metadata: Dict[str, Any]
+    ) -> str:
+        """
+        Build file context string for LLM prompts.
+
+        Args:
+            validated_files: Dict of validated files
+            file_metadata: Metadata for files
+
+        Returns:
+            Formatted file context string
+        """
+        if not validated_files:
+            return ""
+
+        file_context = """
+
+IMPORTANT - FILE ACCESS:
+All files are in the current working directory. Use the exact filenames shown below.
+
+Available files:
+"""
+
+        for idx, (original_path, original_filename) in enumerate(validated_files.items(), 1):
+            metadata = file_metadata.get(original_path, {})
+            file_type = metadata.get('type', 'unknown')
+
+            file_context += f"\n{idx}. \"{original_filename}\" - {file_type.upper()} ({metadata.get('size_mb', 0)}MB)\n"
+
+            # Add relevant metadata
+            if 'columns' in metadata:
+                cols = metadata['columns'][:10]
+                file_context += f"   Columns: {', '.join(cols)}"
+                if len(metadata.get('columns', [])) > 10:
+                    file_context += f" ... (+{len(metadata['columns']) - 10} more)"
+                file_context += "\n"
+
+            if 'structure' in metadata:
+                file_context += f"   Structure: {metadata['structure']} ({metadata.get('item_count', 0)} items)\n"
+
+            if 'line_count' in metadata:
+                file_context += f"   Lines: {metadata['line_count']}\n"
+
+            if 'preview' in metadata:
+                preview = metadata['preview'][:100]
+                file_context += f"   Preview: {preview}...\n"
+
+            # File access example
+            if file_type == 'csv':
+                file_context += f"   Example: df = pd.read_csv('{original_filename}')\n"
+            elif file_type == 'json':
+                file_context += f"   Example: data = json.load(open('{original_filename}'))\n"
+            elif file_type == 'excel':
+                file_context += f"   Example: df = pd.read_excel('{original_filename}')\n"
+
+        file_context += "\n"
+        return file_context
+
     async def _generate_code(
         self,
         query: str,
@@ -558,50 +622,8 @@ class PythonCoderTool:
         Returns:
             Generated code
         """
-        # Build file context
-        file_context = ""
-        if validated_files:
-            file_context = """
-
-IMPORTANT - FILE ACCESS:
-All files are in the current working directory. Use the exact filenames shown below.
-
-Available files:
-"""
-
-            for idx, (original_path, original_filename) in enumerate(validated_files.items(), 1):
-                metadata = file_metadata.get(original_path, {})
-                file_type = metadata.get('type', 'unknown')
-
-                file_context += f"\n{idx}. \"{original_filename}\" - {file_type.upper()} ({metadata.get('size_mb', 0)}MB)\n"
-
-                # Add relevant metadata
-                if 'columns' in metadata:
-                    cols = metadata['columns'][:10]
-                    file_context += f"   Columns: {', '.join(cols)}"
-                    if len(metadata.get('columns', [])) > 10:
-                        file_context += f" ... (+{len(metadata['columns']) - 10} more)"
-                    file_context += "\n"
-
-                if 'structure' in metadata:
-                    file_context += f"   Structure: {metadata['structure']} ({metadata.get('item_count', 0)} items)\n"
-
-                if 'line_count' in metadata:
-                    file_context += f"   Lines: {metadata['line_count']}\n"
-
-                if 'preview' in metadata:
-                    preview = metadata['preview'][:100]
-                    file_context += f"   Preview: {preview}...\n"
-
-                # File access example
-                if file_type == 'csv':
-                    file_context += f"   Example: df = pd.read_csv('{original_filename}')\n"
-                elif file_type == 'json':
-                    file_context += f"   Example: data = json.load(open('{original_filename}'))\n"
-                elif file_type == 'excel':
-                    file_context += f"   Example: df = pd.read_excel('{original_filename}')\n"
-
-            file_context += "\n"
+        # Build file context using helper method
+        file_context = self._build_file_context(validated_files, file_metadata)
 
         prompt = f"""You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:
 
@@ -655,7 +677,13 @@ Generate ONLY the Python code, no explanations or markdown:"""
             logger.error(f"[PythonCoderTool] Failed to generate code: {e}")
             return ""
 
-    async def _verify_code_answers_question(self, code: str, query: str) -> Tuple[bool, List[str]]:
+    async def _verify_code_answers_question(
+        self,
+        code: str,
+        query: str,
+        context: Optional[str] = None,
+        file_context: str = ""
+    ) -> Tuple[bool, List[str]]:
         """
         Verify code focuses on answering user's question.
         Simplified verification focused on the core goal.
@@ -663,6 +691,8 @@ Generate ONLY the Python code, no explanations or markdown:"""
         Args:
             code: Python code to verify
             query: Original user query
+            context: Optional additional context
+            file_context: Information about available files
 
         Returns:
             Tuple of (is_verified, list of issues)
@@ -675,13 +705,13 @@ Generate ONLY the Python code, no explanations or markdown:"""
             issues.extend(static_issues)
 
         # LLM-based semantic check: Does it answer the question?
-        semantic_issues = await self._llm_verify_answers_question(code, query)
+        semantic_issues = await self._llm_verify_answers_question(code, query, context, file_context)
         issues.extend(semantic_issues)
 
         is_verified = len(issues) == 0
         return is_verified, issues
 
-    async def _llm_verify_answers_question(self, code: str, query: str) -> List[str]:
+    async def _llm_verify_answers_question(self, code: str, query: str, context: Optional[str] = None, file_context: str = "") -> List[str]:
         """
         Use LLM to verify if code answers the user's question.
         Simplified verification focused on core requirements.
@@ -689,6 +719,8 @@ Generate ONLY the Python code, no explanations or markdown:"""
         Args:
             code: Python code to verify
             query: Original user query
+            context: Optional additional context
+            file_context: Information about available files
 
         Returns:
             List of issues found
@@ -696,6 +728,9 @@ Generate ONLY the Python code, no explanations or markdown:"""
         prompt = f"""Review this Python code and determine if it correctly answers the user's question.
 
 User Question: {query}
+
+{f"Context: {context}" if context else ""}
+{file_context}
 
 Code:
 ```python
@@ -707,7 +742,7 @@ Check ONLY these critical points:
 2. Will the code produce output that answers the question (using print statements)?
 3. Are there any obvious syntax errors?
 4. Are any imports from blocked/dangerous modules?
-5. Does the code use ONLY the real data? (NO fake data, NO user input, NO make up data, NO placeholder data)
+5. Does the code use ONLY the real data? (NO fake data, NO user input, NO make up data, NO placeholder data, ONLY use the {file_context})
 
 However, it is OK to read data from different filenames to read the data as the provided file names may be different.
 

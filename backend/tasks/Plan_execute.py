@@ -117,11 +117,11 @@ Example response format:
 [
   {{
     "step_num": 1,
-    "goal": "Load and analyze the uploaded CSV file",
+    "goal": "Load and analyze the uploaded JSON file",
     "primary_tools": ["python_coder"],
     "fallback_tools": ["python_code", "rag_retrieval"],
     "success_criteria": "Data successfully loaded with basic statistics displayed",
-    "context": "Use pandas to read CSV and show head, shape, describe"
+    "context": "Use pandas to read JSON and show head, shape, describe"
   }},
   {{
     "step_num": 2,
