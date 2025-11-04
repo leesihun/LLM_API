@@ -1,12 +1,19 @@
 # Search Engine Testing
 
-This directory contains tools for testing and comparing various search engines through LangChain.
+This directory contains tools for testing and comparing **5 carefully selected search engines** through LangChain, with emphasis on **free, no-API-key options**.
 
 ## Files
 
-- **test_search_engines.ipynb** - Comprehensive Jupyter notebook testing multiple search engines
+- **test_search_engines.ipynb** - Comprehensive Jupyter notebook testing 5 search engines
 - **test_search_simple.py** - Simple Python script to verify dependencies and test DuckDuckGo
 - **SEARCH_ENGINES_README.md** - This file
+
+## 🎯 Focus: Free & Accessible Search
+
+This testing suite prioritizes search engines that:
+- ✓ Work without API keys (DuckDuckGo, SearxNG)
+- ✓ Have optional/free API keys (Search1API)
+- ⚠️ Documents known quality issues (Tavily)
 
 ## Quick Start
 
@@ -19,7 +26,7 @@ venv\Scripts\activate  # Windows
 source venv/bin/activate  # Linux/Mac
 
 # Install required packages
-pip install langchain-community duckduckgo-search tavily-python ddgs
+pip install langchain-community duckduckgo-search ddgs tavily-python langchain-search1api
 ```
 
 ### 2. Test Dependencies
@@ -41,43 +48,45 @@ This will:
 jupyter notebook test_search_engines.ipynb
 ```
 
-## Search Engines Tested
+## Search Engines Tested (5 Total)
 
-### 1. **DuckDuckGo** (No API Key Required)
-- Privacy-focused search
-- Free to use, no API key needed
-- Great for development and testing
-- May have rate limits
+### 🥇 1. **DuckDuckGo** (No API Key Required) - RECOMMENDED
+- ✓ Privacy-focused search
+- ✓ Free to use, **no API key needed**
+- ✓ **Best for getting started**
+- ✓ Fast and reliable
+- ⚠️ May have rate limits
 
-### 2. **Tavily** (Requires API Key)
-- Optimized for AI/LLM applications
-- Clean, structured results
-- Includes answer generation
+### 🥈 2. **SearxNG** (No API Key Required) - RECOMMENDED
+- ✓ Meta search engine (aggregates multiple sources)
+- ✓ **No API key needed**
+- ✓ Privacy-focused
+- ✓ Maximum coverage
+- ✓ Can use public instances or self-host
+- Default public instance: https://searx.be
+
+### 🥉 3. **Search1API** (Optional API Key)
+- ✓ Can try **without API key**
+- ✓ Optional free key for higher limits
+- ✓ Good balance of features
+- ⚠️ Requires: `pip install langchain-search1api`
+- Get optional API key from: https://www.search1api.com/
+
+### 4. **Mojeek** (Requires API Key)
+- ✓ Independent search engine with own index
+- ✓ Privacy-focused
+- ✓ Not reliant on other search engines
+- ⚠️ Requires API key
+- Get API key from: https://www.mojeek.com/services/search/web-search-api/
+
+### ⚠️ 5. **Tavily** (Requires API Key) - QUALITY CONCERNS
+- ❌ **2x larger token usage** vs competitors (1928 vs 918 tokens)
+- ❌ **Includes low-relevant information**
+- ❌ **Higher costs** due to verbose results
+- ⚠️ Requires post-processing/filtering
+- ✓ Optimized for AI (in theory)
 - Get API key from: https://tavily.com/
-
-### 3. **Brave Search** (Requires API Key)
-- Privacy-focused alternative to Google
-- Generous free tier: 2,000 queries/month
-- High-quality results
-- Get API key from: https://brave.com/search/api/
-
-### 4. **Google Search** (Requires API Key + CSE ID)
-- Traditional Google search quality
-- Requires Custom Search Engine setup
-- Limited free tier (100 queries/day)
-- Setup: https://developers.google.com/custom-search
-
-### 5. **Bing Search** (Requires API Key)
-- Microsoft's search engine
-- Good quality results
-- Requires Azure subscription
-- Get API key from: https://portal.azure.com
-
-### 6. **SearxNG** (No API Key, Requires Instance)
-- Meta search engine (aggregates multiple sources)
-- Privacy-focused
-- Can use public instances or self-host
-- Public instance: https://searx.be
+- **Note:** Included for comparison, but not recommended due to quality issues
 
 ## API Key Configuration
 
@@ -86,13 +95,14 @@ jupyter notebook test_search_engines.ipynb
 Create a `.env` file (add to `.gitignore`!):
 
 ```bash
-TAVILY_API_KEY=your_tavily_key_here
-BRAVE_API_KEY=your_brave_key_here
-GOOGLE_API_KEY=your_google_key_here
-GOOGLE_CSE_ID=your_cse_id_here
-BING_SUBSCRIPTION_KEY=your_bing_key_here
-SEARX_HOST=https://searx.be
+# Optional - only if you want to use these engines
+TAVILY_API_KEY=your_tavily_key_here  # Not recommended due to quality issues
+MOJEEK_API_KEY=your_mojeek_key_here
+SEARCH1API_KEY=your_search1api_key_here  # Optional, can use without
+SEARX_HOST=https://searx.be  # Or your self-hosted instance
 ```
+
+**Note:** DuckDuckGo and SearxNG work without any API keys!
 
 ### Option 2: Direct in Notebook
 
@@ -115,18 +125,33 @@ for result in results:
     print(f"Snippet: {result['snippet']}\n")
 ```
 
-### Tavily Search (Python)
+### Multi-Engine Fallback (Recommended)
 
 ```python
-from langchain_community.utilities import TavilySearchAPIWrapper
+from langchain_community.utilities import (
+    DuckDuckGoSearchAPIWrapper,
+    SearxSearchWrapper
+)
 
-search = TavilySearchAPIWrapper(tavily_api_key="your-key-here")
-results = search.results("latest AI developments", 5)
+# Production-ready fallback strategy
+def search_with_fallback(query, max_results=5):
+    engines = [
+        DuckDuckGoSearchAPIWrapper(max_results=max_results),  # Primary
+        SearxSearchWrapper(searx_host="https://searx.be"),  # Fallback
+    ]
+
+    for engine in engines:
+        try:
+            results = engine.results(query, max_results)
+            if results:
+                return results
+        except Exception:
+            continue
+
+    return []
 ```
 
-### Multi-Engine Search
-
-The notebook includes an example of using multiple search engines together for better coverage.
+The notebook includes more examples of multi-engine strategies.
 
 ## Performance Comparison
 
@@ -138,20 +163,24 @@ The notebook includes benchmarking to compare:
 
 ## Recommendations
 
-**For Development/Testing:**
-- Use **DuckDuckGo** - free, no API key required
+**🥇 For Getting Started (BEST):**
+- Use **DuckDuckGo** - free, no API key, reliable, works immediately
 
-**For AI/LLM Applications:**
-- Use **Tavily** - optimized for AI with clean results
+**🥈 For Maximum Coverage:**
+- Use **SearxNG** - free, no API key, aggregates multiple engines
 
-**For Privacy + Quality:**
-- Use **Brave Search** - good balance of privacy and results
+**🥉 For Production (Recommended Strategy):**
+- Use **DuckDuckGo + SearxNG** fallback - zero cost, high reliability
 
-**For Enterprise/Production:**
-- Use **Google** or **Bing** - highest quality results
+**For Independent Index:**
+- Use **Mojeek** - own search index, privacy-focused (requires API key)
 
-**For Maximum Coverage:**
-- Use **SearxNG** - aggregates multiple engines
+**For Flexible Testing:**
+- Use **Search1API** - optional API key, good for experimentation
+
+**❌ NOT Recommended:**
+- **Tavily** - quality issues, 2x token usage, includes low-relevant info
+  - Only use if you absolutely need AI-specific features AND can post-process results
 
 ## Troubleshooting
 
@@ -161,8 +190,10 @@ The notebook includes benchmarking to compare:
 ### Issue: "Could not import ddgs python package"
 **Solution:** Run `pip install ddgs`
 
-### Issue: "Tavily API error"
-**Solution:** Check your API key is valid and not expired
+### Issue: "Tavily API error" or poor quality results
+**Solution:**
+- Check your API key is valid and not expired
+- Consider switching to DuckDuckGo or SearxNG for better quality and no costs
 
 ### Issue: Rate limit errors
 **Solution:**
@@ -181,23 +212,35 @@ if sys.platform == 'win32':
 
 ## Integration with Your API
 
-The current `backend/tools/web_search.py` uses Tavily with websearch_ts fallback. You can enhance it to use multiple engines:
+The current `backend/tools/web_search.py` uses Tavily with websearch_ts fallback. **Recommended: Replace with DuckDuckGo + SearxNG** for better quality and zero cost:
 
 ```python
-# Example: Multi-engine fallback
-engines = [
-    TavilySearchAPIWrapper(tavily_api_key=TAVILY_KEY),
-    DuckDuckGoSearchAPIWrapper(max_results=5),
-]
+# Recommended: Multi-engine fallback (no API keys needed!)
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper, SearxSearchWrapper
 
-for engine in engines:
-    try:
-        results = engine.results(query, max_results)
-        if results:
-            return results
-    except Exception as e:
-        continue
+def search_with_fallback(query, max_results=5):
+    engines = [
+        DuckDuckGoSearchAPIWrapper(max_results=max_results),  # Primary: Fast, reliable
+        SearxSearchWrapper(searx_host="https://searx.be"),    # Fallback: Broader coverage
+    ]
+
+    for engine in engines:
+        try:
+            results = engine.results(query, max_results)
+            if results:
+                return results
+        except Exception as e:
+            print(f"Engine failed: {e}, trying next...")
+            continue
+
+    return []  # All engines failed
 ```
+
+**Benefits over Tavily:**
+- ✓ Zero cost (no API key needed)
+- ✓ Better quality results
+- ✓ No token bloat
+- ✓ Automatic fallback for reliability
 
 ## Next Steps
 
@@ -212,10 +255,11 @@ for engine in engines:
 ## Resources
 
 - **LangChain Docs:** https://python.langchain.com/docs/integrations/tools/
-- **Tavily API:** https://docs.tavily.com/
-- **Brave Search API:** https://brave.com/search/api/
 - **DuckDuckGo Search:** https://github.com/deedy5/duckduckgo_search
 - **SearxNG:** https://docs.searxng.org/
+- **Search1API:** https://www.search1api.com/
+- **Mojeek API:** https://www.mojeek.com/services/search/web-search-api/
+- **Tavily API:** https://docs.tavily.com/ (not recommended due to quality issues)
 
 ## License
 
@@ -223,5 +267,14 @@ This testing code is part of your LLM API project and follows the same license.
 
 ---
 
-**Last Updated:** November 3, 2025
+## Summary
+
+**Best Approach:** Use DuckDuckGo as primary + SearxNG as fallback = **Zero cost, high quality, no API key management!**
+
+**Avoid:** Tavily (quality issues, 2x token usage, expensive)
+
+---
+
+**Last Updated:** November 4, 2025
 **Tested With:** Python 3.11+, LangChain 0.3+
+**Search Engines:** 5 (down from 6, removed Brave/Google/Bing, added Mojeek/Search1API)
