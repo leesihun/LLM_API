@@ -250,7 +250,7 @@ class PythonCoderTool:
             execution_base_dir=settings.python_code_execution_dir
         )
         # Verifier max iterations: 3
-        self.max_verification_iterations = 3
+        self.max_verification_iterations = 5
         # Execution retry max attempts: 5
         self.max_execution_attempts = 5
         self.allow_partial_execution = settings.python_code_allow_partial_execution
@@ -622,9 +622,17 @@ Important requirements:
 Generate ONLY the Python code, no explanations or markdown:"""
 
         try:
-            logger.info(f"\n\n[PythonCoderTool] Generating code with prompt: {prompt}...\n\n")
-            logger.info(f"File context: {file_context}")
-            logger.info(f"context: {context}")
+            logger.info("\n\n[PythonCoderTool] Generating code...")
+            logger.info("=" * 80)
+            if file_context:
+                logger.info("[PythonCoderTool] File Context:")
+                for line in file_context.strip().split('\n'):
+                    logger.info(f"  {line}")
+            if context:
+                logger.info("[PythonCoderTool] Agent Context:")
+                for line in context.strip().split('\n')[:20]:  # First 20 lines
+                    logger.info(f"  {line}")
+            logger.info("=" * 80)
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
             # Extract code from response (remove markdown if present)
             code = response.content.strip()
