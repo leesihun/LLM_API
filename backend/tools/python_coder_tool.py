@@ -425,14 +425,18 @@ class PythonCoderTool:
                 logger.error(f"[PythonCoderTool] Unsupported file type: {file_path}")
                 continue
 
+            # Extract ORIGINAL filename (remove temp_ prefix if present)
+            original_filename = self._get_original_filename(path.name)
+
             # Extract metadata
             metadata = self._extract_file_metadata(path)
+            metadata['original_filename'] = original_filename  # Add to metadata
             file_metadata[str(path)] = metadata
 
-            # Store mapping (original path -> basename for execution)
-            validated_files[str(path)] = path.name
+            # Store mapping (temp path -> ORIGINAL filename for execution)
+            validated_files[str(path)] = original_filename
 
-            logger.info(f"[PythonCoderTool] Validated file: {path.name} ({size_mb:.2f}MB)")
+            logger.info(f"[PythonCoderTool] Validated file: {original_filename} (temp: {path.name}, {size_mb:.2f}MB)")
 
         return validated_files, file_metadata
 
@@ -512,6 +516,28 @@ class PythonCoderTool:
 
         return metadata
 
+    def _get_original_filename(self, temp_filename: str) -> str:
+        """
+        Extract original filename from temp filename.
+
+        Temp files are named: temp_XXXXXXXX_originalname.ext
+        This method strips the temp_ prefix to get: originalname.ext
+
+        Args:
+            temp_filename: Filename possibly with temp_ prefix
+
+        Returns:
+            Original filename without temp_ prefix
+        """
+        if temp_filename.startswith('temp_'):
+            # Split on underscore: ['temp', 'XXXXXXXX', 'originalname.ext']
+            parts = temp_filename.split('_', 2)
+            if len(parts) >= 3:
+                return parts[2]  # Return the original filename
+
+        # If no temp_ prefix, return as-is
+        return temp_filename
+
     async def _generate_code(
         self,
         query: str,
@@ -534,14 +560,47 @@ class PythonCoderTool:
         # Build file context
         file_context = ""
         if validated_files:
-            file_context = "\n\nAvailable files:\n"
-            for original_path, basename in validated_files.items():
+            file_context = """
+
+IMPORTANT - FILE ACCESS:
+All files are in the current working directory. Use the exact filenames shown below.
+
+Available files:
+"""
+
+            for idx, (original_path, original_filename) in enumerate(validated_files.items(), 1):
                 metadata = file_metadata.get(original_path, {})
-                file_context += f"- {basename}: {metadata.get('type', 'unknown')} ({metadata.get('size_mb', 0)}MB)\n"
+                file_type = metadata.get('type', 'unknown')
+
+                file_context += f"\n{idx}. \"{original_filename}\" - {file_type.upper()} ({metadata.get('size_mb', 0)}MB)\n"
+
+                # Add relevant metadata
                 if 'columns' in metadata:
-                    file_context += f"  Columns: {', '.join(metadata['columns'][:10])}\n"
+                    cols = metadata['columns'][:10]
+                    file_context += f"   Columns: {', '.join(cols)}"
+                    if len(metadata.get('columns', [])) > 10:
+                        file_context += f" ... (+{len(metadata['columns']) - 10} more)"
+                    file_context += "\n"
+
+                if 'structure' in metadata:
+                    file_context += f"   Structure: {metadata['structure']} ({metadata.get('item_count', 0)} items)\n"
+
+                if 'line_count' in metadata:
+                    file_context += f"   Lines: {metadata['line_count']}\n"
+
                 if 'preview' in metadata:
-                    file_context += f"  Preview: {metadata['preview'][:100]}...\n"
+                    preview = metadata['preview'][:100]
+                    file_context += f"   Preview: {preview}...\n"
+
+                # File access example
+                if file_type == 'csv':
+                    file_context += f"   Example: df = pd.read_csv('{original_filename}')\n"
+                elif file_type == 'json':
+                    file_context += f"   Example: data = json.load(open('{original_filename}'))\n"
+                elif file_type == 'excel':
+                    file_context += f"   Example: df = pd.read_excel('{original_filename}')\n"
+
+            file_context += "\n"
 
         prompt = f"""You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:
 
@@ -551,10 +610,10 @@ Task: {query}
 {file_context}
 
 Important requirements:
-1. If files are provided, access them by their full path
+1. Use the EXACT filenames shown above (they are in the current directory)
 2. Output results using print() statements
-3. Include error handling
-4. Add docstring explaining what the code does
+3. Include error handling (try/except)
+4. Add a docstring explaining what the code does
 5. Keep code clean and readable
 
 Generate ONLY the Python code, no explanations or markdown:"""
