@@ -369,7 +369,8 @@ class PythonCoderTool:
             if attempt < self.max_execution_attempts - 1:
                 logger.warning(f"[PythonCoderTool] Execution failed on attempt {attempt + 1}, attempting to fix code")
                 error_message = execution_result.get("error", "Unknown error")
-                code, fix_changes = await self._fix_execution_error(code, query, error_message)
+                # Pass context to help fix execution errors
+                code, fix_changes = await self._fix_execution_error(code, query, error_message, context)
                 modifications.extend(fix_changes)
             else:
                 logger.error(f"[PythonCoderTool] Execution failed after {self.max_execution_attempts} attempts")
@@ -610,7 +611,7 @@ Task: {query}
 {file_context}
 
 Important requirements:
-- Never add raw data to the code, always use the filenames to read the data
+- Never add raw data to the code, always use the actual filenames to read the data
 - Use the EXACT filenames shown above (they are in the current directory)
 - Output results using print() statements
 - Include error handling (try/except)
@@ -621,7 +622,7 @@ Important requirements:
 Generate ONLY the Python code, no explanations or markdown:"""
 
         try:
-            logger.info(f"\n\n\[PythonCoderTool] Generating code with prompt: {prompt}...\n\n", prompt)
+            logger.info(f"\n\n[PythonCoderTool] Generating code with prompt: {prompt}...\n\n")
             logger.info(f"File context: {file_context}")
             logger.info(f"context: {context}")
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
@@ -694,7 +695,7 @@ Check ONLY these critical points:
 2. Will the code produce output that answers the question (using print statements)?
 3. Are there any obvious syntax errors?
 4. Are any imports from blocked/dangerous modules?
-5. Does the code use the real data?
+5. Does the code use ONLY the real data? (NO fake data, NO user input, NO make up data, NO placeholder data)
 
 However, it is OK to read data from different filenames to read the data as the provided file names may be different.
 
@@ -778,7 +779,8 @@ Generate the corrected Python code. Output ONLY the code, no explanations:"""
         self,
         code: str,
         query: str,
-        error_message: str
+        error_message: str,
+        context: Optional[str] = None
     ) -> Tuple[str, List[str]]:
         """
         Fix code based on execution error.
@@ -787,6 +789,7 @@ Generate the corrected Python code. Output ONLY the code, no explanations:"""
             code: Current Python code
             query: Original user query
             error_message: Error from execution
+            context: Optional additional context from agent execution history
 
         Returns:
             Tuple of (fixed_code, list of changes made)
@@ -794,6 +797,7 @@ Generate the corrected Python code. Output ONLY the code, no explanations:"""
         prompt = f"""Fix the following Python code that failed during execution:
 
 Original request: {query}
+{f"Context: {context}" if context else ""}
 
 Current code:
 ```python

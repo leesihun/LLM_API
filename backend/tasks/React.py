@@ -137,10 +137,12 @@ class ReActAgent:
             logger.info("[ReAct Agent] Pre-step: Files detected, attempting python_coder before tool loop")
             try:
                 self._attempted_coder = True
+                # No context yet at pre-step (no previous steps)
                 coder_result = await python_coder_tool.execute_code_task(
                     query=user_query,
                     file_paths=self.file_paths,
-                    session_id=self.session_id
+                    session_id=self.session_id,
+                    context=None  # First attempt, no prior context
                 )
 
                 # Record as a step for traceability
@@ -452,6 +454,41 @@ class ReActAgent:
             metadata={"all_tools_tried": all_tools}
         )
 
+    def _build_context_for_plan_step(self, plan_step: PlanStep, previous_steps_context: str) -> str:
+        """
+        Build enhanced context for python_coder when executing in Plan-Execute mode
+
+        Args:
+            plan_step: Current plan step being executed
+            previous_steps_context: Context from previous plan steps
+
+        Returns:
+            Formatted context string for python_coder
+        """
+        context_parts = []
+        context_parts.append("=== Plan-Execute Mode Context ===\n")
+
+        # Current step information
+        context_parts.append(f"Current Step {plan_step.step_num}:")
+        context_parts.append(f"  Goal: {plan_step.goal}")
+        context_parts.append(f"  Success Criteria: {plan_step.success_criteria}")
+        if plan_step.context:
+            context_parts.append(f"  Additional Context: {plan_step.context}")
+        context_parts.append("")
+
+        # Previous steps results
+        if previous_steps_context and previous_steps_context != "This is the first step.":
+            context_parts.append("Previous Steps Results:")
+            context_parts.append(previous_steps_context)
+            context_parts.append("")
+
+        context_parts.append("Use this context to:")
+        context_parts.append("- Align code generation with the current step's goal")
+        context_parts.append("- Build upon results from previous steps")
+        context_parts.append("- Ensure success criteria are met")
+
+        return "\n".join(context_parts)
+
     async def _execute_tool_for_step(
         self,
         tool_name: str,
@@ -508,7 +545,34 @@ class ReActAgent:
             context=context
         )
 
-        # Execute the tool
+        # For python_coder, pass enhanced context with plan step information
+        if tool_enum == ToolName.PYTHON_CODER:
+            enhanced_context = self._build_context_for_plan_step(plan_step, context)
+            logger.info(f"[ReAct Step {plan_step.step_num}] Passing plan context to python_coder")
+
+            # Directly call python_coder with context
+            result = await python_coder_tool.execute_code_task(
+                query=action_input,
+                file_paths=self.file_paths,
+                session_id=self.session_id,
+                context=enhanced_context
+            )
+
+            if result["success"]:
+                observation = f"Code executed successfully:\n{result['output']}"
+            else:
+                observation = f"Code execution failed: {result.get('error', 'Unknown error')}"
+
+            # Verify if goal is achieved
+            success = await self._verify_step_success(
+                plan_step=plan_step,
+                observation=observation,
+                tool_used=tool_name
+            )
+
+            return observation, success
+
+        # Execute the tool (for non-python_coder tools)
         observation = await self._execute_action(tool_enum, action_input)
 
         # Verify if goal is achieved
@@ -1099,6 +1163,49 @@ Now provide your action:"""
 
         return ""
 
+    def _build_context_for_python_coder(self) -> str:
+        """
+        Build context string from ReAct execution history for python_coder
+
+        Returns:
+            Formatted context string with previous steps and observations
+        """
+        if not self.steps:
+            return ""
+
+        context_parts = []
+        context_parts.append("=== Previous Agent Activity ===\n")
+
+        # Include recent steps (last 3 steps or all if less than 3)
+        recent_steps = self.steps[-3:] if len(self.steps) > 3 else self.steps
+
+        for step in recent_steps:
+            context_parts.append(f"Step {step.step_num}:")
+            context_parts.append(f"  Thought: {step.thought[:300]}")
+            context_parts.append(f"  Action: {step.action}")
+
+            # Include observation summary
+            obs_preview = step.observation[:500] if len(step.observation) > 500 else step.observation
+            context_parts.append(f"  Result: {obs_preview}")
+
+            # Highlight if there were errors
+            if "error" in step.observation.lower() or "failed" in step.observation.lower():
+                context_parts.append(f"  ⚠ Note: This action encountered errors")
+
+            context_parts.append("")
+
+        # Add summary of what's been tried
+        tools_tried = [step.action for step in self.steps if step.action != ToolName.FINISH]
+        if tools_tried:
+            context_parts.append(f"Tools already attempted: {', '.join(set(tools_tried))}")
+
+        context_parts.append("\nThis context shows what has already been tried. Use this information to:")
+        context_parts.append("- Avoid repeating failed approaches")
+        context_parts.append("- Build upon partial results from previous steps")
+        context_parts.append("- Generate more targeted code based on what's already known")
+
+        return "\n".join(context_parts)
+
     async def _execute_action(self, action: str, action_input: str) -> str:
         """
         Execute the selected action and return observation
@@ -1131,10 +1238,14 @@ Now provide your action:"""
                     logger.info("[ReAct Agent] Guard: Files present and coder not attempted; trying python_coder before RAG")
                     try:
                         self._attempted_coder = True
+                        # Build context from current execution history
+                        context = self._build_context_for_python_coder()
+
                         coder_result = await python_coder_tool.execute_code_task(
                             query=action_input,
                             file_paths=self.file_paths,
-                            session_id=self.session_id
+                            session_id=self.session_id,
+                            context=context
                         )
                         if coder_result.get("success") and str(coder_result.get("output", "")).strip():
                             final_observation = f"Code executed successfully:\n{coder_result.get('output','')}"
@@ -1162,11 +1273,15 @@ Now provide your action:"""
                 return final_observation
 
             elif action == ToolName.PYTHON_CODER:
-                # Pass attached file paths and session_id to python_coder
+                # Build context from current execution history
+                context = self._build_context_for_python_coder()
+
+                # Pass attached file paths, session_id, and execution context to python_coder
                 result = await python_coder_tool.execute_code_task(
                     query=action_input,
                     file_paths=self.file_paths,
-                    session_id=self.session_id
+                    session_id=self.session_id,
+                    context=context
                 )
                 self._attempted_coder = True
 
