@@ -644,7 +644,11 @@ Generate ONLY the Python code, no explanations or markdown:"""
                 code = code.split("```")[0]
 
             code = code.strip()
-            logger.info(f"[PythonCoderTool] Generated code ({len(code)} chars)")
+            logger.info("[PythonCoderTool] Generated code:")
+            logger.info("=" * 80)
+            for line in code.split('\n'):
+                logger.info(f"  {line}")
+            logger.info("=" * 80)
             return code
 
         except Exception as e:
