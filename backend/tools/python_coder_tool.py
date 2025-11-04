@@ -694,6 +694,9 @@ Check ONLY these critical points:
 2. Will the code produce output that answers the question (using print statements)?
 3. Are there any obvious syntax errors?
 4. Are any imports from blocked/dangerous modules?
+5. Does the code use the real data?
+
+However, it is OK to read data from different filenames to read the data as the provided file names may be different.
 
 Respond with a JSON object:
 {{"verified": true/false, "issues": ["issue1", "issue2", ...]}}
