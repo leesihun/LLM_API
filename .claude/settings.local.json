@@ -13,7 +13,9 @@
       "Bash(python:*)",
       "Bash(del:*)",
       "Bash(\"venv/Scripts/python.exe\" test_search_simple.py)",
-      "Bash(\"venv/Scripts/pip.exe\" install ddgs)"
+      "Bash(\"venv/Scripts/pip.exe\" install ddgs)",
+      "Bash(\"venv/Scripts/python.exe\" test_file_analyzer.py)",
+      "Bash(\"venv/Scripts/python.exe\" test_react_file_analysis.py)"
     ],
     "deny": [],
     "ask": []

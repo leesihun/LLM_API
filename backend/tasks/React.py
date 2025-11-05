@@ -15,6 +15,7 @@ from backend.models.schemas import ChatMessage, PlanStep, StepResult
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.python_coder_tool import python_coder_tool
+from backend.tools.file_analyzer_tool import file_analyzer
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class ToolName(str, Enum):
     WEB_SEARCH = "web_search"
     RAG_RETRIEVAL = "rag_retrieval"
     PYTHON_CODER = "python_coder"
+    FILE_ANALYZER = "file_analyzer"
     FINISH = "finish"
 
 
@@ -132,40 +134,43 @@ class ReActAgent:
         iteration = 0
         final_answer = ""
 
-        # Pre-step: If files are attached, first try python_coder once
+        # Pre-step: If files are attached, first analyze file metadata
         if self.file_paths:
-            logger.info("[ReAct Agent] Pre-step: Files detected, attempting python_coder before tool loop")
+            logger.info("[ReAct Agent] Pre-step: Files detected, analyzing file metadata first")
             try:
-                self._attempted_coder = True
-                # No context yet at pre-step (no previous steps)
-                coder_result = await python_coder_tool.execute_code_task(
-                    query=user_query,
+                # Analyze files first to understand structure
+                analyzer_result = file_analyzer.analyze(
                     file_paths=self.file_paths,
-                    session_id=self.session_id,
-                    context=None  # First attempt, no prior context
+                    user_query=user_query
                 )
 
-                # Record as a step for traceability
+                # Record file analysis as step 0
                 pre_step = ReActStep(0)
-                pre_step.thought = "Files attached; attempt local code analysis first."
-                pre_step.action = ToolName.PYTHON_CODER
+                pre_step.thought = "Files attached; analyzing file metadata and structure first."
+                pre_step.action = ToolName.FILE_ANALYZER
                 pre_step.action_input = user_query
-                if coder_result.get("success"):
-                    obs = f"Code executed successfully:\n{coder_result.get('output','')}"
+
+                if analyzer_result.get("success"):
+                    # Include detailed structure information for LLM
+                    obs_parts = [f"File analysis completed:\n{analyzer_result.get('summary','')}"]
+
+                    # Add structure details if available
+                    for file_result in analyzer_result.get("results", []):
+                        if file_result.get("structure_summary"):
+                            obs_parts.append(f"\nDetailed structure for {file_result.get('file', 'file')}:")
+                            obs_parts.append(file_result["structure_summary"])
+
+                    obs = "\n".join(obs_parts)
                 else:
-                    obs = f"Code execution failed: {coder_result.get('error','Unknown error')}"
+                    obs = f"File analysis failed: {analyzer_result.get('error','Unknown error')}"
                 pre_step.observation = obs
                 self.steps.append(pre_step)
 
-                if coder_result.get("success") and str(coder_result.get("output", "")).strip():
-                    logger.info("[ReAct Agent] Pre-step succeeded with python_coder; returning result")
-                    final_answer = str(coder_result.get("output", "")).strip()
-                    metadata = self._build_metadata()
-                    return final_answer, metadata
-                else:
-                    logger.info("[ReAct Agent] Pre-step did not yield sufficient result; continuing with tool loop")
+                logger.info(f"[ReAct Agent] Pre-step file analysis: {analyzer_result.get('files_analyzed', 0)} files analyzed")
+                logger.info(f"File Analysis Summary:\n{analyzer_result.get('summary', '')}")
+
             except Exception as e:
-                logger.warning(f"[ReAct Agent] Pre-step python_coder error: {e}; continuing with tool loop")
+                logger.warning(f"[ReAct Agent] Pre-step file analysis error: {e}; continuing with tool loop")
 
         # ReAct loop
         while iteration < self.max_iterations:
@@ -786,16 +791,17 @@ Think step-by-step and then decide on an action. Provide BOTH your reasoning AND
 
 THOUGHT: [Your step-by-step reasoning about what to do next]
 
-ACTION: [Exactly one of: web_search, rag_retrieval, python_code, python_coder, finish]
+ACTION: [Exactly one of: web_search, rag_retrieval, python_coder, finish]
 
 ACTION INPUT: [The input for the selected action]
 
 Available Actions:
 1. web_search - Search the web for current information
 2. rag_retrieval - Retrieve relevant documents from uploaded files
-3. python_code - Execute simple Python code
-4. python_coder - Generate and execute complex Python code with file processing
-5. finish - Provide the final answer (use ONLY when you have complete information)
+3. python_coder - Generate and execute Python code with file processing and data analysis
+4. finish - Provide the final answer (use ONLY when you have complete information)
+
+Note: File metadata analysis is done automatically when files are attached.
 
 Now provide your thought and action:"""
 
@@ -965,9 +971,10 @@ Your Thought: {thought}
 Available Actions (choose EXACTLY one of these names):
 1. web_search - Search the web for current information (use for: news, current events, latest data)
 2. rag_retrieval - Retrieve relevant documents from uploaded files (use for: document queries, file content)
-3. python_code - Execute simple Python code (use for: quick calculations, simple scripts)
-4. python_coder - Generate, verify, and execute complex Python code with file processing (use for: data analysis, file processing, complex calculations, working with CSV/Excel/PDF files)
-5. finish - Provide the final answer (use ONLY when you have complete information to answer the question)
+3. python_coder - Generate and execute Python code with file processing and data analysis (use for: data analysis, file processing, calculations, working with CSV/Excel/PDF files)
+4. finish - Provide the final answer (use ONLY when you have complete information to answer the question)
+
+Note: File metadata analysis is done automatically when files are attached.
 
 RESPONSE FORMAT - You can think briefly, but you MUST end your response with these two lines:
 Action: <action_name>
@@ -1333,6 +1340,40 @@ Now provide your action:"""
                         logger.info("")
 
                     final_observation = f"Code execution failed: {result.get('error', 'Unknown error')}"
+
+                logger.info("")
+                return final_observation
+
+            elif action == ToolName.FILE_ANALYZER:
+                # FILE_ANALYZER should only be used in pre-step, but handle it just in case
+                logger.warning("[ReAct Agent] FILE_ANALYZER called during ReAct loop (should only be in pre-step)")
+
+                if not self.file_paths:
+                    return "No files attached to analyze."
+
+                result = file_analyzer.analyze(
+                    file_paths=self.file_paths,
+                    user_query=action_input
+                )
+
+                logger.info("")
+                logger.info("TOOL OUTPUT (File Analyzer):")
+                logger.info(f"Success: {result.get('success', False)}")
+                logger.info(f"Files Analyzed: {result.get('files_analyzed', 0)}")
+                logger.info("")
+
+                if result.get("success"):
+                    logger.info("Analysis Summary:")
+                    for _line in str(result.get('summary', '')).splitlines():
+                        logger.info(_line)
+                    logger.info("")
+                    final_observation = f"File analysis completed:\n{result.get('summary','')}"
+                else:
+                    logger.info("Error Details:")
+                    for _line in str(result.get('error', 'Unknown error')).splitlines():
+                        logger.info(_line)
+                    logger.info("")
+                    final_observation = f"File analysis failed: {result.get('error','Unknown error')}"
 
                 logger.info("")
                 return final_observation

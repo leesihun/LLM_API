@@ -262,7 +262,8 @@ class PythonCoderTool:
         query: str,
         context: Optional[str] = None,
         file_paths: Optional[List[str]] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        is_prestep: bool = False
     ) -> Dict[str, Any]:
         """
         Main entry point for code generation and execution.
@@ -272,6 +273,7 @@ class PythonCoderTool:
             context: Optional additional context
             file_paths: Optional list of input file paths
             session_id: Optional session ID
+            is_prestep: Whether this is called from ReAct pre-step (uses specialized prompt)
 
         Returns:
             Dict with execution results
@@ -303,7 +305,7 @@ class PythonCoderTool:
         file_context = self._build_file_context(validated_files, file_metadata)
 
         # Phase 1: Generate initial code
-        code = await self._generate_code(query, context, validated_files, file_metadata)
+        code = await self._generate_code(query, context, validated_files, file_metadata, is_prestep=is_prestep)
         if not code:
             return {
                 "success": False,
@@ -608,7 +610,8 @@ Available files:
         query: str,
         context: Optional[str],
         validated_files: Dict[str, str],
-        file_metadata: Dict[str, Any]
+        file_metadata: Dict[str, Any],
+        is_prestep: bool = False
     ) -> str:
         """
         Generate Python code using LLM.
@@ -618,6 +621,7 @@ Available files:
             context: Optional additional context
             validated_files: Dict of validated files
             file_metadata: Metadata for files
+            is_prestep: Whether this is pre-step execution (uses specialized prompt)
 
         Returns:
             Generated code
@@ -625,7 +629,35 @@ Available files:
         # Build file context using helper method
         file_context = self._build_file_context(validated_files, file_metadata)
 
-        prompt = f"""You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:
+        # Use different prompts for pre-step vs normal execution
+        if is_prestep:
+            prompt = f"""You are a Python code generator in FAST PRE-ANALYSIS MODE.
+Your goal is to quickly analyze the attached files and provide an immediate answer to the user's question.
+
+Task: {query}
+
+{file_context}
+
+PRE-STEP MODE INSTRUCTIONS:
+- This is the FIRST attempt to answer the question using ONLY the provided files
+- Generate DIRECT, FOCUSED code that answers the specific question
+- Prioritize SPEED and CLARITY over comprehensive analysis
+- Use the EXACT filenames shown above (they are in the current directory)
+- Output results using print() statements with clear labels
+- Include basic error handling (try/except)
+- Focus on the MOST RELEVANT data columns/fields for the question
+- NEVER makeup data, ALWAYS use the real files provided
+
+CODE STYLE:
+- Keep it simple and direct
+- Use pandas/numpy for data files
+- Print intermediate steps for transparency
+- Always use real data from files, NO fake data, NO placeholders
+
+Generate ONLY the Python code, no explanations or markdown:"""
+        else:
+            # Normal mode prompt (for ReAct loop iterations)
+            prompt = f"""You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:
 
 Task: {query}
 

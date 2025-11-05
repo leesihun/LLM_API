@@ -265,9 +265,30 @@ async def chat_completions(
                 use_memory=(session_id is not None)
             )
 
-        # Save to conversation history
-        conversation_store.add_message(session_id, "user", user_message)
-        conversation_store.add_message(session_id, "assistant", response_text)
+        # Save to conversation history with metadata
+        try:
+            # Save user message
+            conversation_store.add_message(session_id, "user", user_message, metadata={
+                "file_paths": file_paths if file_paths else None,
+                "task_type": task_type
+            })
+
+            # Save assistant message with agent metadata if available
+            assistant_metadata = {
+                "task_type": task_type
+            }
+            if agent_metadata:
+                assistant_metadata["agent_metadata"] = agent_metadata
+
+            conversation_store.add_message(session_id, "assistant", response_text, metadata=assistant_metadata)
+
+            logger.info(f"[Chat] Saved conversation to session {session_id} (task_type: {task_type})")
+            if agent_metadata:
+                logger.info(f"[Chat] Agent metadata included: {list(agent_metadata.keys())}")
+        except Exception as save_error:
+            logger.error(f"[Chat] Failed to save conversation: {save_error}")
+            logger.error(f"[Chat] Traceback:\n{traceback.format_exc()}")
+            # Don't fail the request if conversation saving fails
 
         # Cleanup temp files after execution
         if file_paths:
