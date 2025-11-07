@@ -491,18 +491,47 @@ class PythonCoderTool:
                 except Exception as e:
                     logger.warning(f"[PythonCoderTool] Could not extract Excel metadata: {e}")
 
-            # JSON files
+            # JSON files - use file_analyzer for deep structure analysis
             elif path.suffix.lower() == '.json':
                 try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    metadata.update({
-                        "type": "json",
-                        "structure": "array" if isinstance(data, list) else "object",
-                        "item_count": len(data) if isinstance(data, (list, dict)) else 1
-                    })
+                    from backend.tools.file_analyzer_tool import file_analyzer
+
+                    # Use file_analyzer's sophisticated JSON analysis
+                    analysis = file_analyzer._analyze_json(str(path))
+
+                    if "error" not in analysis:
+                        # Extract rich structure information
+                        depth_analysis = analysis.get("depth_analysis", {})
+
+                        # Calculate max depth from depth_analysis
+                        max_depth = file_analyzer._find_max_depth(depth_analysis) if depth_analysis else 0
+
+                        metadata.update({
+                            "type": "json",
+                            "structure": analysis.get("structure", "unknown"),
+                            "keys": analysis.get("keys", []),
+                            "structure_summary": analysis.get("structure_summary", ""),
+                            "depth_analysis": depth_analysis,
+                            "items_count": analysis.get("items_count", 0),
+                            "first_item_type": analysis.get("first_item_type", None),
+                            "max_depth": max_depth
+                        })
+                        logger.info(f"[PythonCoderTool] JSON structure analyzed: {analysis.get('structure')} with {len(analysis.get('keys', []))} top-level keys, depth={max_depth}")
+                    else:
+                        # Malformed JSON - include error info
+                        metadata.update({
+                            "type": "json",
+                            "error": analysis.get("error"),
+                            "parsing_note": "JSON file may be malformed or use non-standard format"
+                        })
+                        logger.warning(f"[PythonCoderTool] JSON analysis error: {analysis.get('error')}")
+
                 except Exception as e:
                     logger.warning(f"[PythonCoderTool] Could not extract JSON metadata: {e}")
+                    metadata.update({
+                        "type": "json",
+                        "error": str(e)[:100]
+                    })
 
             # Text files
             elif path.suffix.lower() in ['.txt', '.md', '.log', '.rtf']:
@@ -587,6 +616,32 @@ Available files:
             if 'structure' in metadata:
                 file_context += f"   Structure: {metadata['structure']} ({metadata.get('item_count', 0)} items)\n"
 
+                # Add detailed JSON structure information
+                if file_type == 'json':
+                    # Show top-level keys for objects
+                    if 'keys' in metadata and metadata['keys']:
+                        keys_display = metadata['keys'][:15]  # Show up to 15 keys
+                        file_context += f"   Top-level keys: {', '.join(keys_display)}"
+                        if len(metadata['keys']) > 15:
+                            file_context += f" ... (+{len(metadata['keys']) - 15} more)"
+                        file_context += "\n"
+
+                    # Show structure summary (hierarchical breakdown)
+                    if 'structure_summary' in metadata and metadata['structure_summary']:
+                        summary_lines = metadata['structure_summary'].split('\n')[:12]  # First 12 lines
+                        if summary_lines:
+                            file_context += f"   Structure breakdown:\n"
+                            for line in summary_lines:
+                                if line.strip():  # Skip empty lines
+                                    file_context += f"      {line}\n"
+
+                    # Show depth and item type info
+                    if 'max_depth' in metadata and metadata['max_depth'] > 1:
+                        file_context += f"   Nesting depth: {metadata['max_depth']} levels\n"
+
+                    if 'first_item_type' in metadata and metadata['first_item_type']:
+                        file_context += f"   Array items are: {metadata['first_item_type']}\n"
+
             if 'line_count' in metadata:
                 file_context += f"   Lines: {metadata['line_count']}\n"
 
@@ -598,7 +653,21 @@ Available files:
             if file_type == 'csv':
                 file_context += f"   Example: df = pd.read_csv('{original_filename}')\n"
             elif file_type == 'json':
-                file_context += f"   Example: data = json.load(open('{original_filename}'))\n"
+                # Provide proper JSON loading with encoding and error handling
+                structure_hint = ""
+                if 'keys' in metadata and metadata['keys']:
+                    example_key = metadata['keys'][0]
+                    structure_hint = f"  # Access: data['{example_key}']"
+                elif 'first_item_type' in metadata and metadata['first_item_type']:
+                    structure_hint = f"  # Access: data[0] for first item"
+
+                file_context += f"   Example: with open('{original_filename}', 'r', encoding='utf-8') as f: data = json.load(f){structure_hint}\n"
+
+                # Add error handling note if JSON had issues
+                if 'error' in metadata:
+                    file_context += f"   ⚠️  Note: Wrap in try/except json.JSONDecodeError (file may have parsing issues)\n"
+                elif 'parsing_note' in metadata:
+                    file_context += f"   ⚠️  {metadata['parsing_note']}\n"
             elif file_type == 'excel':
                 file_context += f"   Example: df = pd.read_excel('{original_filename}')\n"
 
@@ -654,6 +723,12 @@ CODE STYLE:
 - Print intermediate steps for transparency
 - Always use real data from files, NO fake data, NO placeholders
 
+JSON FILE HANDLING:
+- Always use: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
+- Add try/except json.JSONDecodeError for error handling
+- Check structure type (dict vs list) before accessing
+- Use ONLY the keys shown in the structure breakdown above
+
 Generate ONLY the Python code, no explanations or markdown:"""
         else:
             # Normal mode prompt (for ReAct loop iterations)
@@ -672,6 +747,13 @@ Important requirements:
 - Add a docstring explaining what the code does
 - Keep code clean and readable
 - Always use the real data. NEVER makeup data and ask user to input data.
+
+JSON FILE REQUIREMENTS:
+- Always use proper encoding: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
+- Wrap JSON operations in try/except json.JSONDecodeError
+- Validate structure type (isinstance(data, dict) or isinstance(data, list))
+- Access ONLY keys that exist in the structure breakdown provided above
+- For nested access, use .get() method or check keys exist first
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
