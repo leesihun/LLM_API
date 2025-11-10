@@ -506,6 +506,16 @@ class PythonCoderTool:
                         # Calculate max depth from depth_analysis
                         max_depth = file_analyzer._find_max_depth(depth_analysis) if depth_analysis else 0
 
+                        # Generate smart access patterns based on structure
+                        access_patterns = self._generate_json_access_patterns(analysis, depth_analysis)
+
+                        # Extract SAFE preview (limit depth and size to prevent context overflow)
+                        preview_data = analysis.get("preview", {})
+                        safe_preview = self._create_safe_json_preview(preview_data)
+
+                        # Check if null values exist (requires defensive coding)
+                        requires_null_check = self._check_for_null_values(preview_data)
+
                         metadata.update({
                             "type": "json",
                             "structure": analysis.get("structure", "unknown"),
@@ -514,9 +524,12 @@ class PythonCoderTool:
                             "depth_analysis": depth_analysis,
                             "items_count": analysis.get("items_count", 0),
                             "first_item_type": analysis.get("first_item_type", None),
-                            "max_depth": max_depth
+                            "max_depth": max_depth,
+                            "access_patterns": access_patterns,  # NEW: Smart access patterns
+                            "safe_preview": safe_preview,  # NEW: Safe preview instead of full data
+                            "requires_null_check": requires_null_check  # NEW: Null value warning
                         })
-                        logger.info(f"[PythonCoderTool] JSON structure analyzed: {analysis.get('structure')} with {len(analysis.get('keys', []))} top-level keys, depth={max_depth}")
+                        logger.info(f"[PythonCoderTool] JSON structure analyzed: {analysis.get('structure')} with {len(analysis.get('keys', []))} top-level keys, depth={max_depth}, {len(access_patterns)} access patterns generated")
                     else:
                         # Malformed JSON - include error info
                         metadata.update({
@@ -573,6 +586,130 @@ class PythonCoderTool:
         # If no temp_ prefix, return as-is
         return temp_filename
 
+    def _generate_json_access_patterns(
+        self,
+        analysis: Dict[str, Any],
+        depth_analysis: Dict[str, Any]
+    ) -> List[str]:
+        """
+        Generate smart access pattern examples based on JSON structure.
+
+        Args:
+            analysis: JSON analysis from file_analyzer
+            depth_analysis: Depth analysis from file_analyzer
+
+        Returns:
+            List of code examples showing how to access the JSON data
+        """
+        patterns = []
+        structure = analysis.get("structure", "unknown")
+
+        if structure == "dict":
+            keys = analysis.get("keys", [])
+            for key in keys[:3]:  # Show first 3 keys
+                # Safe access pattern
+                patterns.append(f"data.get('{key}', default_value)")
+                # Check existence pattern
+                patterns.append(f"if '{key}' in data: value = data['{key}']")
+
+            # Nested access from depth_analysis
+            if depth_analysis and depth_analysis.get("children"):
+                for key, child in list(depth_analysis["children"].items())[:2]:
+                    if child.get("type") == "dict":
+                        child_keys = child.get("keys", [])
+                        if child_keys:
+                            patterns.append(
+                                f"data.get('{key}', {{}}).get('{child_keys[0]}', default)"
+                            )
+                    elif child.get("type") == "list":
+                        patterns.append(f"if len(data.get('{key}', [])) > 0: item = data['{key}'][0]")
+
+        elif structure == "list":
+            items_count = analysis.get("items_count", 0)
+            first_item_type = analysis.get("first_item_type")
+
+            patterns.append(f"# Array with {items_count} items")
+            patterns.append("if len(data) > 0: first_item = data[0]")
+
+            if first_item_type == "dict":
+                keys = analysis.get("keys", [])
+                if keys:
+                    patterns.append(f"items = [item.get('{keys[0]}') for item in data if '{keys[0]}' in item]")
+                    patterns.append(f"for item in data:\n        value = item.get('{keys[0]}', default)")
+
+        return patterns[:8]  # Return max 8 patterns
+
+    def _create_safe_json_preview(self, preview_data: Any, max_depth: int = 2, current_depth: int = 0) -> Any:
+        """
+        Create a safe, truncated preview of JSON data to avoid context overflow.
+
+        Args:
+            preview_data: Original preview data
+            max_depth: Maximum nesting depth to show
+            current_depth: Current depth (for recursion)
+
+        Returns:
+            Truncated preview safe for LLM context
+        """
+        if current_depth >= max_depth:
+            return "... (nested data omitted)"
+
+        if isinstance(preview_data, dict):
+            safe_dict = {}
+            for i, (key, value) in enumerate(preview_data.items()):
+                if i >= 5:  # Max 5 keys at each level
+                    safe_dict["..."] = f"({len(preview_data) - 5} more keys)"
+                    break
+                safe_dict[key] = self._create_safe_json_preview(value, max_depth, current_depth + 1)
+            return safe_dict
+
+        elif isinstance(preview_data, list):
+            if len(preview_data) == 0:
+                return []
+            # Show first 3 items only
+            safe_list = [
+                self._create_safe_json_preview(item, max_depth, current_depth + 1)
+                for item in preview_data[:3]
+            ]
+            if len(preview_data) > 3:
+                safe_list.append(f"... ({len(preview_data) - 3} more items)")
+            return safe_list
+
+        elif isinstance(preview_data, str):
+            # Truncate long strings
+            if len(preview_data) > 50:
+                return preview_data[:50] + "..."
+            return preview_data
+
+        else:
+            # Return primitives as-is
+            return preview_data
+
+    def _check_for_null_values(self, data: Any) -> bool:
+        """
+        Check if JSON data contains any None/null values.
+
+        Args:
+            data: JSON data to check
+
+        Returns:
+            True if null values found, False otherwise
+        """
+        if data is None:
+            return True
+
+        if isinstance(data, dict):
+            for value in data.values():
+                if self._check_for_null_values(value):
+                    return True
+
+        elif isinstance(data, list):
+            for item in data[:10]:  # Check first 10 items only
+                if self._check_for_null_values(item):
+                    return True
+
+        return False
+
     def _build_file_context(
         self,
         validated_files: Dict[str, str],
@@ -614,26 +751,17 @@ Available files:
                 file_context += "\n"
 
             if 'structure' in metadata:
-                file_context += f"   Structure: {metadata['structure']} ({metadata.get('item_count', 0)} items)\n"
+                file_context += f"   Structure: {metadata['structure']} ({metadata.get('items_count', 0)} items)\n"
 
                 # Add detailed JSON structure information
                 if file_type == 'json':
                     # Show top-level keys for objects
                     if 'keys' in metadata and metadata['keys']:
-                        keys_display = metadata['keys'][:15]  # Show up to 15 keys
+                        keys_display = metadata['keys'][:10]  # Show up to 10 keys
                         file_context += f"   Top-level keys: {', '.join(keys_display)}"
-                        if len(metadata['keys']) > 15:
-                            file_context += f" ... (+{len(metadata['keys']) - 15} more)"
+                        if len(metadata['keys']) > 10:
+                            file_context += f" ... (+{len(metadata['keys']) - 10} more)"
                         file_context += "\n"
-
-                    # Show structure summary (hierarchical breakdown)
-                    if 'structure_summary' in metadata and metadata['structure_summary']:
-                        summary_lines = metadata['structure_summary'].split('\n')[:12]  # First 12 lines
-                        if summary_lines:
-                            file_context += f"   Structure breakdown:\n"
-                            for line in summary_lines:
-                                if line.strip():  # Skip empty lines
-                                    file_context += f"      {line}\n"
 
                     # Show depth and item type info
                     if 'max_depth' in metadata and metadata['max_depth'] > 1:
@@ -641,6 +769,29 @@ Available files:
 
                     if 'first_item_type' in metadata and metadata['first_item_type']:
                         file_context += f"   Array items are: {metadata['first_item_type']}\n"
+
+                    # NEW: Show smart access patterns (most important!)
+                    if 'access_patterns' in metadata and metadata['access_patterns']:
+                        file_context += f"   📋 Access Patterns (COPY THESE EXACTLY):\n"
+                        for pattern in metadata['access_patterns'][:6]:  # Show first 6 patterns
+                            file_context += f"      {pattern}\n"
+
+                    # NEW: Show safe preview (truncated to avoid context overflow)
+                    if 'safe_preview' in metadata:
+                        import json as json_module
+                        try:
+                            preview_str = json_module.dumps(metadata['safe_preview'], indent=2, ensure_ascii=False)[:500]
+                            file_context += f"   Sample Data (first few items):\n"
+                            for line in preview_str.split('\n')[:15]:
+                                file_context += f"      {line}\n"
+                        except:
+                            pass  # Skip if can't serialize
+
+                    # NEW: Warnings for special cases
+                    if metadata.get('requires_null_check'):
+                        file_context += f"   ⚠️  IMPORTANT: Contains null values - use .get() method for safe access\n"
+                    if metadata.get('max_depth', 0) > 3:
+                        file_context += f"   ⚠️  IMPORTANT: Deep nesting detected - validate each level before accessing\n"
 
             if 'line_count' in metadata:
                 file_context += f"   Lines: {metadata['line_count']}\n"
@@ -654,18 +805,26 @@ Available files:
                 file_context += f"   Example: df = pd.read_csv('{original_filename}')\n"
             elif file_type == 'json':
                 # Provide proper JSON loading with encoding and error handling
-                structure_hint = ""
-                if 'keys' in metadata and metadata['keys']:
-                    example_key = metadata['keys'][0]
-                    structure_hint = f"  # Access: data['{example_key}']"
-                elif 'first_item_type' in metadata and metadata['first_item_type']:
-                    structure_hint = f"  # Access: data[0] for first item"
+                file_context += f"   Example loading code:\n"
+                file_context += f"      import json\n"
+                file_context += f"      with open('{original_filename}', 'r', encoding='utf-8') as f:\n"
+                file_context += f"          data = json.load(f)\n"
 
-                file_context += f"   Example: with open('{original_filename}', 'r', encoding='utf-8') as f: data = json.load(f){structure_hint}\n"
+                # Add structure-specific access example
+                if 'access_patterns' in metadata and metadata['access_patterns']:
+                    # Use the first access pattern as example
+                    first_pattern = metadata['access_patterns'][0]
+                    file_context += f"      # Then use the access patterns above, e.g.:\n"
+                    file_context += f"      # {first_pattern}\n"
+                elif 'keys' in metadata and metadata['keys']:
+                    example_key = metadata['keys'][0]
+                    file_context += f"      # Access: value = data.get('{example_key}', default)\n"
+                elif 'first_item_type' in metadata and metadata['first_item_type']:
+                    file_context += f"      # Access: if len(data) > 0: item = data[0]\n"
 
                 # Add error handling note if JSON had issues
                 if 'error' in metadata:
-                    file_context += f"   ⚠️  Note: Wrap in try/except json.JSONDecodeError (file may have parsing issues)\n"
+                    file_context += f"   ⚠️  CRITICAL: Wrap in try/except json.JSONDecodeError (file has parsing issues)\n"
                 elif 'parsing_note' in metadata:
                     file_context += f"   ⚠️  {metadata['parsing_note']}\n"
             elif file_type == 'excel':
@@ -723,11 +882,17 @@ CODE STYLE:
 - Print intermediate steps for transparency
 - Always use real data from files, NO fake data, NO placeholders
 
-JSON FILE HANDLING:
-- Always use: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
-- Add try/except json.JSONDecodeError for error handling
-- Check structure type (dict vs list) before accessing
-- Use ONLY the keys shown in the structure breakdown above
+JSON FILE HANDLING (CRITICAL - READ CAREFULLY):
+1. ALWAYS use: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
+2. Wrap in try/except json.JSONDecodeError for error handling
+3. Check structure type FIRST: isinstance(data, dict) or isinstance(data, list)
+4. Use .get() method for dict access: data.get('key', default) NEVER data['key']
+5. ONLY use keys from "Access Patterns" section - DO NOT make up or guess keys
+6. For nested access, validate each level: data.get('parent', {}).get('child', default)
+7. For arrays, check length first: if len(data) > 0: item = data[0]
+8. COPY the "Access Patterns" shown above - they are structure-validated
+9. Handle None/null values: if value is not None: process(value)
+10. Add debug prints: print(f"Data type: {type(data)}, Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
 
 Generate ONLY the Python code, no explanations or markdown:"""
         else:
@@ -748,12 +913,17 @@ Important requirements:
 - Keep code clean and readable
 - Always use the real data. NEVER makeup data and ask user to input data.
 
-JSON FILE REQUIREMENTS:
-- Always use proper encoding: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
-- Wrap JSON operations in try/except json.JSONDecodeError
-- Validate structure type (isinstance(data, dict) or isinstance(data, list))
-- Access ONLY keys that exist in the structure breakdown provided above
-- For nested access, use .get() method or check keys exist first
+JSON FILE REQUIREMENTS (STRICT - FOLLOW EXACTLY):
+1. File loading: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
+2. Error handling: Wrap in try/except json.JSONDecodeError
+3. Type validation: Check isinstance(data, dict) or isinstance(data, list) BEFORE accessing
+4. Safe dict access: ALWAYS use data.get('key', default) NEVER data['key']
+5. Key validation: ONLY use keys from "📋 Access Patterns" section - NO guessing or making up keys
+6. Nested access: Use chained .get(): data.get('parent', {}).get('child', default)
+7. Array safety: Check length before indexing: if len(data) > 0: item = data[0]
+8. Copy patterns: The "📋 Access Patterns" are pre-validated - copy them exactly
+9. Null handling: Check if value is not None before using
+10. Debugging: Print data structure first: print(f"Type: {type(data)}, Keys: {list(data.keys()) if isinstance(data, dict) else len(data)}")
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
@@ -858,13 +1028,21 @@ Check ONLY these critical points:
 4. Are any imports from blocked/dangerous modules?
 5. Does the code use ONLY the real data? (NO fake data, NO user input, NO make up data, NO placeholder data, ONLY use the {file_context})
 
+FOR JSON FILES - ADDITIONAL CRITICAL CHECKS:
+6. Does code validate data structure with isinstance() check?
+7. Does code use .get() for dict access instead of direct indexing (data['key'])?
+8. Does code check for None/null values before nested access?
+9. Does code ONLY use keys that exist in the file metadata's "Access Patterns"?
+10. Does code handle arrays safely with length checks before indexing?
+11. Does code follow the "📋 Access Patterns" shown in the file context?
+
 However, it is OK to read data from different filenames to read the data as the provided file names may be different.
 
 Respond with a JSON object:
 {{"verified": true/false, "issues": ["issue1", "issue2", ...]}}
 
-If code correctly answers the question, return {{"verified": true, "issues": []}}
-Only report issues that prevent answering the user's question."""
+If code correctly answers the question AND follows JSON safety patterns (if applicable), return {{"verified": true, "issues": []}}
+Only report issues that prevent answering the user's question OR violate JSON safety requirements."""
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
