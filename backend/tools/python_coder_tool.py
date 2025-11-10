@@ -323,7 +323,7 @@ class PythonCoderTool:
             logger.info(f"[PythonCoderTool] Verification iteration {iteration + 1}/{self.max_verification_iterations}")
 
             # Verify code (focused on answering user's question)
-            verified, issues = await self._verify_code_answers_question(code, query, context, file_context)
+            verified, issues = await self._verify_code_answers_question(code, query, context, file_context, file_metadata)
 
             verification_history.append({
                 "iteration": iteration + 1,
@@ -730,10 +730,11 @@ class PythonCoderTool:
 
         file_context = """
 
-IMPORTANT - FILE ACCESS:
-All files are in the current working directory. Use the exact filenames shown below.
+🚨 CRITICAL - EXACT FILENAMES REQUIRED 🚨
+ALL files are in the current working directory.
+YOU MUST use the EXACT filenames shown below - NO generic names like 'file.json' or 'data.csv'!
 
-Available files:
+Available files (USE THESE EXACT NAMES):
 """
 
         for idx, (original_path, original_filename) in enumerate(validated_files.items(), 1):
@@ -857,75 +858,123 @@ Available files:
         # Build file context using helper method
         file_context = self._build_file_context(validated_files, file_metadata)
 
+        # Check if any JSON files are present
+        has_json_files = any(
+            metadata.get('type') == 'json'
+            for metadata in file_metadata.values()
+        )
+
         # Use different prompts for pre-step vs normal execution
         if is_prestep:
-            prompt = f"""You are a Python code generator in FAST PRE-ANALYSIS MODE.
-Your goal is to quickly analyze the attached files and provide an immediate answer to the user's question.
+            # Build base prompt
+            prompt_parts = [
+                "You are a Python code generator in FAST PRE-ANALYSIS MODE.",
+                "Your goal is to quickly analyze the attached files and provide an immediate answer to the user's question.",
+                "",
+                f"Task: {query}",
+                "",
+                file_context,
+                "",
+                "PRE-STEP MODE INSTRUCTIONS:",
+                "- This is the FIRST attempt to answer the question using ONLY the provided files",
+                "- Generate DIRECT, FOCUSED code that answers the specific question",
+                "- Prioritize SPEED and CLARITY over comprehensive analysis"
+            ]
 
-Task: {query}
+            if file_context:  # Only add file-related instructions if files exist
+                prompt_parts.extend([
+                    "🚨 CRITICAL: Use the EXACT filenames shown in the file list above",
+                    "🚨 DO NOT use generic names like 'file.json', 'data.csv', 'input.json', etc.",
+                    "🚨 COPY the actual filename from the list - character by character",
+                    "- NEVER makeup data, ALWAYS use the real files provided"
+                ])
 
-{file_context}
+            prompt_parts.extend([
+                "- Output results using print() statements with clear labels",
+                "- Include basic error handling (try/except)",
+                "- Focus on the MOST RELEVANT data columns/fields for the question",
+                "",
+                "CODE STYLE:",
+                "- Keep it simple and direct",
+                "- Use pandas/numpy for data files",
+                "- Print intermediate steps for transparency",
+                "- Always use real data from files, NO fake data, NO placeholders"
+            ])
 
-PRE-STEP MODE INSTRUCTIONS:
-- This is the FIRST attempt to answer the question using ONLY the provided files
-- Generate DIRECT, FOCUSED code that answers the specific question
-- Prioritize SPEED and CLARITY over comprehensive analysis
-- Use the EXACT filenames shown above (they are in the current directory)
-- Output results using print() statements with clear labels
-- Include basic error handling (try/except)
-- Focus on the MOST RELEVANT data columns/fields for the question
-- NEVER makeup data, ALWAYS use the real files provided
+            # Add JSON-specific instructions ONLY if JSON files are present
+            if has_json_files:
+                prompt_parts.extend([
+                    "",
+                    "JSON FILE HANDLING (CRITICAL - READ CAREFULLY):",
+                    "1. ALWAYS use: with open('EXACT_FILENAME_FROM_LIST.json', 'r', encoding='utf-8') as f: data = json.load(f)",
+                    "   🚨 Replace 'EXACT_FILENAME_FROM_LIST.json' with the ACTUAL filename from the file list above!",
+                    "2. Wrap in try/except json.JSONDecodeError for error handling",
+                    "3. Check structure type FIRST: isinstance(data, dict) or isinstance(data, list)",
+                    "4. Use .get() method for dict access: data.get('key', default) NEVER data['key']",
+                    "5. ONLY use keys from \"Access Patterns\" section - DO NOT make up or guess keys",
+                    "6. For nested access, validate each level: data.get('parent', {{}}).get('child', default)",
+                    "7. For arrays, check length first: if len(data) > 0: item = data[0]",
+                    "8. COPY the \"Access Patterns\" shown above - they are structure-validated",
+                    "9. Handle None/null values: if value is not None: process(value)",
+                    "10. Add debug prints: print(\"Data type:\", type(data), \"Keys:\", list(data.keys()) if isinstance(data, dict) else 'N/A')"
+                ])
 
-CODE STYLE:
-- Keep it simple and direct
-- Use pandas/numpy for data files
-- Print intermediate steps for transparency
-- Always use real data from files, NO fake data, NO placeholders
-
-JSON FILE HANDLING (CRITICAL - READ CAREFULLY):
-1. ALWAYS use: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
-2. Wrap in try/except json.JSONDecodeError for error handling
-3. Check structure type FIRST: isinstance(data, dict) or isinstance(data, list)
-4. Use .get() method for dict access: data.get('key', default) NEVER data['key']
-5. ONLY use keys from "Access Patterns" section - DO NOT make up or guess keys
-6. For nested access, validate each level: data.get('parent', {{}}).get('child', default)
-7. For arrays, check length first: if len(data) > 0: item = data[0]
-8. COPY the "Access Patterns" shown above - they are structure-validated
-9. Handle None/null values: if value is not None: process(value)
-10. Add debug prints: print("Data type:", type(data), "Keys:", list(data.keys()) if isinstance(data, dict) else 'N/A')
-
-Generate ONLY the Python code, no explanations or markdown:"""
+            prompt_parts.append("\nGenerate ONLY the Python code, no explanations or markdown:")
+            prompt = "\n".join(prompt_parts)
         else:
             # Normal mode prompt (for ReAct loop iterations)
-            prompt = f"""You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:
+            prompt_parts = [
+                "You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:",
+                "",
+                f"Task: {query}",
+                ""
+            ]
 
-Task: {query}
+            if context:
+                prompt_parts.append(f"Context: {context}")
+                prompt_parts.append("")
 
-{f"Context: {context}" if context else ""}
-{file_context}
+            prompt_parts.append(file_context)
+            prompt_parts.append("")
+            prompt_parts.append("Important requirements:")
 
-Important requirements:
-- Never add raw data to the code, always use the actual filenames to read the data
-- Use the EXACT filenames shown above (they are in the current directory)
-- Output results using print() statements
-- Include error handling (try/except)
-- Add a docstring explaining what the code does
-- Keep code clean and readable
-- Always use the real data. NEVER makeup data and ask user to input data.
+            if file_context:  # Only add file-related requirements if files exist
+                prompt_parts.extend([
+                    "🚨 CRITICAL: Use the EXACT filenames shown in the file list above",
+                    "🚨 DO NOT use generic names like 'file.json', 'data.csv', 'input.xlsx', 'output.txt', etc.",
+                    "🚨 COPY the actual filename from the list - including ALL special characters, numbers, Korean text",
+                    "- Never add raw data to the code, always use the actual filenames to read the data",
+                    "- Always use the real data. NEVER makeup data and ask user to input data."
+                ])
 
-JSON FILE REQUIREMENTS (STRICT - FOLLOW EXACTLY):
-1. File loading: with open('file.json', 'r', encoding='utf-8') as f: data = json.load(f)
-2. Error handling: Wrap in try/except json.JSONDecodeError
-3. Type validation: Check isinstance(data, dict) or isinstance(data, list) BEFORE accessing
-4. Safe dict access: ALWAYS use data.get('key', default) NEVER data['key']
-5. Key validation: ONLY use keys from "📋 Access Patterns" section - NO guessing or making up keys
-6. Nested access: Use chained .get(): data.get('parent', {{}}).get('child', default)
-7. Array safety: Check length before indexing: if len(data) > 0: item = data[0]
-8. Copy patterns: The "📋 Access Patterns" are pre-validated - copy them exactly
-9. Null handling: Check if value is not None before using
-10. Debugging: Print data structure first: print("Type:", type(data), "Keys:", list(data.keys()) if isinstance(data, dict) else len(data))
+            prompt_parts.extend([
+                "- Output results using print() statements",
+                "- Include error handling (try/except)",
+                "- Add a docstring explaining what the code does",
+                "- Keep code clean and readable"
+            ])
 
-Generate ONLY the Python code, no explanations or markdown:"""
+            # Add JSON-specific requirements ONLY if JSON files are present
+            if has_json_files:
+                prompt_parts.extend([
+                    "",
+                    "JSON FILE REQUIREMENTS (STRICT - FOLLOW EXACTLY):",
+                    "1. File loading: with open('EXACT_FILENAME_FROM_LIST.json', 'r', encoding='utf-8') as f: data = json.load(f)",
+                    "   🚨 Replace 'EXACT_FILENAME_FROM_LIST.json' with the ACTUAL filename from the file list!",
+                    "   🚨 DO NOT use 'file.json', 'data.json', 'input.json' - use the REAL name!",
+                    "2. Error handling: Wrap in try/except json.JSONDecodeError",
+                    "3. Type validation: Check isinstance(data, dict) or isinstance(data, list) BEFORE accessing",
+                    "4. Safe dict access: ALWAYS use data.get('key', default) NEVER data['key']",
+                    "5. Key validation: ONLY use keys from \"📋 Access Patterns\" section - NO guessing or making up keys",
+                    "6. Nested access: Use chained .get(): data.get('parent', {{}}).get('child', default)",
+                    "7. Array safety: Check length before indexing: if len(data) > 0: item = data[0]",
+                    "8. Copy patterns: The \"📋 Access Patterns\" are pre-validated - copy them exactly",
+                    "9. Null handling: Check if value is not None before using",
+                    "10. Debugging: Print data structure first: print(\"Type:\", type(data), \"Keys:\", list(data.keys()) if isinstance(data, dict) else len(data))"
+                ])
+
+            prompt_parts.append("\nGenerate ONLY the Python code, no explanations or markdown:")
+            prompt = "\n".join(prompt_parts)
 
         try:
             logger.info("\n\n[PythonCoderTool] Generating code...")
@@ -966,7 +1015,8 @@ Generate ONLY the Python code, no explanations or markdown:"""
         code: str,
         query: str,
         context: Optional[str] = None,
-        file_context: str = ""
+        file_context: str = "",
+        file_metadata: Optional[Dict[str, Any]] = None
     ) -> Tuple[bool, List[str]]:
         """
         Verify code focuses on answering user's question.
@@ -977,6 +1027,7 @@ Generate ONLY the Python code, no explanations or markdown:"""
             query: Original user query
             context: Optional additional context
             file_context: Information about available files
+            file_metadata: Optional file metadata to check for JSON files
 
         Returns:
             Tuple of (is_verified, list of issues)
@@ -989,13 +1040,13 @@ Generate ONLY the Python code, no explanations or markdown:"""
             issues.extend(static_issues)
 
         # LLM-based semantic check: Does it answer the question?
-        semantic_issues = await self._llm_verify_answers_question(code, query, context, file_context)
+        semantic_issues = await self._llm_verify_answers_question(code, query, context, file_context, file_metadata)
         issues.extend(semantic_issues)
 
         is_verified = len(issues) == 0
         return is_verified, issues
 
-    async def _llm_verify_answers_question(self, code: str, query: str, context: Optional[str] = None, file_context: str = "") -> List[str]:
+    async def _llm_verify_answers_question(self, code: str, query: str, context: Optional[str] = None, file_context: str = "", file_metadata: Optional[Dict[str, Any]] = None) -> List[str]:
         """
         Use LLM to verify if code answers the user's question.
         Simplified verification focused on core requirements.
@@ -1005,44 +1056,84 @@ Generate ONLY the Python code, no explanations or markdown:"""
             query: Original user query
             context: Optional additional context
             file_context: Information about available files
+            file_metadata: Optional file metadata to check for JSON files
 
         Returns:
             List of issues found
         """
-        prompt = f"""Review this Python code and determine if it correctly answers the user's question.
+        # Check if any JSON files are present
+        has_json_files = False
+        if file_metadata:
+            has_json_files = any(
+                metadata.get('type') == 'json'
+                for metadata in file_metadata.values()
+            )
 
-User Question: {query}
+        # Build verification prompt
+        prompt_parts = [
+            "Review this Python code and determine if it correctly answers the user's question.",
+            "",
+            f"User Question: {query}",
+            ""
+        ]
 
-{f"Context: {context}" if context else ""}
-{file_context}
+        if context:
+            prompt_parts.append(f"Context: {context}")
+            prompt_parts.append("")
 
-Code:
-```python
-{code}
-```
+        prompt_parts.extend([
+            file_context,
+            "",
+            "Code:",
+            "```python",
+            code,
+            "```",
+            "",
+            "Check ONLY these critical points:",
+            "1. Does the code address the user's specific question?",
+            "2. Will the code produce output that answers the question (using print statements)?",
+            "3. Are there any obvious syntax errors?",
+            "4. Are any imports from blocked/dangerous modules?"
+        ])
 
-Check ONLY these critical points:
-1. Does the code address the user's specific question?
-2. Will the code produce output that answers the question (using print statements)?
-3. Are there any obvious syntax errors?
-4. Are any imports from blocked/dangerous modules?
-5. Does the code use ONLY the real data? (NO fake data, NO user input, NO make up data, NO placeholder data, ONLY use the {file_context})
+        if file_context:  # Only check for real data if files are present
+            prompt_parts.extend([
+                f"5. Does the code use the EXACT filenames from the file list? (NO generic names like 'file.json', 'data.csv', etc.)",
+                f"6. Does the code use ONLY the real data? (NO fake data, NO user input, NO make up data, NO placeholder data)"
+            ])
 
-FOR JSON FILES - ADDITIONAL CRITICAL CHECKS:
-6. Does code validate data structure with isinstance() check?
-7. Does code use .get() for dict access instead of direct indexing (data['key'])?
-8. Does code check for None/null values before nested access?
-9. Does code ONLY use keys that exist in the file metadata's "Access Patterns"?
-10. Does code handle arrays safely with length checks before indexing?
-11. Does code follow the "📋 Access Patterns" shown in the file context?
+        # Add JSON-specific checks ONLY if JSON files are present
+        if has_json_files:
+            prompt_parts.extend([
+                "",
+                "FOR JSON FILES - ADDITIONAL CRITICAL CHECKS:",
+                "7. Does code use the EXACT JSON filename from the file list (NOT 'file.json', 'data.json', etc.)?",
+                "8. Does code validate data structure with isinstance() check?",
+                "9. Does code use .get() for dict access instead of direct indexing (data['key'])?",
+                "10. Does code check for None/null values before nested access?",
+                "11. Does code ONLY use keys that exist in the file metadata's \"Access Patterns\"?",
+                "12. Does code handle arrays safely with length checks before indexing?",
+                "13. Does code follow the \"📋 Access Patterns\" shown in the file context?"
+            ])
 
-However, it is OK to read data from different filenames to read the data as the provided file names may be different.
+        prompt_parts.extend([
+            "",
+            "🚨 CRITICAL: The code MUST use the EXACT filenames shown in the file list.",
+            "Even if the names look strange or have special characters, use them AS-IS.",
+            "",
+            "Respond with a JSON object:",
+            '{"verified": true/false, "issues": ["issue1", "issue2", ...]}',
+            ""
+        ])
 
-Respond with a JSON object:
-{{"verified": true/false, "issues": ["issue1", "issue2", ...]}}
+        if has_json_files:
+            prompt_parts.append("If code correctly answers the question AND follows JSON safety patterns (if applicable), return {\"verified\": true, \"issues\": []}")
+        else:
+            prompt_parts.append("If code correctly answers the question, return {\"verified\": true, \"issues\": []}")
 
-If code correctly answers the question AND follows JSON safety patterns (if applicable), return {{"verified": true, "issues": []}}
-Only report issues that prevent answering the user's question OR violate JSON safety requirements."""
+        prompt_parts.append("Only report issues that prevent answering the user's question" + (" OR violate JSON safety requirements." if has_json_files else "."))
+
+        prompt = "\n".join(prompt_parts)
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
