@@ -888,11 +888,11 @@ JSON FILE HANDLING (CRITICAL - READ CAREFULLY):
 3. Check structure type FIRST: isinstance(data, dict) or isinstance(data, list)
 4. Use .get() method for dict access: data.get('key', default) NEVER data['key']
 5. ONLY use keys from "Access Patterns" section - DO NOT make up or guess keys
-6. For nested access, validate each level: data.get('parent', {}).get('child', default)
+6. For nested access, validate each level: data.get('parent', {{}}).get('child', default)
 7. For arrays, check length first: if len(data) > 0: item = data[0]
 8. COPY the "Access Patterns" shown above - they are structure-validated
 9. Handle None/null values: if value is not None: process(value)
-10. Add debug prints: print(f"Data type: {type(data)}, Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
+10. Add debug prints: print("Data type:", type(data), "Keys:", list(data.keys()) if isinstance(data, dict) else 'N/A')
 
 Generate ONLY the Python code, no explanations or markdown:"""
         else:
@@ -919,11 +919,11 @@ JSON FILE REQUIREMENTS (STRICT - FOLLOW EXACTLY):
 3. Type validation: Check isinstance(data, dict) or isinstance(data, list) BEFORE accessing
 4. Safe dict access: ALWAYS use data.get('key', default) NEVER data['key']
 5. Key validation: ONLY use keys from "📋 Access Patterns" section - NO guessing or making up keys
-6. Nested access: Use chained .get(): data.get('parent', {}).get('child', default)
+6. Nested access: Use chained .get(): data.get('parent', {{}}).get('child', default)
 7. Array safety: Check length before indexing: if len(data) > 0: item = data[0]
 8. Copy patterns: The "📋 Access Patterns" are pre-validated - copy them exactly
 9. Null handling: Check if value is not None before using
-10. Debugging: Print data structure first: print(f"Type: {type(data)}, Keys: {list(data.keys()) if isinstance(data, dict) else len(data)}")
+10. Debugging: Print data structure first: print("Type:", type(data), "Keys:", list(data.keys()) if isinstance(data, dict) else len(data))
 
 Generate ONLY the Python code, no explanations or markdown:"""
 
