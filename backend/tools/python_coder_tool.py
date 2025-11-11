@@ -200,10 +200,46 @@ class CodeExecutor:
 
             logger.info("=" * 80)
 
+            # Enhanced success detection: check for error patterns in stdout
+            # Even if return code is 0, the code might have printed error messages
+            has_error_in_output = False
+            if result.returncode == 0 and result.stdout:
+                error_patterns = [
+                    "Error:",
+                    "error:",
+                    "ERROR:",
+                    "Failed:",
+                    "failed:",
+                    "FAILED:",
+                    "Exception:",
+                    "exception:",
+                    "not found",
+                    "Not found",
+                    "NOT FOUND",
+                    "does not contain",
+                    "does not exist",
+                    "No valid",
+                    "no valid",
+                    "Invalid",
+                    "invalid"
+                ]
+                stdout_lower = result.stdout.lower()
+                for pattern in error_patterns:
+                    if pattern.lower() in stdout_lower:
+                        has_error_in_output = True
+                        logger.warning(f"[CodeExecutor] ⚠️  Error pattern detected in output: '{pattern}'")
+                        break
+
+            # Determine actual success status
+            is_success = result.returncode == 0 and not has_error_in_output
+
+            if has_error_in_output:
+                logger.error(f"[CodeExecutor] Code printed error messages despite return code 0")
+
             return {
-                "success": result.returncode == 0,
+                "success": is_success,
                 "output": result.stdout,
-                "error": result.stderr if result.returncode != 0 else None,
+                "error": result.stderr if result.returncode != 0 else (result.stdout if has_error_in_output else None),
                 "execution_time": execution_time,
                 "return_code": result.returncode
             }
