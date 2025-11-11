@@ -268,9 +268,12 @@ class MathResponse(BaseModel):
 class WebSearchRequest(BaseModel):
     query: str
     max_results: int = 5
+    include_context: bool = True  # Enable temporal context enhancement
+    user_location: Optional[str] = None  # Optional user location for location-aware searches
 
 
 class WebSearchResponse(BaseModel):
     results: List[SearchResult]
     answer: str  # LLM-generated answer from search results
     sources_used: List[str]  # URLs used in the answer
+    context_used: Optional[Dict[str, Any]] = None  # Temporal/contextual data used

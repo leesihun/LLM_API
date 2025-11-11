@@ -40,9 +40,12 @@ class FileAnalyzer:
             'csv': self._analyze_csv,
             'xlsx': self._analyze_excel,
             'xls': self._analyze_excel,
+            'xlsm': self._analyze_excel,
             'json': self._analyze_json,
             'txt': self._analyze_text,
             'pdf': self._analyze_pdf,
+            'docx': self._analyze_docx,
+            'doc': self._analyze_doc,
             'png': self._analyze_image,
             'jpg': self._analyze_image,
             'jpeg': self._analyze_image,
@@ -133,18 +136,29 @@ class FileAnalyzer:
             }
 
     def _analyze_csv(self, file_path: str) -> Dict[str, Any]:
-        """Analyze CSV file."""
+        """Analyze CSV file with advanced delimiter detection and data quality profiling."""
         try:
             import pandas as pd
+            import csv
+
+            # Auto-detect delimiter
+            delimiter = ','
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    sample = f.read(10240)  # Read first 10KB
+                    sniffer = csv.Sniffer()
+                    delimiter = sniffer.sniff(sample).delimiter
+            except:
+                pass  # Use default comma
 
             # Read with various encodings
-            encodings = ['utf-8', 'cp949', 'euc-kr', 'latin1']
+            encodings = ['utf-8', 'cp949', 'euc-kr', 'latin1', 'iso-8859-1']
             df = None
             used_encoding = None
 
             for enc in encodings:
                 try:
-                    df = pd.read_csv(file_path, encoding=enc, nrows=100)
+                    df = pd.read_csv(file_path, encoding=enc, nrows=100, delimiter=delimiter)
                     used_encoding = enc
                     break
                 except:
@@ -154,17 +168,30 @@ class FileAnalyzer:
                 return {"format": "CSV", "error": "Failed to read CSV with any encoding"}
 
             # Extract metadata
-            full_df = pd.read_csv(file_path, encoding=used_encoding)
+            full_df = pd.read_csv(file_path, encoding=used_encoding, delimiter=delimiter)
+
+            # Data quality profiling
+            null_counts = full_df.isnull().sum().to_dict()
+            total_nulls = sum(null_counts.values())
+            duplicate_rows = full_df.duplicated().sum()
+
+            # Detect numeric columns with outliers
+            numeric_cols = full_df.select_dtypes(include=['number']).columns.tolist()
 
             return {
                 "format": "CSV",
                 "encoding": used_encoding,
+                "delimiter": repr(delimiter),  # Show special chars like \t
                 "rows": len(full_df),
                 "columns": len(full_df.columns),
                 "column_names": list(full_df.columns),
                 "column_types": {col: str(dtype) for col, dtype in full_df.dtypes.items()},
                 "preview": full_df.head(5).to_dict(orient='records'),
-                "null_counts": full_df.isnull().sum().to_dict(),
+                "null_counts": null_counts,
+                "total_null_values": int(total_nulls),
+                "null_percentage": round(total_nulls / (len(full_df) * len(full_df.columns)) * 100, 2) if len(full_df) > 0 else 0,
+                "duplicate_rows": int(duplicate_rows),
+                "numeric_columns": numeric_cols,
                 "memory_usage": f"{full_df.memory_usage(deep=True).sum() / 1024:.2f} KB"
             }
 
@@ -174,36 +201,122 @@ class FileAnalyzer:
             return {"format": "CSV", "error": str(e)}
 
     def _analyze_excel(self, file_path: str) -> Dict[str, Any]:
-        """Analyze Excel file."""
+        """Analyze Excel file with advanced metadata extraction."""
         try:
             import pandas as pd
+            from openpyxl import load_workbook
+            from openpyxl.utils import get_column_letter
 
             # Get all sheet names
             excel_file = pd.ExcelFile(file_path)
             sheet_names = excel_file.sheet_names
 
-            sheets_info = []
-            for sheet_name in sheet_names[:3]:  # Analyze first 3 sheets
-                df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=100)
-                sheets_info.append({
-                    "sheet_name": sheet_name,
-                    "rows": len(df),
-                    "columns": len(df.columns),
-                    "column_names": list(df.columns),
-                    "column_types": {col: str(dtype) for col, dtype in df.dtypes.items()},
-                    "preview": df.head(3).to_dict(orient='records')
-                })
+            # Load workbook for advanced metadata
+            try:
+                wb = load_workbook(file_path, data_only=False, read_only=True)
+            except:
+                wb = None
 
-            return {
+            sheets_info = []
+            formulas_found = []
+            named_ranges = []
+            merged_cells_info = []
+
+            # Analyze ALL sheets (not just first 3)
+            for idx, sheet_name in enumerate(sheet_names):
+                # Use pandas for data analysis
+                df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=100)
+                full_df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+                # Data quality metrics
+                null_counts = full_df.isnull().sum().to_dict()
+                total_nulls = sum(null_counts.values())
+                duplicate_rows = full_df.duplicated().sum()
+
+                sheet_info = {
+                    "sheet_name": sheet_name,
+                    "rows": len(full_df),
+                    "columns": len(full_df.columns),
+                    "column_names": list(full_df.columns),
+                    "column_types": {col: str(dtype) for col, dtype in full_df.dtypes.items()},
+                    "preview": df.head(3).to_dict(orient='records'),
+                    "null_counts": null_counts,
+                    "total_null_values": int(total_nulls),
+                    "duplicate_rows": int(duplicate_rows)
+                }
+
+                # Extract advanced metadata using openpyxl
+                if wb:
+                    try:
+                        ws = wb[sheet_name]
+
+                        # Find formulas (sample first 100 cells)
+                        formulas_in_sheet = []
+                        for row in list(ws.iter_rows(max_row=min(100, ws.max_row), max_col=ws.max_column))[:20]:
+                            for cell in row:
+                                if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
+                                    formulas_in_sheet.append({
+                                        "cell": f"{get_column_letter(cell.column)}{cell.row}",
+                                        "formula": str(cell.value)[:100]  # Truncate long formulas
+                                    })
+
+                        if formulas_in_sheet:
+                            formulas_found.append({
+                                "sheet": sheet_name,
+                                "formulas": formulas_in_sheet[:10]  # Max 10 formulas per sheet
+                            })
+
+                        # Detect merged cells
+                        if hasattr(ws, 'merged_cells') and ws.merged_cells:
+                            merged_ranges = [str(merged_cell) for merged_cell in list(ws.merged_cells.ranges)[:10]]
+                            if merged_ranges:
+                                merged_cells_info.append({
+                                    "sheet": sheet_name,
+                                    "merged_ranges": merged_ranges
+                                })
+
+                        sheet_info["has_formulas"] = len(formulas_in_sheet) > 0
+                        sheet_info["formula_count"] = len(formulas_in_sheet)
+                        sheet_info["has_merged_cells"] = len(ws.merged_cells) > 0 if hasattr(ws, 'merged_cells') else False
+
+                    except Exception as e:
+                        logger.debug(f"Could not extract advanced metadata from sheet {sheet_name}: {e}")
+
+                sheets_info.append(sheet_info)
+
+            # Extract workbook-level metadata
+            if wb:
+                try:
+                    # Named ranges
+                    if hasattr(wb, 'defined_names'):
+                        for named_range in wb.defined_names.definedName:
+                            named_ranges.append({
+                                "name": named_range.name,
+                                "scope": named_range.localSheetId if named_range.localSheetId is not None else "Workbook",
+                                "refers_to": str(named_range.attr_text)[:100]
+                            })
+                except Exception as e:
+                    logger.debug(f"Could not extract named ranges: {e}")
+
+            result = {
                 "format": "Excel",
                 "total_sheets": len(sheet_names),
                 "sheet_names": sheet_names,
-                "sheets_analyzed": sheets_info
+                "sheets_analyzed": sheets_info,
+                "has_formulas": len(formulas_found) > 0,
+                "formulas": formulas_found if formulas_found else None,
+                "has_named_ranges": len(named_ranges) > 0,
+                "named_ranges": named_ranges[:20] if named_ranges else None,  # Max 20
+                "has_merged_cells": len(merged_cells_info) > 0,
+                "merged_cells": merged_cells_info if merged_cells_info else None
             }
+
+            return result
 
         except ImportError:
             return {"format": "Excel", "error": "pandas or openpyxl not installed"}
         except Exception as e:
+            logger.error(f"Excel analysis error: {e}", exc_info=True)
             return {"format": "Excel", "error": str(e)}
 
     def _analyze_json(self, file_path: str) -> Dict[str, Any]:
@@ -468,6 +581,119 @@ class FileAnalyzer:
         except Exception as e:
             return {"format": "Image", "error": str(e)}
 
+    def _analyze_docx(self, file_path: str) -> Dict[str, Any]:
+        """Analyze Word .docx file with comprehensive metadata extraction."""
+        try:
+            from docx import Document
+            from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+
+            doc = Document(file_path)
+
+            # Extract paragraphs
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            total_text = '\n'.join(paragraphs)
+
+            # Count words
+            word_count = len(total_text.split())
+            char_count = len(total_text)
+
+            # Extract tables
+            tables_info = []
+            for idx, table in enumerate(doc.tables):
+                rows = len(table.rows)
+                cols = len(table.columns) if rows > 0 else 0
+
+                # Extract table content (first 3 rows as sample)
+                table_data = []
+                for row_idx, row in enumerate(table.rows[:3]):
+                    row_data = [cell.text.strip() for cell in row.cells]
+                    table_data.append(row_data)
+
+                tables_info.append({
+                    "table_number": idx + 1,
+                    "rows": rows,
+                    "columns": cols,
+                    "preview": table_data
+                })
+
+            # Extract styles/headings
+            headings = []
+            for para in doc.paragraphs:
+                if para.style.name.startswith('Heading'):
+                    headings.append({
+                        "level": para.style.name,
+                        "text": para.text[:100]  # Truncate long headings
+                    })
+
+            # Extract images (count embedded media)
+            image_count = 0
+            for rel in doc.part.rels.values():
+                if "image" in rel.target_ref:
+                    image_count += 1
+
+            # Extract hyperlinks
+            hyperlinks = []
+            for para in doc.paragraphs:
+                for run in para.runs:
+                    if run.font.underline or run.font.color:  # Likely a hyperlink
+                        # Note: python-docx doesn't directly expose hyperlinks easily
+                        # This is a simplified detection
+                        pass
+
+            # Detect formatting features
+            has_bold = any(run.bold for para in doc.paragraphs for run in para.runs if run.bold)
+            has_italic = any(run.italic for para in doc.paragraphs for run in para.runs if run.italic)
+            has_underline = any(run.underline for para in doc.paragraphs for run in para.runs if run.underline)
+
+            return {
+                "format": "Word Document (.docx)",
+                "total_paragraphs": len(paragraphs),
+                "total_words": word_count,
+                "total_characters": char_count,
+                "total_tables": len(doc.tables),
+                "total_images": image_count,
+                "total_headings": len(headings),
+                "headings": headings[:20] if headings else None,  # Max 20 headings
+                "tables": tables_info if tables_info else None,
+                "has_bold": has_bold,
+                "has_italic": has_italic,
+                "has_underline": has_underline,
+                "text_preview": total_text[:500]  # First 500 chars
+            }
+
+        except ImportError:
+            return {"format": "Word Document (.docx)", "error": "python-docx not installed"}
+        except Exception as e:
+            logger.error(f"DOCX analysis error: {e}", exc_info=True)
+            return {"format": "Word Document (.docx)", "error": str(e)}
+
+    def _analyze_doc(self, file_path: str) -> Dict[str, Any]:
+        """Analyze legacy .doc file (limited support)."""
+        try:
+            # Try using textract if available
+            try:
+                import textract
+                text = textract.process(file_path).decode('utf-8')
+
+                return {
+                    "format": "Word Document (.doc - legacy)",
+                    "total_characters": len(text),
+                    "total_words": len(text.split()),
+                    "text_preview": text[:500],
+                    "note": "Limited analysis for .doc format. Convert to .docx for full analysis."
+                }
+            except ImportError:
+                # Fallback: try conversion via LibreOffice or suggest manual conversion
+                return {
+                    "format": "Word Document (.doc - legacy)",
+                    "error": "textract not installed",
+                    "note": "Please convert .doc to .docx format for full analysis. Install 'textract' for basic text extraction."
+                }
+
+        except Exception as e:
+            logger.error(f"DOC analysis error: {e}", exc_info=True)
+            return {"format": "Word Document (.doc - legacy)", "error": str(e)}
+
     def _human_readable_size(self, size_bytes: int) -> str:
         """Convert bytes to human readable format."""
         for unit in ['B', 'KB', 'MB', 'GB']:
@@ -499,10 +725,30 @@ class FileAnalyzer:
                 cols = result.get("columns", 0)
                 summary_lines.append(f"  - {rows:,} rows × {cols} columns")
                 summary_lines.append(f"  - Columns: {', '.join(result.get('column_names', [])[:5])}")
+                if result.get("duplicate_rows", 0) > 0:
+                    summary_lines.append(f"  - Duplicate rows: {result.get('duplicate_rows')}")
+                null_pct = result.get("null_percentage", 0)
+                if null_pct > 0:
+                    summary_lines.append(f"  - Missing data: {null_pct}%")
 
             elif format_type == "Excel":
                 sheets = result.get("total_sheets", 0)
-                summary_lines.append(f"  - {sheets} sheet(s): {', '.join(result.get('sheet_names', []))}")
+                summary_lines.append(f"  - {sheets} sheet(s): {', '.join(result.get('sheet_names', [])[:3])}")
+                if result.get("has_formulas"):
+                    summary_lines.append(f"  - Contains formulas")
+                if result.get("has_named_ranges"):
+                    summary_lines.append(f"  - Contains named ranges: {len(result.get('named_ranges', []))}")
+                if result.get("has_merged_cells"):
+                    summary_lines.append(f"  - Contains merged cells")
+
+            elif format_type.startswith("Word Document"):
+                words = result.get("total_words", 0)
+                tables = result.get("total_tables", 0)
+                images = result.get("total_images", 0)
+                headings = result.get("total_headings", 0)
+                summary_lines.append(f"  - {words:,} words, {tables} table(s), {images} image(s)")
+                if headings > 0:
+                    summary_lines.append(f"  - {headings} heading(s)")
 
             elif format_type == "JSON":
                 structure = result.get("structure", "Unknown")

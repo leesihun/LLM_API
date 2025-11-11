@@ -151,10 +151,17 @@ async def web_search_node(state: AgentState) -> Dict[str, Any]:
     user_message = state["messages"][-1].content
 
     # Extract search query (use original message or refined from plan)
-    search_results = await web_search_tool.search(user_message, max_results=5)
+    search_results, context_metadata = await web_search_tool.search(
+        user_message,
+        max_results=5,
+        include_context=True,
+        user_location=None
+    )
 
     formatted_results = web_search_tool.format_results(search_results)
     logger.info(f"[AGENT: Web Search] Found {len(search_results)} results")
+    if context_metadata.get('query_enhanced'):
+        logger.info(f"[AGENT: Web Search] Query enhanced with context")
 
     return {"search_results": formatted_results, "current_agent": "web_search"}
 

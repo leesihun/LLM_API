@@ -796,9 +796,38 @@ ACTION: [Exactly one of: web_search, rag_retrieval, python_coder, finish]
 ACTION INPUT: [The input for the selected action]
 
 Available Actions:
+
 1. web_search - Search the web for current information
+
+   🔍 SEARCH QUERY GUIDELINES:
+   When generating search queries, focus on creating effective keywords:
+
+   ✅ GOOD PRACTICES:
+   • Use 3-10 specific keywords
+   • Include important names, dates, places, products
+   • Use concrete terms (nouns, verbs) rather than vague adjectives
+   • Think about what words would appear in relevant results
+   • Natural language is okay - the system will automatically optimize it
+
+   ✅ GOOD EXAMPLES:
+   • "latest AI developments artificial intelligence 2025"
+   • "OpenAI GPT-4 features capabilities pricing"
+   • "Python vs JavaScript performance comparison"
+   • "weather forecast Seoul tomorrow"
+   • "electric vehicles vs gas cars comparison 2025"
+
+   ❌ AVOID:
+   • Single word queries ("AI", "weather")
+   • Overly long sentences (>15 words)
+   • Too vague ("tell me about technology")
+
+   💡 TIP: You can use natural questions - the query will be automatically
+   optimized for search engines. Just be specific about what you're looking for!
+
 2. rag_retrieval - Retrieve relevant documents from uploaded files
+
 3. python_coder - Generate and execute Python code with file processing and data analysis
+
 4. finish - Provide the final answer (use ONLY when you have complete information)
 
 Note: File metadata analysis is done automatically when files are attached.
@@ -1227,12 +1256,26 @@ Now provide your action:"""
             logger.info("")
 
             if action == ToolName.WEB_SEARCH:
-                results = await web_search_tool.search(action_input, max_results=5)
+                # Perform search with temporal context
+                results, context_metadata = await web_search_tool.search(
+                    action_input,
+                    max_results=5,
+                    include_context=True,
+                    user_location=None  # Can be extended to accept user location from session
+                )
                 observation = web_search_tool.format_results(results)
+
+                # Include context metadata in observation
+                if context_metadata.get('query_enhanced'):
+                    observation = f"[Search performed with contextual enhancement]\n{observation}"
+
                 final_observation = observation if observation else "No web search results found."
 
                 logger.info("")
                 logger.info("TOOL OUTPUT (Web Search):")
+                logger.info(f"Context: {context_metadata.get('current_datetime', 'N/A')}")
+                if context_metadata.get('enhanced_query'):
+                    logger.info(f"Enhanced query: {context_metadata['enhanced_query']}")
                 for _line in str(final_observation).splitlines():
                     logger.info(_line)
                 logger.info("")

@@ -163,7 +163,42 @@ class CodeExecutor:
             )
             execution_time = time.time() - start_time
 
-            logger.info(f"[CodeExecutor] Execution completed in {execution_time:.2f}s (return code: {result.returncode})")
+            # Enhanced execution result logging
+            logger.info("=" * 80)
+            logger.info("🔥 [CODE EXECUTION RESULT] 🔥")
+            logger.info("=" * 80)
+            logger.info(f"Status: {'✅ SUCCESS' if result.returncode == 0 else '❌ FAILED'}")
+            logger.info(f"Execution Time: {execution_time:.2f}s")
+            logger.info(f"Return Code: {result.returncode}")
+            logger.info("=" * 80)
+
+            # Log stdout with clear visual indicators
+            if result.stdout:
+                logger.info("📤 [STDOUT OUTPUT]:")
+                logger.info("-" * 80)
+                for line in result.stdout.strip().split('\n'):
+                    logger.info(f"  {line}")
+                logger.info("-" * 80)
+            else:
+                logger.info("📤 [STDOUT OUTPUT]: (empty)")
+
+            # Log stderr with clear error indicators
+            if result.stderr:
+                if result.returncode != 0:
+                    logger.error("❌ [STDERR - ERROR]:")
+                else:
+                    logger.warning("⚠️  [STDERR - WARNING]:")
+                logger.info("-" * 80)
+                for line in result.stderr.strip().split('\n'):
+                    if result.returncode != 0:
+                        logger.error(f"  {line}")
+                    else:
+                        logger.warning(f"  {line}")
+                logger.info("-" * 80)
+            else:
+                logger.info("📤 [STDERR]: (empty)")
+
+            logger.info("=" * 80)
 
             return {
                 "success": result.returncode == 0,
@@ -292,8 +327,11 @@ class PythonCoderTool:
         validated_files = {}
         file_metadata = {}
         if file_paths:
+            logger.info(f"[PythonCoderTool] Preparing {len(file_paths)} file(s)...")
             validated_files, file_metadata = self._prepare_files(file_paths)
+
             if not validated_files and file_paths:
+                logger.error("[PythonCoderTool] Failed to validate any input files!")
                 return {
                     "success": False,
                     "error": "Failed to validate input files",
@@ -301,8 +339,20 @@ class PythonCoderTool:
                     "output": ""
                 }
 
+            # Log file metadata summary
+            logger.info(f"[PythonCoderTool] Validated {len(validated_files)} file(s):")
+            for file_path, filename in validated_files.items():
+                metadata = file_metadata.get(file_path, {})
+                logger.info(f"  - '{filename}' ({metadata.get('type', 'unknown')})")
+                if metadata.get('type') == 'json':
+                    logger.info(f"    Structure: {metadata.get('structure')}, Keys: {len(metadata.get('keys', []))}, Depth: {metadata.get('max_depth')}")
+
         # Build file context (reused in both generation and verification)
         file_context = self._build_file_context(validated_files, file_metadata)
+
+        if file_context:
+            logger.info("[PythonCoderTool] File context built successfully")
+            logger.debug(f"[PythonCoderTool] File context preview:\n{file_context[:500]}...")
 
         # Phase 1: Generate initial code
         code = await self._generate_code(query, context, validated_files, file_metadata, is_prestep=is_prestep)
@@ -332,11 +382,14 @@ class PythonCoderTool:
             })
 
             if verified:
-                logger.info(f"[PythonCoderTool] Code verified successfully at iteration {iteration + 1}")
+                logger.info(f"[PythonCoderTool] ✅ Code verified successfully at iteration {iteration + 1}")
                 break
 
             # Modify code
-            logger.info(f"[PythonCoderTool] Modifying code due to issues: {issues}")
+            logger.warning(f"[PythonCoderTool] ⚠️  Verification issues found ({len(issues)}):")
+            for i, issue in enumerate(issues, 1):
+                logger.warning(f"  {i}. {issue}")
+            logger.info(f"[PythonCoderTool] Modifying code to address issues...")
             code, changes = await self._modify_code(code, issues, query, context)
             modifications.extend(changes)
 
@@ -367,21 +420,25 @@ class PythonCoderTool:
             })
 
             if execution_result["success"]:
-                logger.info(f"[PythonCoderTool] Execution succeeded on attempt {attempt + 1}")
+                logger.info(f"[PythonCoderTool] ✅ Execution succeeded on attempt {attempt + 1}")
+                logger.info(f"[PythonCoderTool] Output length: {len(execution_result['output'])} characters")
                 break
 
             # If failed and not last attempt, try to fix the code
             if attempt < self.max_execution_attempts - 1:
-                logger.warning(f"[PythonCoderTool] Execution failed on attempt {attempt + 1}, attempting to fix code")
                 error_message = execution_result.get("error", "Unknown error")
+                logger.error(f"[PythonCoderTool] ❌ Execution failed on attempt {attempt + 1}")
+                logger.error(f"[PythonCoderTool] Error: {error_message[:200]}...")
+                logger.info(f"[PythonCoderTool] Attempting to fix code...")
                 # Pass context to help fix execution errors
                 code, fix_changes = await self._fix_execution_error(code, query, error_message, context)
                 modifications.extend(fix_changes)
             else:
-                logger.error(f"[PythonCoderTool] Execution failed after {self.max_execution_attempts} attempts")
+                logger.error(f"[PythonCoderTool] ❌ Execution failed after {self.max_execution_attempts} attempts")
+                logger.error(f"[PythonCoderTool] Final error: {execution_result.get('error', 'Unknown')}")
 
         # Phase 4: Format and return result
-        return {
+        result = {
             "success": execution_result["success"],
             "code": code,
             "output": execution_result["output"],
@@ -395,6 +452,23 @@ class PythonCoderTool:
             "verification_history": verification_history,
             "execution_attempts_history": execution_attempts
         }
+
+        # Final summary log
+        logger.info("=" * 80)
+        logger.info("[PythonCoderTool] EXECUTION SUMMARY")
+        logger.info("=" * 80)
+        logger.info(f"  Status: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}")
+        logger.info(f"  Verification iterations: {result['verification_iterations']}")
+        logger.info(f"  Execution attempts: {result['execution_attempts']}")
+        logger.info(f"  Total modifications: {len(modifications)}")
+        logger.info(f"  Execution time: {result['execution_time']:.2f}s")
+        if result['success']:
+            logger.info(f"  Output length: {len(result['output'])} chars")
+        else:
+            logger.error(f"  Error: {result.get('error', 'Unknown')[:100]}...")
+        logger.info("=" * 80)
+
+        return result
 
     def _prepare_files(
         self,
@@ -558,6 +632,70 @@ class PythonCoderTool:
                     })
                 except Exception as e:
                     logger.warning(f"[PythonCoderTool] Could not extract text metadata: {e}")
+
+            # Word documents (.docx)
+            elif path.suffix.lower() == '.docx':
+                try:
+                    from backend.tools.file_analyzer_tool import file_analyzer
+                    analysis = file_analyzer._analyze_docx(str(path))
+
+                    if "error" not in analysis:
+                        metadata.update({
+                            "type": "docx",
+                            "total_words": analysis.get("total_words", 0),
+                            "total_paragraphs": analysis.get("total_paragraphs", 0),
+                            "total_tables": analysis.get("total_tables", 0),
+                            "table_details": analysis.get("tables", []),
+                            "headings": analysis.get("headings", []),
+                            "text_preview": analysis.get("text_preview", "")[:200]
+                        })
+                        logger.info(f"[PythonCoderTool] DOCX analyzed: {analysis.get('total_words')} words, {analysis.get('total_tables')} tables")
+                    else:
+                        metadata.update({
+                            "type": "docx",
+                            "error": analysis.get("error")
+                        })
+                except Exception as e:
+                    logger.warning(f"[PythonCoderTool] Could not extract DOCX metadata: {e}")
+                    metadata.update({"type": "docx"})
+
+            # Excel files - use enhanced analyzer
+            elif path.suffix.lower() in ['.xlsx', '.xls', '.xlsm']:
+                try:
+                    from backend.tools.file_analyzer_tool import file_analyzer
+                    analysis = file_analyzer._analyze_excel(str(path))
+
+                    if "error" not in analysis:
+                        # Extract enhanced Excel metadata
+                        metadata.update({
+                            "type": "excel",
+                            "total_sheets": analysis.get("total_sheets", 0),
+                            "sheet_names": analysis.get("sheet_names", []),
+                            "sheets_analyzed": analysis.get("sheets_analyzed", []),
+                            "has_formulas": analysis.get("has_formulas", False),
+                            "has_named_ranges": analysis.get("has_named_ranges", False),
+                            "has_merged_cells": analysis.get("has_merged_cells", False)
+                        })
+                        logger.info(f"[PythonCoderTool] Excel analyzed: {analysis.get('total_sheets')} sheets, formulas={analysis.get('has_formulas')}")
+                    else:
+                        metadata.update({
+                            "type": "excel",
+                            "error": analysis.get("error")
+                        })
+                except Exception as e:
+                    logger.warning(f"[PythonCoderTool] Could not extract enhanced Excel metadata: {e}")
+                    # Fallback to basic pandas analysis
+                    try:
+                        import pandas as pd
+                        df = pd.read_excel(path, nrows=5)
+                        metadata.update({
+                            "type": "excel",
+                            "columns": df.columns.tolist(),
+                            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+                            "sample_rows": len(df)
+                        })
+                    except:
+                        metadata.update({"type": "excel"})
 
         except Exception as e:
             logger.error(f"[PythonCoderTool] Error extracting metadata for {path}: {e}")
@@ -801,9 +939,49 @@ Available files (USE THESE EXACT NAMES):
                 preview = metadata['preview'][:100]
                 file_context += f"   Preview: {preview}...\n"
 
+            # Word document metadata
+            if file_type == 'docx':
+                if 'total_words' in metadata:
+                    file_context += f"   Words: {metadata['total_words']}, Paragraphs: {metadata.get('total_paragraphs', 0)}\n"
+                if 'total_tables' in metadata and metadata['total_tables'] > 0:
+                    file_context += f"   Tables: {metadata['total_tables']} table(s)\n"
+                    if 'table_details' in metadata:
+                        for table in metadata['table_details'][:2]:  # Show first 2 tables
+                            file_context += f"      Table {table['table_number']}: {table['rows']} rows × {table['columns']} cols\n"
+                if 'headings' in metadata and metadata['headings']:
+                    file_context += f"   Headings: {len(metadata['headings'])} found\n"
+                if 'text_preview' in metadata:
+                    file_context += f"   Text preview: {metadata['text_preview'][:150]}...\n"
+
+            # Enhanced Excel metadata
+            if file_type == 'excel':
+                if 'total_sheets' in metadata:
+                    sheets = ', '.join(metadata.get('sheet_names', [])[:3])
+                    file_context += f"   Sheets ({metadata['total_sheets']} total): {sheets}\n"
+                if metadata.get('has_formulas'):
+                    file_context += f"   ⚠️  Contains formulas - use data_only=True or read_excel()\n"
+                if metadata.get('has_merged_cells'):
+                    file_context += f"   ⚠️  Contains merged cells - may affect data reading\n"
+                if metadata.get('has_named_ranges'):
+                    file_context += f"   Contains named ranges\n"
+                # Show sheet details if available
+                if 'sheets_analyzed' in metadata:
+                    for sheet in metadata['sheets_analyzed'][:2]:  # First 2 sheets
+                        file_context += f"      Sheet '{sheet['sheet_name']}': {sheet['rows']} rows × {sheet['columns']} cols\n"
+                        if sheet.get('columns'):
+                            cols_preview = ', '.join(sheet['columns'][:5])
+                            file_context += f"         Columns: {cols_preview}\n"
+
             # File access example
             if file_type == 'csv':
                 file_context += f"   Example: df = pd.read_csv('{original_filename}')\n"
+            elif file_type == 'docx':
+                file_context += f"   Example loading code:\n"
+                file_context += f"      from docx import Document\n"
+                file_context += f"      doc = Document('{original_filename}')\n"
+                file_context += f"      # Extract text: text = '\\n'.join([p.text for p in doc.paragraphs])\n"
+                if metadata.get('total_tables', 0) > 0:
+                    file_context += f"      # Extract tables: tables = doc.tables\n"
             elif file_type == 'json':
                 # Provide proper JSON loading with encoding and error handling
                 file_context += f"   Example loading code:\n"
@@ -1071,7 +1249,9 @@ Available files (USE THESE EXACT NAMES):
 
         # Build verification prompt
         prompt_parts = [
-            "Review this Python code and determine if it correctly answers the user's question.",
+            "You are a STRICT Python code verifier. Your job is to identify ANY potential errors or issues in the code.",
+            "",
+            "🚨 VERIFICATION MODE: Find problems that could cause execution failures or incorrect results.",
             "",
             f"User Question: {query}",
             ""
@@ -1084,54 +1264,83 @@ Available files (USE THESE EXACT NAMES):
         prompt_parts.extend([
             file_context,
             "",
-            "Code:",
+            "Code to verify:",
             "```python",
             code,
             "```",
             "",
-            "Check ONLY these critical points:",
-            "1. Does the code address the user's specific question?",
-            "2. Will the code produce output that answers the question (using print statements)?",
-            "3. Are there any obvious syntax errors?",
-            "4. Are any imports from blocked/dangerous modules?"
+            "🔍 CRITICAL VERIFICATION CHECKLIST:",
+            "",
+            "1️⃣ LOGIC & CORRECTNESS:",
+            "   - Does the code address the user's specific question?",
+            "   - Will it produce the expected output?",
+            "   - Are calculations/operations logically correct?",
+            "",
+            "2️⃣ SYNTAX & RUNTIME ERRORS:",
+            "   - Any syntax errors (missing colons, parentheses, quotes)?",
+            "   - Undefined variables or functions?",
+            "   - Import statements correct?",
+            "   - Blocked/dangerous modules (socket, subprocess, eval, exec)?",
+            "",
+            "3️⃣ ERROR HANDLING:",
+            "   - Try/except blocks present where needed?",
+            "   - File operations wrapped in error handling?",
+            "   - Division by zero checks if applicable?",
+            ""
         ])
 
         if file_context:  # Only check for real data if files are present
             prompt_parts.extend([
-                f"5. Does the code use the EXACT filenames from the file list? (NO generic names like 'file.json', 'data.csv', etc.)",
-                f"6. Does the code use ONLY the real data? (NO fake data, NO user input, NO make up data, NO placeholder data)"
+                "4️⃣ FILE HANDLING:",
+                "   - Uses EXACT filenames from the file list?",
+                "   - NO generic names like 'file.json', 'data.csv', 'input.xlsx'?",
+                "   - File paths are strings, properly quoted?",
+                "   - Uses ONLY real data (NO fake/placeholder data)?",
+                "   - File reading has error handling (FileNotFoundError)?",
+                ""
             ])
 
         # Add JSON-specific checks ONLY if JSON files are present
         if has_json_files:
             prompt_parts.extend([
-                "",
-                "FOR JSON FILES - ADDITIONAL CRITICAL CHECKS:",
-                "7. Does code use the EXACT JSON filename from the file list (NOT 'file.json', 'data.json', etc.)?",
-                "8. Does code validate data structure with isinstance() check?",
-                "9. Does code use .get() for dict access instead of direct indexing (data['key'])?",
-                "10. Does code check for None/null values before nested access?",
-                "11. Does code ONLY use keys that exist in the file metadata's \"Access Patterns\"?",
-                "12. Does code handle arrays safely with length checks before indexing?",
-                "13. Does code follow the \"📋 Access Patterns\" shown in the file context?"
+                "5️⃣ JSON FILE HANDLING (CRITICAL):",
+                "   - Uses EXACT JSON filename from file list (NOT 'file.json', 'data.json')?",
+                "   - Has isinstance() check for data structure validation?",
+                "   - Uses .get() for dict access (NEVER data['key'])?",
+                "   - Checks for None/null values before nested access?",
+                "   - ONLY uses keys from \"📋 Access Patterns\" (NO guessing keys)?",
+                "   - Arrays checked with len() before indexing?",
+                "   - Follows the \"📋 Access Patterns\" exactly?",
+                "   - Has json.JSONDecodeError handling?",
+                ""
             ])
 
         prompt_parts.extend([
+            "🚨 ERROR DETECTION PRIORITY:",
+            "- Your primary goal is to find potential ERRORS (not style issues)",
+            "- Focus on issues that will cause EXECUTION FAILURES or WRONG RESULTS",
+            "- Be STRICT - even small issues can cause failures",
+            "- If uncertain about filename correctness, mark it as an issue",
             "",
-            "🚨 CRITICAL: The code MUST use the EXACT filenames shown in the file list.",
-            "Even if the names look strange or have special characters, use them AS-IS.",
+            "📋 RESPONSE FORMAT:",
+            'Return a JSON object: {"verified": true/false, "issues": ["issue1", "issue2", ...]}',
             "",
-            "Respond with a JSON object:",
-            '{"verified": true/false, "issues": ["issue1", "issue2", ...]}',
+            "✅ Return {\"verified\": true, \"issues\": []} ONLY IF:",
+            "   - Code is 100% correct and will execute without errors",
+            "   - All filenames are exact matches from the file list",
+            "   - All required safety checks are present",
+            f"{'   - All JSON safety patterns are followed' if has_json_files else ''}",
+            "",
+            "❌ Return {\"verified\": false, \"issues\": [...]} IF:",
+            "   - ANY potential error detected (syntax, runtime, logic)",
+            "   - Filenames don't match EXACTLY",
+            "   - Missing error handling",
+            "   - Unsafe data access patterns",
+            f"{'   - JSON access patterns not followed' if has_json_files else ''}",
+            "",
+            "⚠️  BE THOROUGH: It's better to flag a potential issue than miss a real error.",
             ""
         ])
-
-        if has_json_files:
-            prompt_parts.append("If code correctly answers the question AND follows JSON safety patterns (if applicable), return {\"verified\": true, \"issues\": []}")
-        else:
-            prompt_parts.append("If code correctly answers the question, return {\"verified\": true, \"issues\": []}")
-
-        prompt_parts.append("Only report issues that prevent answering the user's question" + (" OR violate JSON safety requirements." if has_json_files else "."))
 
         prompt = "\n".join(prompt_parts)
 

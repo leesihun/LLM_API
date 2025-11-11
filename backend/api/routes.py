@@ -487,18 +487,30 @@ async def tool_websearch(request: WebSearchRequest, _: Dict[str, Any] = Depends(
     """
     logger.info(f"[Websearch Endpoint] Query: {request.query}")
 
-    # Get search results
-    results = await web_search_tool.search(request.query, max_results=request.max_results)
+    # Get search results with contextual enhancement
+    results, context_metadata = await web_search_tool.search(
+        request.query,
+        max_results=request.max_results,
+        include_context=request.include_context,
+        user_location=request.user_location
+    )
 
-    # Generate LLM answer from results
-    answer, sources_used = await web_search_tool.generate_answer(request.query, results)
+    # Generate LLM answer from results with context
+    answer, sources_used = await web_search_tool.generate_answer(
+        request.query,
+        results,
+        user_location=request.user_location
+    )
 
     logger.info(f"[Websearch Endpoint] Found {len(results)} results, generated answer with {len(sources_used)} sources")
+    if context_metadata.get('query_enhanced'):
+        logger.info(f"[Websearch Endpoint] Query enhanced: {context_metadata.get('enhanced_query')}")
 
     return WebSearchResponse(
         results=results,
         answer=answer,
-        sources_used=sources_used
+        sources_used=sources_used,
+        context_used=context_metadata
     )
 
 
