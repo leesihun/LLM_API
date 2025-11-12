@@ -16,8 +16,9 @@ from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.python_coder_tool import python_coder_tool
 from backend.tools.file_analyzer_tool import file_analyzer
+from backend.utils.logging_utils import get_logger, LogFormatter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class ToolName(str, Enum):
     """Available tools for ReAct agent"""
@@ -118,16 +119,19 @@ class ReActAgent:
         self.session_id = session_id
         self._attempted_coder = False
 
-        logger.info("\n\n\n\n\n" + "=" * 100)
-        logger.info("[ReAct Agent] EXECUTION STARTED")
-        if file_paths:
-            logger.info(f"Attached Files: {len(file_paths)} files")
-        logger.info("-" * 100)
-
         # Extract user query
         user_query = messages[-1].content
-        logger.info(f"USER QUERY:\n{user_query}")
-        logger.info("=" * 100 + "\n\n\n\n\n")
+
+        # Clean, structured execution start
+        logger.header("REACT AGENT EXECUTION", "heavy")
+        exec_params = {
+            "User ID": user_id,
+            "Session ID": session_id,
+            "Attached Files": f"{len(file_paths)} files" if file_paths else "None",
+            "Max Iterations": self.max_iterations
+        }
+        logger.key_values(exec_params, title="Execution Parameters")
+        logger.multiline(user_query, title="User Query", max_lines=10)
 
         # Initialize
         self.steps = []
@@ -136,7 +140,7 @@ class ReActAgent:
 
         # Pre-step: If files are attached, first analyze file metadata
         if self.file_paths:
-            logger.info("[ReAct Agent] Pre-step: Files detected, analyzing file metadata first")
+            logger.subsection("PRE-STEP: File Analysis")
             try:
                 # Analyze files first to understand structure
                 analyzer_result = file_analyzer.analyze(
@@ -161,84 +165,69 @@ class ReActAgent:
                             obs_parts.append(file_result["structure_summary"])
 
                     obs = "\n".join(obs_parts)
+                    logger.success(f"File analysis completed", f"{analyzer_result.get('files_analyzed', 0)} files")
                 else:
                     obs = f"File analysis failed: {analyzer_result.get('error','Unknown error')}"
+                    logger.failure("File analysis failed", analyzer_result.get('error','Unknown error'))
+
                 pre_step.observation = obs
                 self.steps.append(pre_step)
 
-                logger.info(f"[ReAct Agent] Pre-step file analysis: {analyzer_result.get('files_analyzed', 0)} files analyzed")
-                logger.info(f"File Analysis Summary:\n{analyzer_result.get('summary', '')}")
-
             except Exception as e:
-                logger.warning(f"[ReAct Agent] Pre-step file analysis error: {e}; continuing with tool loop")
+                logger.warning(f"Pre-step file analysis error: {e}; continuing with tool loop")
 
         # ReAct loop
         while iteration < self.max_iterations:
             iteration += 1
-            logger.info("\n" + "#" * 100)
-            logger.info(f"ITERATION {iteration}/{self.max_iterations}")
-            logger.info("#" * 100 + "\n")
+
+            # Clean iteration header
+            logger.section(f"ITERATION {iteration}/{self.max_iterations}")
 
             step = ReActStep(iteration)
 
             # PERFORMANCE OPTIMIZATION: Combined Thought-Action generation (1 LLM call instead of 2)
-            logger.info("")
-            logger.info("PHASE: THOUGHT + ACTION GENERATION (COMBINED)")
-            logger.info("")
+            logger.subsection("Thought + Action Generation")
             thought, action, action_input = await self._generate_thought_and_action(user_query, self.steps)
             step.thought = thought
             step.action = action
             step.action_input = action_input
-            
-            logger.info("Generated Thought:")
-            for _line in thought.splitlines():
-                logger.info(_line)
-            logger.info("")
-            logger.info(f"Selected Action: {action}")
-            logger.info(f"Action Input: {action_input[:200]}..." if len(action_input) > 200 else f"Action Input: {action_input}")
-            logger.info("")
+
+            # Log thought with clean formatting
+            logger.multiline(thought, title="Thought", max_lines=20)
+
+            # Log action with visual indicators
+            action_info = {
+                "Action": action,
+                "Input": action_input[:150] + "..." if len(action_input) > 150 else action_input
+            }
+            logger.key_values(action_info)
 
             # Check if we're done
             if action == ToolName.FINISH:
-                logger.info("")
-                logger.info("FINISH ACTION DETECTED - GENERATING FINAL ANSWER")
-                logger.info("")
+                logger.subsection("Final Answer Generation")
 
                 # ALWAYS regenerate final answer using all observations to prevent information loss
                 final_answer = await self._generate_final_answer(user_query, self.steps)
 
                 # If regenerated answer is insufficient, use action_input as fallback
                 if not final_answer or len(final_answer.strip()) < 10:
-                    logger.warning("\n" + "!" * 100)
-                    logger.warning("WARNING: Generated answer insufficient, using fallback")
-                    logger.warning("!" * 100 + "\n")
+                    logger.warning("Generated answer insufficient, using fallback strategy")
                     if action_input and len(action_input.strip()) >= 10:
                         final_answer = action_input
-                        logger.info("Using action_input as fallback answer")
                     else:
                         # Last resort: extract from observations
                         final_answer = self._extract_answer_from_steps(user_query, self.steps)
-                        logger.info("Extracted answer from previous observations")
 
                 step.observation = "Task completed"
                 self.steps.append(step)  # Store the final step before breaking
-                logger.info("")
-                logger.info("Final Answer Generated:")
-                for _line in str(final_answer).splitlines():
-                    logger.info(_line)
-                logger.info("")
+                logger.multiline(final_answer, title="Final Answer", max_lines=50)
                 break
 
             # Step 3: Observation - Execute action and observe result
-            logger.info("")
-            logger.info("PHASE 3: ACTION EXECUTION & OBSERVATION")
-            logger.info("")
+            logger.subsection("Action Execution & Observation")
             observation = await self._execute_action(action, action_input)
             step.observation = observation
-            logger.info("Observation Result:")
-            for _line in str(observation).splitlines():
-                logger.info(_line)
-            logger.info("")
+            logger.multiline(observation, title="Observation", max_lines=30)
 
             # Store step
             self.steps.append(step)
@@ -251,29 +240,26 @@ class ReActAgent:
 
         # If we didn't finish naturally, generate final answer
         if not final_answer:
-            logger.info("")
-            logger.info("MAX ITERATIONS REACHED - GENERATING FINAL ANSWER")
-            logger.info("")
+            logger.warning("Max iterations reached - generating final answer")
             final_answer = await self._generate_final_answer(user_query, self.steps)
 
         # Final validation: ensure we always have an answer
         if not final_answer or not final_answer.strip():
-            logger.error("\n" + "X" * 100)
-            logger.error("ERROR: EMPTY FINAL ANSWER DETECTED - GENERATING FALLBACK")
-            logger.error("X" * 100 + "\n")
+            logger.error("Empty final answer detected - generating fallback")
             final_answer = await self._generate_final_answer(user_query, self.steps)
             if not final_answer or not final_answer.strip():
                 final_answer = "I apologize, but I was unable to generate a proper response. Please try rephrasing your question."
 
-        logger.info("")
-        logger.info("[ReAct Agent] EXECUTION COMPLETED")
-        logger.info("")
-        logger.info(f"Total Steps: {len(self.steps)}")
-        logger.info(f"Total Iterations: {iteration}")
-        logger.info("FINAL ANSWER:")
-        for _line in str(final_answer).splitlines():
-            logger.info(_line)
-        logger.info("")
+        # Execution summary
+        logger.header("EXECUTION COMPLETED", "heavy")
+        summary = {
+            "Total Steps": len(self.steps),
+            "Total Iterations": iteration,
+            "Status": "Success",
+            "Tools Used": ", ".join(set(str(s.action) for s in self.steps if s.action != ToolName.FINISH))
+        }
+        logger.key_values(summary, title="Execution Summary")
+        logger.multiline(final_answer, title="Final Answer", max_lines=50)
 
         # Build metadata
         metadata = self._build_metadata()

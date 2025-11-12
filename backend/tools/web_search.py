@@ -15,8 +15,9 @@ import logging
 
 from backend.config.settings import settings
 from backend.models.schemas import SearchResult
+from backend.utils.logging_utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class WebSearchTool:
@@ -164,14 +165,21 @@ class WebSearchTool:
             search_query = self._enhance_query_with_context(query, temporal_context, user_location)
 
         # Log search attempt with context
-        logger.info(f"[WebSearch] Performing search at {temporal_context['current_datetime']}")
-        logger.info(f"[WebSearch] Original query: {original_query}")
+        logger.subsection("Web Search Execution")
+
+        search_info = {
+            "Timestamp": temporal_context['current_datetime'],
+            "Original Query": original_query
+        }
+
         if query_refined:
-            logger.info(f"[WebSearch] Refined query: {query}")
+            search_info["Refined Query"] = query
         if user_location:
-            logger.info(f"[WebSearch] User location: {user_location}")
+            search_info["User Location"] = user_location
         if search_query != query:
-            logger.info(f"[WebSearch] Enhanced query: {search_query}")
+            search_info["Enhanced Query"] = search_query
+
+        logger.key_values(search_info)
 
         # Build context metadata
         context_metadata = {

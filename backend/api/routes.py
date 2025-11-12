@@ -45,8 +45,9 @@ import json
 from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 import asyncio
+from backend.utils.logging_utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ============================================================================
@@ -373,10 +374,10 @@ async def determine_task_type(query: str) -> str:
 
             # Validate response
             if classification in ["agentic", "chat"]:
-                logger.info(f"[Task Classifier] Query classified as '{classification}': {query[:]}")
+                logger.info(f"Task classified as '{classification.upper()}': {query[:100]}")
                 return classification
             else:
-                logger.warning(f"[Task Classifier] Invalid LLM response: '{classification}', falling back to keywords")
+                logger.warning(f"Invalid classifier response: '{classification}', using fallback")
 
         except asyncio.TimeoutError:
             logger.warning("[Task Classifier] LLM classification timed out, falling back to keywords")
