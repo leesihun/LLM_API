@@ -471,6 +471,30 @@ class ReActAgent:
             Formatted context string for python_coder
         """
         context_parts = []
+
+        # Load previous code history if available
+        code_history = python_coder_tool.get_previous_code_history(self.session_id, max_versions=3)
+        if code_history:
+            context_parts.append("=== Previous Code Versions from Earlier Stages ===\n")
+            for idx, code_entry in enumerate(code_history, 1):
+                stage_name = code_entry.get('stage_name', 'unknown')
+                code = code_entry.get('code', '')
+
+                # Show code preview (first 20 lines)
+                code_lines = code.split('\n')
+                code_preview = '\n'.join(code_lines[:20])
+                if len(code_lines) > 20:
+                    code_preview += f"\n... ({len(code_lines) - 20} more lines)"
+
+                context_parts.append(f"Version {idx} ({stage_name}):")
+                context_parts.append("```python")
+                context_parts.append(code_preview)
+                context_parts.append("```")
+                context_parts.append("")
+
+            context_parts.append("You can reference and build upon these previous code versions from earlier stages.")
+            context_parts.append("Use them as a starting point to avoid repeating work.\n")
+
         context_parts.append("=== Plan-Execute Mode Context ===\n")
 
         # Current step information
@@ -491,6 +515,8 @@ class ReActAgent:
         context_parts.append("- Align code generation with the current step's goal")
         context_parts.append("- Build upon results from previous steps")
         context_parts.append("- Ensure success criteria are met")
+        if code_history:
+            context_parts.append("- Reference the previous code versions shown above from earlier stages")
 
         return "\n".join(context_parts)
 
@@ -555,12 +581,14 @@ class ReActAgent:
             enhanced_context = self._build_context_for_plan_step(plan_step, context)
             logger.info(f"[ReAct Step {plan_step.step_num}] Passing plan context to python_coder")
 
-            # Directly call python_coder with context
+            # Directly call python_coder with context and stage prefix
+            stage_prefix = f"stage{plan_step.step_num}"
             result = await python_coder_tool.execute_code_task(
                 query=action_input,
                 file_paths=self.file_paths,
                 session_id=self.session_id,
-                context=enhanced_context
+                context=enhanced_context,
+                stage_prefix=stage_prefix
             )
 
             if result["success"]:
@@ -1206,10 +1234,34 @@ Now provide your action:"""
         Returns:
             Formatted context string with previous steps and observations
         """
-        if not self.steps:
-            return ""
-
         context_parts = []
+
+        # Load previous code history if available
+        code_history = python_coder_tool.get_previous_code_history(self.session_id, max_versions=3)
+        if code_history:
+            context_parts.append("=== Previous Code Versions ===\n")
+            for idx, code_entry in enumerate(code_history, 1):
+                stage_name = code_entry.get('stage_name', 'unknown')
+                code = code_entry.get('code', '')
+
+                # Show code preview (first 20 lines)
+                code_lines = code.split('\n')
+                code_preview = '\n'.join(code_lines[:20])
+                if len(code_lines) > 20:
+                    code_preview += f"\n... ({len(code_lines) - 20} more lines)"
+
+                context_parts.append(f"Version {idx} ({stage_name}):")
+                context_parts.append("```python")
+                context_parts.append(code_preview)
+                context_parts.append("```")
+                context_parts.append("")
+
+            context_parts.append("You can reference and build upon these previous code versions.")
+            context_parts.append("Use them as a starting point to avoid repeating work.\n")
+
+        if not self.steps:
+            return "\n".join(context_parts) if context_parts else ""
+
         context_parts.append("=== Previous Agent Activity ===\n")
 
         # Include recent steps (last 3 steps or all if less than 3)
@@ -1239,6 +1291,8 @@ Now provide your action:"""
         context_parts.append("- Avoid repeating failed approaches")
         context_parts.append("- Build upon partial results from previous steps")
         context_parts.append("- Generate more targeted code based on what's already known")
+        if code_history:
+            context_parts.append("- Reference the previous code versions shown above")
 
         return "\n".join(context_parts)
 
@@ -1326,12 +1380,17 @@ Now provide your action:"""
                 # Build context from current execution history
                 context = self._build_context_for_python_coder()
 
-                # Pass attached file paths, session_id, and execution context to python_coder
+                # Pass attached file paths, session_id, execution context, and step number to python_coder
+                # Use ReAct step number for stage prefix (e.g., "step1", "step2")
+                current_step_num = len(self.steps) + 1  # Current iteration number
+                stage_prefix = f"step{current_step_num}"
+
                 result = await python_coder_tool.execute_code_task(
                     query=action_input,
                     file_paths=self.file_paths,
                     session_id=self.session_id,
-                    context=context
+                    context=context,
+                    stage_prefix=stage_prefix
                 )
                 self._attempted_coder = True
 

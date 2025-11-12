@@ -119,7 +119,8 @@ class CodeExecutor:
         self,
         code: str,
         input_files: Optional[Dict[str, str]] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        stage_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Execute Python code in isolated subprocess.
@@ -128,6 +129,7 @@ class CodeExecutor:
             code: Python code to execute
             input_files: Optional dict mapping original file paths to their basenames
             session_id: Optional session ID to use as execution directory name
+            stage_name: Optional stage name for saving code (e.g., "verify1", "exec2", "stage5")
 
         Returns:
             Dict with keys: success, output, error, execution_time, return_code
@@ -148,10 +150,18 @@ class CodeExecutor:
                     shutil.copy2(original_path, target_path)
                     logger.debug(f"[CodeExecutor] Copied {original_path} -> {target_path}")
 
-            # Write code to script.py
+            # Write code to script.py (main execution file)
             script_path = execution_dir / "script.py"
             script_path.write_text(code, encoding='utf-8')
             logger.debug(f"[CodeExecutor] Wrote code to {script_path}")
+
+            # ALSO save to stage-specific file if stage_name provided
+            if stage_name:
+                stage_script_path = execution_dir / f"script_{stage_name}.py"
+                stage_script_path.write_text(code, encoding='utf-8')
+                logger.info(f"[CodeExecutor] 💾 Saved stage code to {stage_script_path.name}")
+            else:
+                logger.debug(f"[CodeExecutor] No stage_name provided, skipping stage-specific save")
 
             # Execute code using current Python interpreter
             start_time = time.time()
@@ -321,8 +331,8 @@ class PythonCoderTool:
             max_memory_mb=settings.python_code_max_memory,
             execution_base_dir=settings.python_code_execution_dir
         )
-        # Verifier max iterations: 3
-        self.max_verification_iterations = 5
+        # Verifier max iterations: 3 (reduced from 10 in v1.2.0)
+        self.max_verification_iterations = 3
         # Execution retry max attempts: 5
         self.max_execution_attempts = 5
         self.allow_partial_execution = settings.python_code_allow_partial_execution
@@ -335,7 +345,8 @@ class PythonCoderTool:
         context: Optional[str] = None,
         file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
-        is_prestep: bool = False
+        is_prestep: bool = False,
+        stage_prefix: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Main entry point for code generation and execution.
@@ -346,6 +357,7 @@ class PythonCoderTool:
             file_paths: Optional list of input file paths
             session_id: Optional session ID
             is_prestep: Whether this is called from ReAct pre-step (uses specialized prompt)
+            stage_prefix: Optional stage prefix (e.g., "step5", "stage3") for code file naming
 
         Returns:
             Dict with execution results
@@ -418,6 +430,11 @@ class PythonCoderTool:
                 "action": "approved" if verified else "needs_modification"
             })
 
+            # Save verification stage code
+            stage_suffix = f"verify{iteration + 1}"
+            stage_name = f"{stage_prefix}_{stage_suffix}" if stage_prefix else stage_suffix
+            self._save_stage_code(code, validated_files, session_id, stage_name)
+
             if verified:
                 logger.info(f"[PythonCoderTool] ✅ Code verified successfully at iteration {iteration + 1}")
                 break
@@ -457,7 +474,10 @@ class PythonCoderTool:
         for attempt in range(self.max_execution_attempts):
             logger.info(f"[PythonCoderTool] Execution attempt {attempt + 1}/{self.max_execution_attempts}")
 
-            execution_result = self.executor.execute(code, validated_files, session_id=session_id)
+            # Save execution stage code
+            stage_suffix = f"exec{attempt + 1}"
+            stage_name = f"{stage_prefix}_{stage_suffix}" if stage_prefix else stage_suffix
+            execution_result = self.executor.execute(code, validated_files, session_id=session_id, stage_name=stage_name)
             execution_attempts.append({
                 "attempt": attempt + 1,
                 "success": execution_result["success"],
@@ -515,6 +535,93 @@ class PythonCoderTool:
         logger.info("=" * 80)
 
         return result
+
+    def _save_stage_code(
+        self,
+        code: str,
+        validated_files: Dict[str, str],
+        session_id: Optional[str],
+        stage_name: str
+    ) -> None:
+        """
+        Save code to a stage-specific file for debugging/tracking.
+
+        Args:
+            code: Python code to save
+            validated_files: Dict of validated files
+            session_id: Session ID for directory path
+            stage_name: Stage name (e.g., "verify1", "exec2", "stage5")
+        """
+        if not session_id:
+            # No session ID, skip saving
+            return
+
+        try:
+            execution_dir = Path(settings.python_code_execution_dir) / session_id
+            execution_dir.mkdir(parents=True, exist_ok=True)
+
+            stage_script_path = execution_dir / f"script_{stage_name}.py"
+            stage_script_path.write_text(code, encoding='utf-8')
+            logger.info(f"[PythonCoderTool] 💾 Saved {stage_name} code to {stage_script_path.name}")
+        except Exception as e:
+            logger.warning(f"[PythonCoderTool] Failed to save stage code: {e}")
+
+    def get_previous_code_history(
+        self,
+        session_id: Optional[str],
+        max_versions: int = 3
+    ) -> List[Dict[str, str]]:
+        """
+        Load previous code versions from session directory.
+
+        Args:
+            session_id: Session ID for directory path
+            max_versions: Maximum number of previous versions to return
+
+        Returns:
+            List of dicts with keys: stage_name, code, timestamp
+        """
+        if not session_id:
+            return []
+
+        try:
+            execution_dir = Path(settings.python_code_execution_dir) / session_id
+            if not execution_dir.exists():
+                return []
+
+            # Find all script_*.py files (excluding main script.py)
+            script_files = list(execution_dir.glob("script_*.py"))
+            if not script_files:
+                return []
+
+            # Sort by modification time (most recent first)
+            script_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            # Load up to max_versions files
+            code_history = []
+            for script_path in script_files[:max_versions]:
+                try:
+                    code = script_path.read_text(encoding='utf-8')
+                    stage_name = script_path.stem.replace('script_', '')  # Extract stage name
+                    timestamp = script_path.stat().st_mtime
+
+                    code_history.append({
+                        "stage_name": stage_name,
+                        "code": code,
+                        "timestamp": timestamp,
+                        "filename": script_path.name
+                    })
+                except Exception as e:
+                    logger.warning(f"[PythonCoderTool] Failed to read {script_path.name}: {e}")
+
+            if code_history:
+                logger.info(f"[PythonCoderTool] Loaded {len(code_history)} previous code version(s)")
+
+            return code_history
+
+        except Exception as e:
+            logger.warning(f"[PythonCoderTool] Failed to load code history: {e}")
+            return []
 
     def _prepare_files(
         self,
@@ -1423,6 +1530,8 @@ Available files (USE THESE EXACT NAMES):
         Returns:
             Tuple of (fixed_code, list of changes made)
         """
+        import re
+
         fixed_code = code
         changes = []
 
@@ -1498,6 +1607,58 @@ Available files (USE THESE EXACT NAMES):
                         fixed_code = '\n'.join(lines)
                         changes.append("Auto-added: import json")
                         logger.info("[AutoFix] Added 'import json' statement")
+
+        # Fix 3: Add missing imports
+        import_checks = {
+            'pandas': ['pd.', 'pandas.'],
+            'numpy': ['np.', 'numpy.'],
+            'json': ['json.load', 'json.dump', 'json.loads', 'json.dumps'],
+            'openpyxl': ['.read_excel(', '.to_excel('],
+            'docx': ['Document(', 'from docx'],
+        }
+
+        for module, patterns in import_checks.items():
+            needs_import = any(pattern in fixed_code for pattern in patterns)
+            has_import = f'import {module}' in fixed_code or f'from {module}' in fixed_code
+
+            if needs_import and not has_import:
+                # Add import at the beginning
+                lines = fixed_code.split('\n')
+                insert_index = 0
+                for i, line in enumerate(lines):
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith('#') and not stripped.startswith('"""') and not stripped.startswith("'''"):
+                        insert_index = i
+                        break
+
+                if module == 'pandas':
+                    lines.insert(insert_index, 'import pandas as pd')
+                    changes.append("Auto-added: import pandas as pd")
+                elif module == 'numpy':
+                    lines.insert(insert_index, 'import numpy as np')
+                    changes.append("Auto-added: import numpy as np")
+                else:
+                    lines.insert(insert_index, f'import {module}')
+                    changes.append(f"Auto-added: import {module}")
+
+                fixed_code = '\n'.join(lines)
+                logger.info(f"[AutoFix] Added missing import: {module}")
+
+        # Fix 4: Add encoding to open() calls
+        # Pattern: open('filename', 'r') or open("filename", "r")
+        # Replace with: open('filename', 'r', encoding='utf-8')
+        open_patterns = [
+            (r"open\((['\"][^'\"]+['\"])\s*,\s*'r'\s*\)", r"open(\1, 'r', encoding='utf-8')"),
+            (r'open\((["\'][^"\']+["\']),\s*"r"\s*\)', r'open(\1, "r", encoding="utf-8")'),
+        ]
+
+        for pattern, replacement in open_patterns:
+            matches = re.findall(pattern, fixed_code)
+            if matches:
+                fixed_code = re.sub(pattern, replacement, fixed_code)
+                changes.append(f"Auto-added: encoding='utf-8' to {len(matches)} open() call(s)")
+                logger.info(f"[AutoFix] Added encoding='utf-8' to {len(matches)} open() call(s)")
+                break  # Avoid duplicate logging
 
         return fixed_code, changes
 
