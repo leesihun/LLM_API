@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -152,10 +153,10 @@ class CodeExecutor:
             script_path.write_text(code, encoding='utf-8')
             logger.debug(f"[CodeExecutor] Wrote code to {script_path}")
 
-            # Execute code
+            # Execute code using current Python interpreter
             start_time = time.time()
             result = subprocess.run(
-                ["python", str(script_path)],
+                [sys.executable, str(script_path)],  # Use sys.executable instead of "python"
                 capture_output=True,
                 timeout=self.timeout,
                 cwd=str(execution_dir),
@@ -421,7 +422,16 @@ class PythonCoderTool:
                 logger.info(f"[PythonCoderTool] ✅ Code verified successfully at iteration {iteration + 1}")
                 break
 
-            # Modify code
+            # AUTO-FIX: Try to automatically fix common issues before calling LLM
+            auto_fixed, auto_changes = self._auto_fix_common_issues(code, validated_files, file_metadata)
+            if auto_changes:
+                logger.info(f"[PythonCoderTool] 🔧 Auto-fixed {len(auto_changes)} issue(s):")
+                for change in auto_changes:
+                    logger.info(f"  - {change}")
+                code = auto_fixed
+                modifications.extend(auto_changes)
+
+            # Modify code with LLM
             logger.warning(f"[PythonCoderTool] ⚠️  Verification issues found ({len(issues)}):")
             for i, issue in enumerate(issues, 1):
                 logger.warning(f"  {i}. {issue}")
@@ -1395,6 +1405,101 @@ Available files (USE THESE EXACT NAMES):
         except Exception as e:
             logger.warning(f"[PythonCoderTool] LLM verification failed: {e}")
             return []  # Don't block on LLM verification failure
+
+    def _auto_fix_common_issues(
+        self,
+        code: str,
+        validated_files: Dict[str, str],
+        file_metadata: Dict[str, Any]
+    ) -> Tuple[str, List[str]]:
+        """
+        Automatically fix common issues without LLM intervention.
+
+        Args:
+            code: Current Python code
+            validated_files: Dict of validated files {path: filename}
+            file_metadata: Metadata for files
+
+        Returns:
+            Tuple of (fixed_code, list of changes made)
+        """
+        fixed_code = code
+        changes = []
+
+        if not validated_files:
+            return fixed_code, changes
+
+        # Get list of correct filenames
+        correct_filenames = list(validated_files.values())
+
+        # Common wrong filenames to check
+        wrong_patterns = [
+            "file.json", "data.json", "input.json", "output.json",
+            "file.csv", "data.csv", "input.csv", "output.csv",
+            "file.xlsx", "data.xlsx", "input.xlsx", "output.xlsx",
+            "file.txt", "data.txt", "input.txt", "output.txt"
+        ]
+
+        # Fix 1: Replace generic filenames with correct ones
+        for wrong_name in wrong_patterns:
+            if wrong_name in fixed_code:
+                # Determine correct filename based on extension
+                wrong_ext = Path(wrong_name).suffix
+                matching_files = [f for f in correct_filenames if f.endswith(wrong_ext)]
+
+                if matching_files:
+                    correct_name = matching_files[0]  # Use first match
+                    # Replace with correct filename
+                    fixed_code = fixed_code.replace(f"'{wrong_name}'", f"'{correct_name}'")
+                    fixed_code = fixed_code.replace(f'"{wrong_name}"', f'"{correct_name}"')
+                    changes.append(f"Auto-fixed filename: '{wrong_name}' → '{correct_name}'")
+                    logger.info(f"[AutoFix] Replaced '{wrong_name}' with '{correct_name}'")
+
+        # Fix 2: Replace pd.read_json() with json.load() for complex nested JSON
+        json_files = [
+            (path, filename) for path, filename in validated_files.items()
+            if file_metadata.get(path, {}).get('type') == 'json'
+        ]
+
+        for path, filename in json_files:
+            metadata = file_metadata.get(path, {})
+            max_depth = metadata.get('max_depth', 0)
+
+            # If JSON has depth > 2, it's likely nested and not suitable for pd.read_json
+            if max_depth > 2:
+                # Check if code uses pd.read_json
+                if f"pd.read_json('{filename}')" in fixed_code or f'pd.read_json("{filename}")' in fixed_code:
+                    # Replace with json.load()
+                    old_pattern_single = f"pd.read_json('{filename}')"
+                    old_pattern_double = f'pd.read_json("{filename}")'
+                    new_pattern = f"json.load(open('{filename}', 'r', encoding='utf-8'))"
+
+                    if old_pattern_single in fixed_code:
+                        fixed_code = fixed_code.replace(old_pattern_single, new_pattern)
+                        changes.append(f"Auto-fixed: pd.read_json → json.load for nested JSON '{filename}'")
+                        logger.info(f"[AutoFix] Replaced pd.read_json with json.load for '{filename}' (depth={max_depth})")
+                    elif old_pattern_double in fixed_code:
+                        fixed_code = fixed_code.replace(old_pattern_double, new_pattern)
+                        changes.append(f"Auto-fixed: pd.read_json → json.load for nested JSON '{filename}'")
+                        logger.info(f"[AutoFix] Replaced pd.read_json with json.load for '{filename}' (depth={max_depth})")
+
+                    # Ensure json import is present
+                    if "import json" not in fixed_code:
+                        # Add import at the beginning
+                        lines = fixed_code.split('\n')
+                        # Find first non-comment, non-docstring line
+                        insert_index = 0
+                        for i, line in enumerate(lines):
+                            stripped = line.strip()
+                            if stripped and not stripped.startswith('#') and not stripped.startswith('"""') and not stripped.startswith("'''"):
+                                insert_index = i
+                                break
+                        lines.insert(insert_index, "import json")
+                        fixed_code = '\n'.join(lines)
+                        changes.append("Auto-added: import json")
+                        logger.info("[AutoFix] Added 'import json' statement")
+
+        return fixed_code, changes
 
     async def _modify_code(
         self,
