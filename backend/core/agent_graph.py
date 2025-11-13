@@ -15,7 +15,7 @@ from backend.config.settings import settings
 from backend.models.schemas import ChatMessage
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
-from backend.tools.python_coder_tool import python_coder_tool
+from backend.tools.python_coder import python_coder_tool
 
 logger = logging.getLogger(__name__)
 

@@ -39,7 +39,7 @@ from langchain_core.messages import HumanMessage
 from backend.models.schemas import ChatMessage, PlanStep, StepResult
 from backend.config.settings import settings
 from backend.config import prompts
-from backend.tasks.React import react_agent
+from backend.tasks.react import react_agent
 from backend.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)

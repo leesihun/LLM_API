@@ -10,7 +10,7 @@ from enum import Enum
 
 from backend.models.schemas import ChatMessage
 from backend.tasks.Plan_execute import plan_execute_task
-from backend.tasks.React import react_agent
+from backend.tasks.react import react_agent
 from backend.config.settings import settings
 from backend.utils.logging_utils import get_logger
 
