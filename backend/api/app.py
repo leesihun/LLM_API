@@ -30,15 +30,11 @@ def setup_logging():
                 if isinstance(record.msg, str):
                     msg = record.msg.strip()
                     # Skip empty or banner-only lines (e.g., "====...", "-----...")
-                    if msg and len(msg) >= 10 and all(ch in self.SEPARATOR_CHARS for ch in set(msg)):
-                        return False
                     # Collapse multiline logs to first line with an indicator
                     if "\n" in msg:
                         first_line = msg.splitlines()[0].strip()
                         msg = f"{first_line} [...]"
                     # Truncate overly long messages
-                    if len(msg) > 400:
-                        msg = msg[:400] + "..."
                     record.msg = msg
             except Exception:
                 # Never block logging if the filter has an issue

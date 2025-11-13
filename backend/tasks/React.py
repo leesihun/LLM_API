@@ -11,12 +11,19 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from backend.config.settings import settings
+from backend.config import prompts
 from backend.models.schemas import ChatMessage, PlanStep, StepResult
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
-from backend.tools.python_coder_tool import python_coder_tool
+from backend.tools.python_coder import python_coder_tool
 from backend.tools.file_analyzer_tool import file_analyzer
 from backend.utils.logging_utils import get_logger, LogFormatter
+from backend.tasks.react.utils import (
+    should_auto_finish,
+    is_final_answer_unnecessary,
+    build_execution_metadata,
+    get_execution_trace
+)
 
 logger = get_logger(__name__)
 
@@ -233,7 +240,7 @@ class ReActAgent:
             self.steps.append(step)
 
             # PERFORMANCE OPTIMIZATION: Early exit if observation contains complete answer
-            if self._should_auto_finish(observation, iteration):
+            if should_auto_finish(observation, iteration):
                 logger.info("AUTO-FINISH TRIGGERED - Generating final answer from observation")
                 final_answer = await self._generate_final_answer(user_query, self.steps)
                 break
@@ -262,7 +269,7 @@ class ReActAgent:
         logger.multiline(final_answer, title="Final Answer", max_lines=50)
 
         # Build metadata
-        metadata = self._build_metadata()
+        metadata = build_execution_metadata(self.steps, self.max_iterations)
 
         return final_answer, metadata
 
@@ -343,7 +350,7 @@ class ReActAgent:
         logger.info("=" * 100 + "\n")
 
         # PERFORMANCE OPTIMIZATION: Skip final answer generation if last step already contains it
-        if self._is_final_answer_unnecessary(step_results, user_query):
+        if is_final_answer_unnecessary(step_results, user_query):
             final_answer = step_results[-1].observation
             logger.info("⚡ SKIPPING final answer generation (last step contains sufficient answer)")
         else:
@@ -620,23 +627,12 @@ class ReActAgent:
         Returns:
             Final answer string
         """
-        prompt = f"""You are completing a multi-step task. Generate a final, comprehensive answer based on all the work done so far.
-
-Original User Query: {user_query}
-
-Final Step Goal: {plan_step.goal}
-
-All Previous Steps and Their Results:
-{context}
-
-Based on all the steps executed and their results above, provide a clear, complete, and accurate final answer to the user's query.
-Your answer should:
-1. Directly address the user's original question
-2. Synthesize information from all previous steps
-3. Include specific details, numbers, and facts from the observations
-4. Be well-organized and easy to understand
-
-Provide your final answer:"""
+        # Use centralized prompt
+        prompt = prompts.get_react_final_answer_for_finish_step_prompt(
+            user_query=user_query,
+            plan_step_goal=plan_step.goal,
+            context=context
+        )
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
@@ -660,21 +656,15 @@ Provide your final answer:"""
         Returns:
             Action input string for the tool
         """
-        prompt = f"""You are executing a specific step in a plan.
-
-Original User Query: {user_query}
-
-Current Step Goal: {plan_step.goal}
-Success Criteria: {plan_step.success_criteria}
-Additional Context: {plan_step.context or 'None'}
-
-Previous Steps Context:
-{context}
-
-Tool to use: {tool_name}
-
-Generate the appropriate input for this tool to achieve the step goal.
-Provide ONLY the tool input, no explanations:"""
+        # Use centralized prompt
+        prompt = prompts.get_react_action_input_for_step_prompt(
+            user_query=user_query,
+            plan_step_goal=plan_step.goal,
+            success_criteria=plan_step.success_criteria,
+            plan_step_context=plan_step.context,
+            previous_context=context,
+            tool_name=str(tool_name)
+        )
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
@@ -699,7 +689,7 @@ Provide ONLY the tool input, no explanations:"""
         # Check for obvious failures
         if not observation or len(observation.strip()) < 5:
             return False
-        
+
         if "error" in observation.lower() or "failed" in observation.lower():
             # But allow if there's also success indicators
             if "success" not in observation.lower():
@@ -709,24 +699,20 @@ Provide ONLY the tool input, no explanations:"""
         if "success" in observation.lower() and len(observation) > 50:
             return True
 
-        # Use LLM to verify goal achievement
-        verification_prompt = f"""Verify if the step goal was achieved.
-
-Step Goal: {plan_step.goal}
-Success Criteria: {plan_step.success_criteria}
-
-Tool Used: {tool_used}
-Observation: {observation[:1000]}
-
-Based on the observation, was the step goal achieved according to the success criteria?
-Answer with "YES" or "NO" and brief reasoning:"""
+        # Use centralized prompt
+        verification_prompt = prompts.get_react_step_verification_prompt(
+            plan_step_goal=plan_step.goal,
+            success_criteria=plan_step.success_criteria,
+            tool_used=tool_used,
+            observation=observation
+        )
 
         response = await self.llm.ainvoke([HumanMessage(content=verification_prompt)])
         result = response.content.strip().lower()
-        
+
         is_success = result.startswith("yes")
         logger.info(f"[Step Verification] {'SUCCESS' if is_success else 'FAILED'} - {result[:100]}")
-        
+
         return is_success
 
     async def _generate_final_answer_from_steps(
@@ -759,18 +745,12 @@ Answer with "YES" or "NO" and brief reasoning:"""
         steps_text = "\n\n".join(steps_summary)
         observations_text = "\n".join(accumulated_observations)
 
-        prompt = f"""You are a helpful AI assistant. Generate a final, comprehensive answer based on the step-by-step execution results.
-
-Original User Query: {user_query}
-
-Execution Steps Summary:
-{steps_text}
-
-All Observations:
-{observations_text}
-
-Based on all the steps executed and their results, provide a clear, complete, and accurate final answer to the user's query.
-Include specific details, numbers, and facts from the observations:"""
+        # Use centralized prompt
+        prompt = prompts.get_react_final_answer_from_steps_prompt(
+            user_query=user_query,
+            steps_text=steps_text,
+            observations_text=observations_text
+        )
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
@@ -783,81 +763,35 @@ Include specific details, numbers, and facts from the observations:"""
         """
         PERFORMANCE OPTIMIZATION: Generate thought and action in single LLM call
         Reduces LLM calls by 50% in free mode execution
-        
+
         Args:
             query: User query
             steps: Previous ReAct steps
-            
+
         Returns:
             Tuple of (thought, action, action_input)
         """
         context = self._format_steps_context(steps)
-        
+
         file_guidance = """\nGuidelines:\n- If any files are available, first attempt local analysis using python_coder or python_code.\n- Only use rag_retrieval or web_search if local analysis failed or is insufficient.\n- You may call different tools across iterations to complete the task.""" if self.file_paths else ""
 
-        prompt = f"""You are a helpful AI assistant using the ReAct (Reasoning + Acting) framework.{file_guidance}
-
-Question: {query}
-
-{context}
-
-Think step-by-step and then decide on an action. Provide BOTH your reasoning AND your action in this format:
-
-THOUGHT: [Your step-by-step reasoning about what to do next]
-
-ACTION: [Exactly one of: web_search, rag_retrieval, python_coder, finish]
-
-ACTION INPUT: [The input for the selected action]
-
-Available Actions:
-
-1. web_search - Search the web for current information
-
-   🔍 SEARCH QUERY GUIDELINES:
-   When generating search queries, focus on creating effective keywords:
-
-   ✅ GOOD PRACTICES:
-   • Use 3-10 specific keywords
-   • Include important names, dates, places, products
-   • Use concrete terms (nouns, verbs) rather than vague adjectives
-   • Think about what words would appear in relevant results
-   • Natural language is okay - the system will automatically optimize it
-
-   ✅ GOOD EXAMPLES:
-   • "latest AI developments artificial intelligence 2025"
-   • "OpenAI GPT-4 features capabilities pricing"
-   • "Python vs JavaScript performance comparison"
-   • "weather forecast Seoul tomorrow"
-   • "electric vehicles vs gas cars comparison 2025"
-
-   ❌ AVOID:
-   • Single word queries ("AI", "weather")
-   • Overly long sentences (>15 words)
-   • Too vague ("tell me about technology")
-
-   💡 TIP: You can use natural questions - the query will be automatically
-   optimized for search engines. Just be specific about what you're looking for!
-
-2. rag_retrieval - Retrieve relevant documents from uploaded files
-
-3. python_coder - Generate and execute Python code with file processing and data analysis
-
-4. finish - Provide the final answer (use ONLY when you have complete information)
-
-Note: File metadata analysis is done automatically when files are attached.
-
-Now provide your thought and action:"""
+        # Use centralized prompt
+        prompt = prompts.get_react_thought_and_action_prompt(
+            query=query,
+            context=context,
+            file_guidance=file_guidance
+        )
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         response_text = response.content.strip()
-        
+
         # Parse the combined response
         thought, action, action_input = self._parse_thought_and_action(response_text)
-        
+
         logger.info("")
         logger.info("Combined thought-action generation completed")
         logger.info("")
-        
+
         return thought, action, action_input
 
     def _parse_thought_and_action(self, response: str) -> Tuple[str, str, str]:
@@ -953,30 +887,12 @@ Now provide your thought and action:"""
         # Build context from previous steps
         context = self._format_steps_context(steps)
 
-        prompt = f"""You are a helpful AI assistant using the ReAct (Reasoning + Acting) framework.
-
-Question: {query}
-
-{context}
-
-Think step-by-step about what you need to do to answer this question.
-Break down the task into smaller baby steps. Such as
-if the question is "Analyze the data", the baby steps could be
-
-1. Write down the data to a scratch file.
-2. Load the data from the scratch file.
-3. Use math tools to calculate mean, median, etc.
-4. Acquire results from the tools
-5. Append the results to the scratch file.
-6. Read the scratch file and answer the question.
-7. Make sure the answers are adequate to the query.
-8. Finish the task.
-
-These are available tools:
-{settings.available_tools}
-What information do you need? What should you do next?
-
-Provide your reasoning:"""
+        # Use centralized prompt
+        prompt = prompts.get_react_thought_prompt(
+            query=query,
+            context=context,
+            available_tools=settings.available_tools
+        )
 
         # Intentionally do not log system prompt. Inputs are already captured elsewhere.
         logger.info("")
@@ -1003,47 +919,13 @@ Provide your reasoning:"""
 
         file_guidance = """\nGuidelines:\n- If any files are available, first attempt local analysis using python_coder or python_code.\n- Only use rag_retrieval or web_search if local analysis failed or is insufficient.\n- You may call different tools across iterations to complete the task.""" if self.file_paths else ""
 
-        prompt = f"""You are a helpful AI assistant. Based on your reasoning, select the next action.{file_guidance}
-
-Question: {query}
-
-{context}
-
-Your Thought: {thought}
-
-Available Actions (choose EXACTLY one of these names):
-1. web_search - Search the web for current information (use for: news, current events, latest data)
-2. rag_retrieval - Retrieve relevant documents from uploaded files (use for: document queries, file content)
-3. python_coder - Generate and execute Python code with file processing and data analysis (use for: data analysis, file processing, calculations, working with CSV/Excel/PDF files)
-4. finish - Provide the final answer (use ONLY when you have complete information to answer the question)
-
-Note: File metadata analysis is done automatically when files are attached.
-
-RESPONSE FORMAT - You can think briefly, but you MUST end your response with these two lines:
-Action: <action_name>
-Action Input: <input_for_the_action>
-
-Examples:
-
-Example 1 (Good):
-Action: web_search
-Action Input: current weather in Seoul
-
-Example 2 (Good - with brief reasoning):
-I need current data for this query.
-Action: web_search
-Action Input: latest news about AI
-
-Example 3 (Good - finish action):
-I now have all the information needed.
-Action: finish
-Action Input: The capital of France is Paris, with a population of approximately 2.2 million people.
-
-Example 4 (Bad - don't do this):
-I think we should search the web.
-Action: search the web
-
-Now provide your action:"""
+        # Use centralized prompt
+        prompt = prompts.get_react_action_selection_prompt(
+            query=query,
+            context=context,
+            thought=thought,
+            file_guidance=file_guidance
+        )
 
         # Intentionally do not log system prompt for action selection
         logger.info("")
@@ -1054,7 +936,7 @@ Now provide your action:"""
 
         # Parse response
         action, action_input = self._parse_action_response(response.content)
-        
+
         logger.info("")
         logger.info(f"Action: {action}")
         logger.info(f"Action Input: {action_input}")
@@ -1487,21 +1369,8 @@ Now provide your action:"""
         """
         context = self._format_steps_context(steps)
 
-        prompt = f"""You are a helpful AI assistant. Based on all your reasoning and observations, provide a final answer.
-
-Question: {query}
-
-{context}
-
-IMPORTANT: Review ALL the observations above carefully. Each observation contains critical information from tools you executed (web search results, code outputs, document content, etc.).
-
-Your final answer MUST:
-1. Incorporate ALL relevant information from the observations
-2. Be comprehensive and complete
-3. Directly answer the user's question
-4. Include specific details, numbers, facts from the observations
-
-Based on all the information you've gathered through your actions and observations, provide a clear, complete, and accurate final answer:"""
+        # Use centralized prompt
+        prompt = prompts.get_react_final_answer_prompt(query=query, context=context)
 
         # Intentionally do not log system prompt for final answer generation
         logger.info("")
@@ -1597,171 +1466,6 @@ Step {step.step_num}:
 """)
         return "\n".join(context_parts)
 
-    def _should_auto_finish(self, observation: str, step_num: int) -> bool:
-        """
-        PERFORMANCE OPTIMIZATION: Detect if observation contains complete answer
-        
-        Early exit optimization - automatically triggers finish if observation
-        appears to contain a complete answer, saving unnecessary iterations.
-        
-        Args:
-            observation: Latest observation from tool execution
-            step_num: Current step number
-            
-        Returns:
-            True if should auto-finish, False to continue iterations
-        """
-        # Need at least 2 steps before considering early exit
-        if step_num < 2:
-            return False
-        
-        # Check minimum length
-        if len(observation) < 200:
-            return False
-        
-        # Skip if observation contains errors
-        if "error" in observation.lower() or "failed" in observation.lower():
-            # But allow if also has success indicators
-            if "success" not in observation.lower():
-                return False
-        
-        # Check for answer indicators
-        answer_phrases = [
-            "the answer",
-            "result is",
-            "therefore",
-            "in conclusion",
-            "based on",
-            "to summarize",
-            "in summary",
-            "concluded",
-            "final result",
-            "outcome is"
-        ]
-        
-        observation_lower = observation.lower()
-        has_answer_phrase = any(phrase in observation_lower for phrase in answer_phrases)
-        
-        # Check for substantive content (numbers, facts, concrete results)
-        has_numbers = any(char.isdigit() for char in observation)
-        is_substantial = len(observation) > 300
-        
-        # Auto-finish if observation looks like a complete answer
-        should_finish = has_answer_phrase or (has_numbers and is_substantial)
-        
-        if should_finish:
-            logger.info("")
-            logger.info("⚡ EARLY EXIT: Observation contains complete answer")
-            logger.info("")
-        
-        return should_finish
-
-    def _is_final_answer_unnecessary(self, step_results: List[StepResult], user_query: str) -> bool:
-        """
-        PERFORMANCE OPTIMIZATION: Check if final answer generation can be skipped
-        
-        Skips final LLM call if the last step already contains a comprehensive answer.
-        
-        Args:
-            step_results: Results from all executed steps
-            user_query: Original user query
-            
-        Returns:
-            True if final answer generation can be skipped, False otherwise
-        """
-        if not step_results:
-            return False
-        
-        last_step = step_results[-1]
-        
-        # Only skip if last step was successful
-        if not last_step.success:
-            return False
-        
-        observation = last_step.observation
-        
-        # Check if observation is substantial
-        if len(observation) < 150:
-            return False
-        
-        # Check if observation appears to be a complete answer (not just raw data)
-        observation_lower = observation.lower()
-        
-        # If it's just code output or raw data, we need synthesis
-        raw_data_indicators = [
-            "dtype:",
-            "columns:",
-            "shape:",
-            "<class",
-            "array(",
-            "dataframe",
-        ]
-        if any(indicator in observation_lower for indicator in raw_data_indicators):
-            return False
-        
-        # If observation contains conclusion/summary phrases, it's likely complete
-        complete_indicators = [
-            "the answer",
-            "in conclusion",
-            "to summarize",
-            "based on the",
-            "the result",
-            "therefore",
-            "this shows",
-            "analysis reveals"
-        ]
-        has_conclusion = any(phrase in observation_lower for phrase in complete_indicators)
-        
-        # If only one step executed and it has a conclusive answer, we can skip
-        if len(step_results) == 1 and has_conclusion:
-            return True
-        
-        # For multi-step executions, only skip if last step is explicitly marked as final/summary
-        last_goal_lower = last_step.goal.lower()
-        is_final_step = any(word in last_goal_lower for word in ["final", "answer", "summary", "synthesize", "combine"])
-        
-        # Skip if it's the final step and has substantial output
-        should_skip = is_final_step and len(observation) > 200
-        
-        if should_skip:
-            logger.info(f"Final answer unnecessary: Last step '{last_step.goal}' contains complete answer ({len(observation)} chars)")
-        
-        return should_skip
-
-    def _build_metadata(self) -> Dict[str, Any]:
-        """
-        Build metadata dictionary with execution details
-        """
-        # Collect unique tools used
-        tools_used = list(set([
-            step.action for step in self.steps
-            if step.action != ToolName.FINISH
-        ]))
-
-        # Build execution steps
-        execution_steps = [step.to_dict() for step in self.steps]
-
-        return {
-            "agent_type": "react",
-            "total_iterations": len(self.steps),
-            "max_iterations": self.max_iterations,
-            "tools_used": tools_used,
-            "execution_steps": execution_steps,
-            "execution_trace": self.get_trace()
-        }
-
-    def get_trace(self) -> str:
-        """
-        Get full trace of ReAct execution for debugging
-        """
-        if not self.steps:
-            return "No steps executed."
-
-        trace = ["=== ReAct Execution Trace ===\n"]
-        for step in self.steps:
-            trace.append(str(step))
-
-        return "\n".join(trace)
 
 
 # Global ReAct agent instance

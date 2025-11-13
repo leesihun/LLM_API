@@ -113,27 +113,14 @@ class Settings(BaseSettings):
     # AGENTIC FLOW
 
     # Agentic flow model
-    agentic_classifier_model: str = 'gemma3:12b'
-    agentic_classifier_prompt: str = """You are a task classifier. Analyze the user's query and determine if it requires:
+    agentic_classifier_model: str = 'deepseek-r1:1.5b'
 
-1. "agentic" - Use when the query requires agentic flow:
-   - Web search for current/latest information
-   - Document retrieval from uploaded files
-   - Data analysis or processing
-   - Extremely complex task that requires Python code execution
-   - Multi-step reasoning with tools
-   - Research, comparison, or investigation
-   - Any query mentioning: search, find, research, analyze, current, latest, news, documents, files, code, calculate
-   - Requires precise computation or analysis
-
-2. "chat" - Use when the query is:
-   - Simple conversation
-   - General knowledge questions (not requiring current data)
-   - Explanations or clarifications
-
-Unless its absolutely necessary, use "chat" for simple questions.
-
-Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)."""
+    # Agentic classifier prompt loaded from prompts module
+    @property
+    def agentic_classifier_prompt(self) -> str:
+        """Get agentic classifier prompt from centralized prompts module"""
+        from backend.config.prompts import get_agentic_classifier_prompt
+        return get_agentic_classifier_prompt()
 
     # Available tools
     available_tools: list[str] = ['web_search', 'rag', 'python_coder', 'chat']
