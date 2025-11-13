@@ -14,7 +14,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 import logging
 
 from backend.config.settings import settings
-from backend.config import prompts
 from backend.models.schemas import SearchResult
 from backend.utils.logging_utils import get_logger
 
@@ -307,15 +306,55 @@ class WebSearchTool:
         # Get LLM instance
         llm = self._get_llm()
 
-        # Use centralized prompt from prompts module
-        refinement_prompt = prompts.get_search_query_refinement_prompt(
-            query=query,
-            current_date=temporal_context['current_date'],
-            day_of_week=temporal_context['day_of_week'],
-            month=temporal_context['month'],
-            year=temporal_context['year'],
-            user_location=user_location
-        )
+        # Build context info
+        context_info = f"""Current Context:
+- Date: {temporal_context['current_date']} ({temporal_context['day_of_week']})
+- Month/Year: {temporal_context['month']} {temporal_context['year']}"""
+
+        if user_location:
+            context_info += f"\n- Location: {user_location}"
+
+        # Query refinement prompt with few-shot examples
+        refinement_prompt = f"""You are a search query optimization expert. Convert natural language questions into optimal search keywords for web search engines.
+
+{context_info}
+
+RULES:
+1. Remove question words (what, where, when, why, how, who)
+2. Remove unnecessary words (the, a, an, is, are, about, for)
+3. Use 3-10 specific, concrete keywords
+4. Include important entities (names, places, products, dates)
+5. Add current date/year if query asks for "latest", "recent", "current", "new"
+6. Keep proper nouns and technical terms
+7. Use keywords that a search engine would match against
+
+EXAMPLES:
+
+Input: "what is the latest news about artificial intelligence"
+Output: AI artificial intelligence latest news November 2025
+
+Input: "how does machine learning work"
+Output: machine learning explanation tutorial how it works
+
+Input: "where can I find information about Python programming"
+Output: Python programming tutorial documentation guide
+
+Input: "tell me about OpenAI GPT-4"
+Output: OpenAI GPT-4 overview features capabilities
+
+Input: "what's the weather like tomorrow"
+Output: weather forecast tomorrow {temporal_context['current_date']}
+
+Input: "best restaurants near me"
+Output: best restaurants {"in " + user_location if user_location else "local area"} 2025
+
+Input: "Python vs JavaScript which is better"
+Output: Python vs JavaScript comparison pros cons 2025
+
+Now optimize this query:
+
+Input: {query}
+Output:"""
 
         try:
             # Call LLM
@@ -403,21 +442,47 @@ class WebSearchTool:
 
         search_context = "\n".join(context_parts)
 
-        # Use centralized prompts from prompts module
-        system_prompt = prompts.get_search_answer_generation_system_prompt(
-            current_date=temporal_context['current_date'],
-            day_of_week=temporal_context['day_of_week'],
-            current_time=temporal_context['current_time'],
-            month=temporal_context['month'],
-            year=temporal_context['year'],
-            user_location=user_location
-        )
+        # Build context section
+        context_lines = [
+            f"- Current Date: {temporal_context['current_date']} ({temporal_context['day_of_week']})",
+            f"- Current Time: {temporal_context['current_time']}",
+            f"- Month/Year: {temporal_context['month']} {temporal_context['year']}"
+        ]
+        if user_location:
+            context_lines.append(f"- User Location: {user_location}")
 
-        user_prompt = prompts.get_search_answer_generation_user_prompt(
-            query=query,
-            search_context=search_context,
-            user_location=user_location
-        )
+        context_section = "\n".join(context_lines)
+
+        # Create prompt for answer generation with temporal/location awareness
+        system_prompt = f"""You are a helpful AI assistant that answers questions based on web search results.
+
+CURRENT CONTEXT:
+{context_section}
+
+Your task is to:
+1. Read the provided search results carefully
+2. Synthesize information from multiple sources
+3. Generate a clear, accurate, and comprehensive answer
+4. Cite sources by mentioning "Source 1", "Source 2", etc. when referencing specific information
+5. If the search results don't contain enough information, say so clearly
+6. Be aware of temporal context - if the user asks about "today", "now", "current", etc., use the current date/time provided above
+{"7. Be aware of location context - consider the user's location when providing location-specific information" if user_location else ""}
+
+Guidelines:
+- Be concise but thorough
+- Use natural language
+- Prioritize accuracy over creativity
+- Include source numbers in your answer (e.g., "According to Source 1...")
+- If results are conflicting, mention both perspectives
+- When discussing time-sensitive information, acknowledge the current date/time context
+{"- When discussing location-specific information, consider the user's location" if user_location else ""}"""
+
+        user_prompt = f"""Question: {query}
+
+Search Results:
+{search_context}
+
+Based on these search results and the context provided above (current date/time{", user location" if user_location else ""}), please provide a comprehensive answer to the question. Remember to cite sources using "Source 1", "Source 2", etc."""
 
         try:
             messages = [

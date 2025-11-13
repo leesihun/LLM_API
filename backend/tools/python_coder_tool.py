@@ -23,13 +23,9 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
 from backend.config.settings import settings
-<<<<<<< HEAD:backend/tools/python_coder_tool.py.bak
-from backend.config import prompts
 from backend.utils.logging_utils import get_logger, LogFormatter
-=======
->>>>>>> parent of 5e7481a (2025-11-12 18:00:09):backend/tools/python_coder_tool.py
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ============================================================================
 # Constants and Configuration
@@ -180,41 +176,30 @@ class CodeExecutor:
             execution_time = time.time() - start_time
 
             # Enhanced execution result logging
-            logger.info("=" * 80)
-            logger.info("🔥 [CODE EXECUTION RESULT] 🔥")
-            logger.info("=" * 80)
-            logger.info(f"Status: {'✅ SUCCESS' if result.returncode == 0 else '❌ FAILED'}")
-            logger.info(f"Execution Time: {execution_time:.2f}s")
-            logger.info(f"Return Code: {result.returncode}")
-            logger.info("=" * 80)
+            exec_result = {
+                "Status": "SUCCESS" if result.returncode == 0 else "FAILED",
+                "Execution Time": f"{execution_time:.2f}s",
+                "Return Code": result.returncode
+            }
 
-            # Log stdout with clear visual indicators
-            if result.stdout:
-                logger.info("📤 [STDOUT OUTPUT]:")
-                logger.info("-" * 80)
-                for line in result.stdout.strip().split('\n'):
-                    logger.info(f"  {line}")
-                logger.info("-" * 80)
+            if result.returncode == 0:
+                logger.success("Code execution succeeded", f"{execution_time:.2f}s")
             else:
-                logger.info("📤 [STDOUT OUTPUT]: (empty)")
+                logger.failure("Code execution failed", f"Return code: {result.returncode}")
 
-            # Log stderr with clear error indicators
+            # Log stdout with clean formatting
+            if result.stdout:
+                logger.multiline(result.stdout, title="STDOUT", max_lines=50)
+            else:
+                logger.info("STDOUT: (empty)")
+
+            # Log stderr with appropriate level
             if result.stderr:
                 if result.returncode != 0:
-                    logger.error("❌ [STDERR - ERROR]:")
+                    logger.multiline(result.stderr, title="STDERR - ERROR", max_lines=30)
                 else:
-                    logger.warning("⚠️  [STDERR - WARNING]:")
-                logger.info("-" * 80)
-                for line in result.stderr.strip().split('\n'):
-                    if result.returncode != 0:
-                        logger.error(f"  {line}")
-                    else:
-                        logger.warning(f"  {line}")
-                logger.info("-" * 80)
-            else:
-                logger.info("📤 [STDERR]: (empty)")
-
-            logger.info("=" * 80)
+                    # Warnings from stderr but successful execution
+                    logger.multiline(result.stderr, title="STDERR - WARNING", max_lines=20)
 
             # Enhanced success detection: check for error patterns in stdout
             # Even if return code is 0, the code might have printed error messages
@@ -525,19 +510,24 @@ class PythonCoderTool:
         }
 
         # Final summary log
-        logger.info("=" * 80)
-        logger.info("[PythonCoderTool] EXECUTION SUMMARY")
-        logger.info("=" * 80)
-        logger.info(f"  Status: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}")
-        logger.info(f"  Verification iterations: {result['verification_iterations']}")
-        logger.info(f"  Execution attempts: {result['execution_attempts']}")
-        logger.info(f"  Total modifications: {len(modifications)}")
-        logger.info(f"  Execution time: {result['execution_time']:.2f}s")
+        logger.header("PYTHON CODER EXECUTION COMPLETE", "heavy")
+
+        summary = {
+            "Status": "SUCCESS" if result['success'] else "FAILED",
+            "Verification Iterations": result['verification_iterations'],
+            "Execution Attempts": result['execution_attempts'],
+            "Code Modifications": len(modifications),
+            "Execution Time": f"{result['execution_time']:.2f}s"
+        }
+
         if result['success']:
-            logger.info(f"  Output length: {len(result['output'])} chars")
+            summary["Output Length"] = f"{len(result['output'])} chars"
+            logger.key_values(summary, title="Execution Summary")
+            logger.success("Code generation and execution completed successfully")
         else:
-            logger.error(f"  Error: {result.get('error', 'Unknown')[:100]}...")
-        logger.info("=" * 80)
+            summary["Error"] = result.get('error', 'Unknown')[:150]
+            logger.key_values(summary, title="Execution Summary")
+            logger.failure("Code execution failed", result.get('error', 'Unknown')[:100])
 
         return result
 
@@ -1200,70 +1190,6 @@ Available files (USE THESE EXACT NAMES):
             for metadata in file_metadata.values()
         )
 
-        # Use centralized prompt from prompts module
-        prompt = prompts.get_python_code_generation_prompt(
-            query=query,
-            context=context,
-            file_context=file_context,
-            is_prestep=is_prestep,
-            has_json_files=has_json_files
-        )
-
-        try:
-            logger.info("\n\n[PythonCoderTool] Generating code...")
-            logger.info("=" * 80)
-            if file_context:
-                logger.info("[PythonCoderTool] File Context:")
-                for line in file_context.strip().split('\n'):
-                    logger.info(f"  {line}")
-            if context:
-                logger.info("[PythonCoderTool] Agent Context:")
-                for line in context.strip().split('\n')[:20]:  # First 20 lines
-                    logger.info(f"  {line}")
-            logger.info("=" * 80)
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-            # Extract code from response (remove markdown if present)
-            code = response.content.strip()
-            if code.startswith("```python"):
-                code = code.split("```python")[1]
-                code = code.split("```")[0]
-            elif code.startswith("```"):
-                code = code.split("```")[1]
-                code = code.split("```")[0]
-
-            code = code.strip()
-            logger.info("[PythonCoderTool] Generated code:")
-            logger.info("=" * 80)
-            for line in code.split('\n'):
-                logger.info(f"  {line}")
-            logger.info("=" * 80)
-            return code
-
-        except Exception as e:
-            logger.error(f"[PythonCoderTool] Failed to generate code: {e}")
-            return ""
-
-    async def _verify_code_answers_question_OLD_IMPLEMENTATION(
-        self,
-        query: str,
-        context: Optional[str],
-        validated_files: Dict[str, str],
-        file_metadata: Dict[str, Any],
-        is_prestep: bool = False
-    ) -> str:
-        """
-        OLD IMPLEMENTATION - REPLACED BY CENTRALIZED PROMPTS
-        This method has been deprecated and is kept for reference only.
-        """
-        # Build file context using helper method
-        file_context = self._build_file_context(validated_files, file_metadata)
-
-        # Check if any JSON files are present
-        has_json_files = any(
-            metadata.get('type') == 'json'
-            for metadata in file_metadata.values()
-        )
-
         # Use different prompts for pre-step vs normal execution
         if is_prestep:
             # Build base prompt
@@ -1290,25 +1216,6 @@ Available files (USE THESE EXACT NAMES):
                 ])
 
             prompt_parts.extend([
-                "",
-                "🚨 EXECUTION ENVIRONMENT (CRITICAL - READ CAREFULLY):",
-                "- Code will be executed via subprocess WITHOUT command-line arguments",
-                "- DO NOT use sys.argv - it will be empty (only script name)",
-                "- DO NOT use input() - this is non-interactive execution",
-                "- ALL filenames MUST be HARDCODED directly in the code",
-                "- Files are in the current working directory - use filenames directly",
-                "- If you create functions, call them with HARDCODED filenames in main code",
-                "",
-                "❌ FORBIDDEN PATTERNS:",
-                "  if __name__ == '__main__':",
-                "      import sys",
-                "      if len(sys.argv) > 1:",
-                "          main(sys.argv[1])  # ❌ WRONG - no arguments available!",
-                "",
-                "✅ CORRECT PATTERN:",
-                "  if __name__ == '__main__':",
-                "      main('complex_json.json')  # ✅ CORRECT - hardcoded filename",
-                "",
                 "- Output results using print() statements with clear labels",
                 "- Include basic error handling (try/except)",
                 "- Focus on the MOST RELEVANT data columns/fields for the question",
@@ -1367,26 +1274,6 @@ Available files (USE THESE EXACT NAMES):
                 ])
 
             prompt_parts.extend([
-                "",
-                "🚨 EXECUTION ENVIRONMENT (CRITICAL - READ CAREFULLY):",
-                "- Code will be executed via subprocess WITHOUT command-line arguments",
-                "- DO NOT use sys.argv - it will be empty (only script name)",
-                "- DO NOT use input() - this is non-interactive execution",
-                "- ALL filenames MUST be HARDCODED directly in the code",
-                "- Files are in the current working directory - use filenames directly",
-                "- If you create functions, call them with HARDCODED filenames in main code",
-                "",
-                "❌ FORBIDDEN PATTERNS:",
-                "  if __name__ == '__main__':",
-                "      import sys",
-                "      if len(sys.argv) > 1:",
-                "          main(sys.argv[1])  # ❌ WRONG - no arguments available!",
-                "",
-                "✅ CORRECT PATTERN:",
-                "  if __name__ == '__main__':",
-                "      filename = 'data.json'  # Use actual filename from file list",
-                "      main(filename)  # ✅ CORRECT - hardcoded filename",
-                "",
                 "- Output results using print() statements",
                 "- Include error handling (try/except)",
                 "- Add a docstring explaining what the code does",
@@ -1508,14 +1395,102 @@ Available files (USE THESE EXACT NAMES):
                 for metadata in file_metadata.values()
             )
 
-        # Use centralized prompt from prompts module
-        prompt = prompts.get_python_code_verification_prompt(
-            query=query,
-            context=context,
-            file_context=file_context,
-            code=code,
-            has_json_files=has_json_files
-        )
+        # Build verification prompt
+        prompt_parts = [
+            "You are a STRICT Python code verifier. Your job is to identify ANY potential errors or issues in the code.",
+            "",
+            "🚨 VERIFICATION MODE: Find problems that could cause execution failures or incorrect results.",
+            "",
+            f"User Question: {query}",
+            ""
+        ]
+
+        if context:
+            prompt_parts.append(f"Context: {context}")
+            prompt_parts.append("")
+
+        prompt_parts.extend([
+            file_context,
+            "",
+            "Code to verify:",
+            "```python",
+            code,
+            "```",
+            "",
+            "🔍 CRITICAL VERIFICATION CHECKLIST:",
+            "",
+            "1️⃣ LOGIC & CORRECTNESS:",
+            "   - Does the code address the user's specific question?",
+            "   - Will it produce the expected output?",
+            "   - Are calculations/operations logically correct?",
+            "",
+            "2️⃣ SYNTAX & RUNTIME ERRORS:",
+            "   - Any syntax errors (missing colons, parentheses, quotes)?",
+            "   - Undefined variables or functions?",
+            "   - Import statements correct?",
+            "   - Blocked/dangerous modules (socket, subprocess, eval, exec)?",
+            "",
+            "3️⃣ ERROR HANDLING:",
+            "   - Try/except blocks present where needed?",
+            "   - File operations wrapped in error handling?",
+            "   - Division by zero checks if applicable?",
+            ""
+        ])
+
+        if file_context:  # Only check for real data if files are present
+            prompt_parts.extend([
+                "4️⃣ FILE HANDLING:",
+                "   - Uses EXACT filenames from the file list?",
+                "   - NO generic names like 'file.json', 'data.csv', 'input.xlsx'?",
+                "   - File paths are strings, properly quoted?",
+                "   - Uses ONLY real data (NO fake/placeholder data)?",
+                "   - File reading has error handling (FileNotFoundError)?",
+                ""
+            ])
+
+        # Add JSON-specific checks ONLY if JSON files are present
+        if has_json_files:
+            prompt_parts.extend([
+                "5️⃣ JSON FILE HANDLING (CRITICAL):",
+                "   - Uses EXACT JSON filename from file list (NOT 'file.json', 'data.json')?",
+                "   - Has isinstance() check for data structure validation?",
+                "   - Uses .get() for dict access (NEVER data['key'])?",
+                "   - Checks for None/null values before nested access?",
+                "   - ONLY uses keys from \"📋 Access Patterns\" (NO guessing keys)?",
+                "   - Arrays checked with len() before indexing?",
+                "   - Follows the \"📋 Access Patterns\" exactly?",
+                "   - Has json.JSONDecodeError handling?",
+                ""
+            ])
+
+        prompt_parts.extend([
+            "🚨 ERROR DETECTION PRIORITY:",
+            "- Your primary goal is to find potential ERRORS (not style issues)",
+            "- Focus on issues that will cause EXECUTION FAILURES or WRONG RESULTS",
+            "- Be STRICT - even small issues can cause failures",
+            "- If uncertain about filename correctness, mark it as an issue",
+            "",
+            "📋 RESPONSE FORMAT:",
+            'Return a JSON object: {"verified": true/false, "issues": ["issue1", "issue2", ...]}',
+            "",
+            "✅ Return {\"verified\": true, \"issues\": []} ONLY IF:",
+            "   - Code is 100% correct and will execute without errors",
+            "   - All filenames are exact matches from the file list",
+            "   - All required safety checks are present",
+            f"{'   - All JSON safety patterns are followed' if has_json_files else ''}",
+            "",
+            "❌ Return {\"verified\": false, \"issues\": [...]} IF:",
+            "   - ANY potential error detected (syntax, runtime, logic)",
+            "   - Filenames don't match EXACTLY",
+            "   - Missing error handling",
+            "   - Unsafe data access patterns",
+            f"{'   - JSON access patterns not followed' if has_json_files else ''}",
+            "",
+            "⚠️  BE THOROUGH: It's better to flag a potential issue than miss a real error.",
+            ""
+        ])
+
+        prompt = "\n".join(prompt_parts)
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
@@ -1680,53 +1655,6 @@ Available files (USE THESE EXACT NAMES):
                 logger.info(f"[AutoFix] Added encoding='utf-8' to {len(matches)} open() call(s)")
                 break  # Avoid duplicate logging
 
-        # Fix 5: Remove sys.argv usage and replace with hardcoded filenames
-        if 'sys.argv' in fixed_code:
-            logger.info("[AutoFix] Detected sys.argv usage - attempting to fix with hardcoded filename")
-
-            # Pattern 1: if len(sys.argv) > 1: main(sys.argv[1])
-            # Replace with: main('filename.ext') where filename.ext is from validated_files
-            if correct_filenames:
-                # Use the first filename from validated files
-                hardcoded_filename = correct_filenames[0]
-
-                # Pattern: if len(sys.argv) > 1: followed by main(sys.argv[1]) or similar
-                # Strategy: Replace the entire sys.argv check block with direct main() call
-
-                # Check for common patterns
-                patterns_to_fix = [
-                    # Pattern 1: if len(sys.argv) > 1:\n    main(sys.argv[1])
-                    (r'if\s+len\(sys\.argv\)\s*>\s*1\s*:\s*\n\s+(\w+)\(sys\.argv\[1\]\)',
-                     rf'\1(\'{hardcoded_filename}\')'),
-
-                    # Pattern 2: main(sys.argv[1]) without if check
-                    (r'(\w+)\(sys\.argv\[1\]\)',
-                     rf'\1(\'{hardcoded_filename}\')'),
-
-                    # Pattern 3: filename = sys.argv[1]
-                    (r'(\w+)\s*=\s*sys\.argv\[1\]',
-                     rf'\1 = \'{hardcoded_filename}\''),
-
-                    # Pattern 4: else: print("Usage: ...")
-                    (r'else\s*:\s*\n\s+print\(["\']Usage:.*?\)',
-                     ''),
-                ]
-
-                for pattern, replacement in patterns_to_fix:
-                    if re.search(pattern, fixed_code):
-                        fixed_code = re.sub(pattern, replacement, fixed_code, flags=re.MULTILINE)
-                        changes.append(f"Auto-fixed: Replaced sys.argv usage with hardcoded filename '{hardcoded_filename}'")
-                        logger.info(f"[AutoFix] Replaced sys.argv with hardcoded filename '{hardcoded_filename}'")
-                        break
-
-                # Remove import sys if no longer needed (after fixing sys.argv)
-                if 'sys.argv' not in fixed_code and 'sys.executable' not in fixed_code:
-                    # Check if sys is still used elsewhere
-                    if not re.search(r'sys\.\w+', fixed_code):
-                        fixed_code = re.sub(r'^\s*import\s+sys\s*$', '', fixed_code, flags=re.MULTILINE)
-                        changes.append("Auto-removed: 'import sys' (no longer needed)")
-                        logger.info("[AutoFix] Removed 'import sys' statement")
-
         return fixed_code, changes
 
     async def _modify_code(
@@ -1748,13 +1676,20 @@ Available files (USE THESE EXACT NAMES):
         Returns:
             Tuple of (modified_code, list of changes made)
         """
-        # Use centralized prompt from prompts module
-        prompt = prompts.get_python_code_modification_prompt(
-            query=query,
-            context=context,
-            code=code,
-            issues=issues
-        )
+        prompt = f"""Fix the following Python code to address these issues:
+
+Original request: {query}
+{f"Context: {context}" if context else ""}
+
+Current code:
+```python
+{code}
+```
+
+Issues to fix:
+{chr(10).join(f"- {issue}" for issue in issues)}
+
+Generate the corrected Python code. Output ONLY the code, no explanations:"""
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
@@ -1795,13 +1730,20 @@ Available files (USE THESE EXACT NAMES):
         Returns:
             Tuple of (fixed_code, list of changes made)
         """
-        # Use centralized prompt from prompts module
-        prompt = prompts.get_python_code_execution_fix_prompt(
-            query=query,
-            context=context,
-            code=code,
-            error_message=error_message
-        )
+        prompt = f"""Fix the following Python code that failed during execution:
+
+Original request: {query}
+{f"Context: {context}" if context else ""}
+
+Current code:
+```python
+{code}
+```
+
+Execution error:
+{error_message}
+
+Analyze the error and fix the code. Output ONLY the corrected code, no explanations:"""
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])

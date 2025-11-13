@@ -3,11 +3,7 @@
     "allow": [
       "Bash(curl -s http://127.0.0.1:11434/api/tags)",
       "Bash(powershell:*)",
-      "Bash(dir:*)",
-      "Bash(python:*)",
-      "Bash(mkdir:*)",
-      "Bash(test -d \"c:\\Users\\Lee\\Desktop\\Huni\\LLM_API\\backend\\tools\\python_coder\")",
-      "Bash(awk:*)"
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []
