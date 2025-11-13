@@ -10,12 +10,13 @@ Created: 2025-01-05
 
 import os
 import json
-import logging
 import uuid
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from backend.utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class FileAnalyzer:
