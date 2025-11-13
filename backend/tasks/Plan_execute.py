@@ -28,30 +28,44 @@ This hybrid approach combines:
 - Transparency through detailed logging
 """
 
-import logging
 import json
 import re
 from typing import List, Optional, Dict, Any
+
+import httpx
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
-import httpx
 
 from backend.models.schemas import ChatMessage, PlanStep, StepResult
 from backend.config.settings import settings
+from backend.config import prompts
 from backend.tasks.React import react_agent
+from backend.utils.logging_utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PlanExecuteTask:
-    """Handles complex agentic workflows using Plan-and-Execute pattern"""
+    """
+    Plan-and-Execute agent that creates structured plans and executes them.
+
+    This agent combines strategic planning with flexible execution by:
+    1. Analyzing queries and creating structured plans
+    2. Executing plans step-by-step using ReAct agent
+    3. Tracking and verifying execution with comprehensive metadata
+    """
 
     def __init__(self):
-        """Initialize LLM for planning"""
+        """Initialize the Plan-and-Execute agent."""
         self.llm = None
 
     def _get_llm(self) -> ChatOllama:
-        """Lazy-load LLM instance"""
+        """
+        Lazy-load LLM instance for planning.
+
+        Returns:
+            ChatOllama: Initialized LLM instance
+        """
         if self.llm is None:
             async_client = httpx.AsyncClient(
                 timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=60.0),
@@ -67,9 +81,14 @@ class PlanExecuteTask:
             )
         return self.llm
 
-    async def _create_execution_plan(self, query: str, conversation_history: str, has_files: bool = False) -> List[PlanStep]:
+    async def _create_execution_plan(
+        self,
+        query: str,
+        conversation_history: str,
+        has_files: bool = False
+    ) -> List[PlanStep]:
         """
-        Step 1: Create detailed structured execution plan by analyzing the query
+        Create detailed structured execution plan by analyzing the query.
 
         Args:
             query: User's current query
@@ -79,74 +98,22 @@ class PlanExecuteTask:
         Returns:
             List of PlanStep objects with structured plan
         """
-        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:200]}...\n")
+        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:200]}...")
 
         llm = self._get_llm()
 
-        file_first_note = "\nIMPORTANT: There are attached files for this task. Prefer local file analysis FIRST using python_coder or python_code. Only fall back to rag_retrieval or web_search if local analysis fails or is insufficient." if has_files else ""
-
-        planning_prompt = f"""You are an AI planning expert. Analyze this user query and create a detailed, structured execution plan.{file_first_note}
-
-Conversation History:
-{conversation_history}
-
-Current User Query: {query}
-
-Available Tools:
-{settings.available_tools}
-
-Create a step-by-step execution plan. For EACH step, provide:
-1. Goal: What this step aims to accomplish
-2. Primary Tools: Main tools to try (in order of preference)
-3. Fallback Tools: Alternative tools if primary fails
-4. Success Criteria: How to know the step succeeded
-
-CRITICAL: You MUST respond with a JSON array of steps. Each step must have this exact structure:
-{{
-  "step_num": 1,
-  "goal": "Clear description of what to accomplish",
-  "primary_tools": ["tool_name1", "tool_name2"],
-  "fallback_tools": ["backup_tool1"],
-  "success_criteria": "How to verify success",
-  "context": "Additional context or notes"
-}}
-
-Valid tool names ONLY: web_search, rag_retrieval, python_code, python_coder
-
-Example response format:
-[
-  {{
-    "step_num": 1,
-    "goal": "Load and analyze the uploaded JSON file",
-    "primary_tools": ["python_coder"],
-    "fallback_tools": ["python_code", "rag_retrieval"],
-    "success_criteria": "Data successfully loaded with basic statistics displayed",
-    "context": "Use pandas to read JSON and show head, shape, describe"
-  }},
-  {{
-    "step_num": 2,
-    "goal": "Calculate mean and median of numeric columns",
-    "primary_tools": ["python_code"],
-    "fallback_tools": ["python_coder"],
-    "success_criteria": "Mean and median values displayed for all numeric columns",
-    "context": "Use numpy or pandas statistical functions"
-  }},
-  {{
-    "step_num": 3,
-    "goal": "Generate final summary answer",
-    "primary_tools": ["finish"],
-    "fallback_tools": [],
-    "success_criteria": "Complete answer provided to user",
-    "context": "Synthesize all results into coherent answer"
-  }}
-]
-
-Now create a structured plan for the user's query. Respond with ONLY the JSON array, no additional text:"""
+        # Use centralized prompt from prompts module
+        planning_prompt = prompts.get_execution_plan_prompt(
+            query=query,
+            conversation_history=conversation_history,
+            available_tools=settings.available_tools,
+            has_files=has_files
+        )
 
         response = await llm.ainvoke([HumanMessage(content=planning_prompt)])
         plan_text = response.content.strip()
 
-        logger.info(f"[Plan-Execute: Planning] Raw LLM response:\n{plan_text[:500]}...\n")
+        logger.info(f"[Plan-Execute: Planning] Raw LLM response:\n{plan_text[:500]}...")
 
         # Parse JSON plan
         try:

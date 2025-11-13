@@ -1,19 +1,20 @@
 """
 Smart Agent Task Router
-Automatically routes to ReAct or Plan-and-Execute based on query characteristics
+
+Automatically routes to ReAct or Plan-and-Execute based on query characteristics.
+Provides intelligent agent selection for optimal task execution.
 """
 
-import logging
 from typing import List, Optional
 from enum import Enum
 
 from backend.models.schemas import ChatMessage
-from backend.tasks.Plan_execute import plan_execute_task  # Plan-and-Execute
-from backend.tasks.React import react_agent  # ReAct
+from backend.tasks.Plan_execute import plan_execute_task
+from backend.tasks.React import react_agent
 from backend.config.settings import settings
+from backend.utils.logging_utils import get_logger
 
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AgentType(str, Enum):
