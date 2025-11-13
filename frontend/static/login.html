@@ -177,6 +177,30 @@
             color: #888;
             margin: 4px 0;
         }
+
+        .tab-btn {
+            flex: 1;
+            background: #0a0a0a;
+            color: #888;
+            border: 2px solid #2a2a2a;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            border-color: #2563eb;
+            color: #ffffff;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white;
+            border-color: #2563eb;
+        }
     </style>
 </head>
 <body>
@@ -189,18 +213,29 @@
             <div class="logo-subtitle">HE Team Local AI Assistant</div>
         </div>
 
-        <div class="default-credentials">
+        <div class="tab-buttons" style="display: flex; gap: 8px; margin-bottom: 24px;">
+            <button class="tab-btn active" onclick="switchTab('login')" id="loginTab">
+                <i class="fas fa-sign-in-alt"></i> Login
+            </button>
+            <button class="tab-btn" onclick="switchTab('signup')" id="signupTab">
+                <i class="fas fa-user-plus"></i> Sign Up
+            </button>
+        </div>
+
+        <div class="default-credentials" id="defaultCredentials">
             <h4><i class="fas fa-info-circle"></i> Default Login</h4>
             <p><strong>Username:</strong> guest</p>
             <p><strong>Password:</strong> guest_test1</p>
             <p><em>For your own ID generation, contact s.hun.lee</em></p>
         </div>
 
+        <!-- Login Form -->
         <form id="loginForm">
             <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; display: none;"></div>
 
             <div class="loading" id="loading">
-                <span>Logging in</span>
+                <span id="loadingText">Logging in</span>
                 <div class="loading-dots">
                     <div class="loading-dot"></div>
                     <div class="loading-dot"></div>
@@ -210,10 +245,10 @@
 
             <div class="form-group">
                 <label class="form-label" for="username">Username</label>
-                <input 
-                    type="text" 
-                    id="username" 
-                    class="form-input" 
+                <input
+                    type="text"
+                    id="username"
+                    class="form-input"
                     placeholder="Enter your username"
                     required
                 >
@@ -221,18 +256,26 @@
 
             <div class="form-group">
                 <label class="form-label" for="password">Password</label>
-                <input 
-                    type="password" 
-                    id="password" 
-                    class="form-input" 
+                <input
+                    type="password"
+                    id="password"
+                    class="form-input"
                     placeholder="Enter your password"
                     required
                 >
             </div>
 
-            <button type="submit" class="login-btn" id="loginBtn">
+            <div class="form-group" id="roleGroup" style="display: none;">
+                <label class="form-label" for="role">Role</label>
+                <select id="role" class="form-input">
+                    <option value="guest">Guest</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+
+            <button type="submit" class="login-btn" id="submitBtn">
                 <i class="fas fa-sign-in-alt"></i>
-                Sign In
+                <span id="submitText">Sign In</span>
             </button>
         </form>
 
@@ -242,6 +285,8 @@
     </div>
 
     <script>
+        let currentMode = 'login';
+
         // Helper function to create API URLs
         function apiUrl(path) {
             return `${CONFIG.API_BASE_URL}${path}`;
@@ -274,15 +319,49 @@
             document.getElementById('username').focus();
         });
 
+        // Switch between login and signup tabs
+        function switchTab(mode) {
+            currentMode = mode;
+            const loginTab = document.getElementById('loginTab');
+            const signupTab = document.getElementById('signupTab');
+            const submitBtn = document.getElementById('submitBtn');
+            const submitText = document.getElementById('submitText');
+            const roleGroup = document.getElementById('roleGroup');
+            const defaultCredentials = document.getElementById('defaultCredentials');
+            const loadingText = document.getElementById('loadingText');
+
+            if (mode === 'login') {
+                loginTab.classList.add('active');
+                signupTab.classList.remove('active');
+                submitText.innerHTML = '<i class="fas fa-sign-in-alt"></i> Sign In';
+                loadingText.textContent = 'Logging in';
+                roleGroup.style.display = 'none';
+                defaultCredentials.style.display = 'block';
+            } else {
+                loginTab.classList.remove('active');
+                signupTab.classList.add('active');
+                submitText.innerHTML = '<i class="fas fa-user-plus"></i> Sign Up';
+                loadingText.textContent = 'Creating account';
+                roleGroup.style.display = 'block';
+                defaultCredentials.style.display = 'none';
+            }
+
+            // Clear messages
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
         // Handle form submission
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
-            const loginBtn = document.getElementById('loginBtn');
+            const role = document.getElementById('role').value;
+            const submitBtn = document.getElementById('submitBtn');
             const loading = document.getElementById('loading');
             const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
 
             if (!username || !password) {
                 showError('Please enter both username and password');
@@ -290,38 +369,68 @@
             }
 
             // Show loading state
-            loginBtn.disabled = true;
+            submitBtn.disabled = true;
             loading.style.display = 'block';
             errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
 
             try {
-                const response = await fetch(apiUrl('/api/auth/login'), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        username: username,
-                        password: password
-                    })
-                });
+                if (currentMode === 'signup') {
+                    // Signup
+                    const response = await fetch(apiUrl('/api/auth/signup'), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            username: username,
+                            password: password,
+                            role: role
+                        })
+                    });
 
-                const data = await response.json();
+                    const data = await response.json();
 
-                if (response.ok) {
-                    // Store session data (OpenAI compatible format)
-                    localStorage.setItem('session_token', data.access_token || data.session_token);
-                    localStorage.setItem('user_data', JSON.stringify(data.user));
-
-                    // Redirect to main app
-                    window.location.href = 'index.html';
+                    if (response.ok) {
+                        showSuccess('Account created successfully! Please login.');
+                        // Switch to login tab after 2 seconds
+                        setTimeout(() => {
+                            switchTab('login');
+                            document.getElementById('password').value = '';
+                        }, 2000);
+                    } else {
+                        showError(data.detail || data.error || 'Signup failed');
+                    }
                 } else {
-                    showError(data.detail || data.error || 'Login failed');
+                    // Login
+                    const response = await fetch(apiUrl('/api/auth/login'), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            username: username,
+                            password: password
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // Store session data
+                        localStorage.setItem('session_token', data.access_token || data.session_token);
+                        localStorage.setItem('user_data', JSON.stringify(data.user));
+
+                        // Redirect to main app
+                        window.location.href = 'index.html';
+                    } else {
+                        showError(data.detail || data.error || 'Login failed');
+                    }
                 }
             } catch (error) {
-                showError('Connection error. Please try again.');
+                showError('Connection error. Please check that the backend is running at ' + CONFIG.API_BASE_URL);
             } finally {
-                loginBtn.disabled = false;
+                submitBtn.disabled = false;
                 loading.style.display = 'none';
             }
         });
@@ -337,6 +446,12 @@
             const errorMessage = document.getElementById('errorMessage');
             errorMessage.textContent = message;
             errorMessage.style.display = 'block';
+        }
+
+        function showSuccess(message) {
+            const successMessage = document.getElementById('successMessage');
+            successMessage.textContent = message;
+            successMessage.style.display = 'block';
         }
     </script>
 </body>
