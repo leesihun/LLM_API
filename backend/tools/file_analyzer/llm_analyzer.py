@@ -11,6 +11,7 @@ import os
 import uuid
 from typing import Dict, Any
 
+from backend.config.prompts import PromptRegistry
 from backend.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -46,22 +47,9 @@ class LLMAnalyzer:
             from backend.tools.python_coder import python_coder_tool
 
             # Build analysis query for LLM
-            analysis_prompt = f"""
-Analyze the structure of this file in extreme detail:
-
-1. Find the maximum nesting depth
-2. Map out ALL key paths (e.g., data[0].user.profile.name)
-3. Count items at each level
-4. Show example values at leaf nodes
-5. Identify all nested dictionaries and lists
-6. Show the complete hierarchy
-
-File: {os.path.basename(file_path)}
-
-{f'User question: {user_query}' if user_query else ''}
-
-Output a comprehensive JSON structure report.
-"""
+            analysis_prompt = PromptRegistry.get('file_analyzer_deep_analysis',
+                                                  file_path=file_path,
+                                                  user_query=user_query)
 
             # Execute analysis via python_coder_tool
             session_id = f"deep_analysis_{uuid.uuid4().hex[:8]}"

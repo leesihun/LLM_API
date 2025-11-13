@@ -8,10 +8,10 @@ from typing import Dict, Any, List, TypedDict, Annotated
 import operator
 
 from langgraph.graph import StateGraph, END
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from backend.config.settings import settings
+from backend.config.prompts import PromptRegistry
 from backend.models.schemas import ChatMessage
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
@@ -47,22 +47,8 @@ class AgentState(TypedDict):
 
 def get_llm():
     """Get configured Ollama LLM"""
-    import httpx
-    async_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=60.0),
-        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-    )
-
-    return ChatOllama(
-        base_url=settings.ollama_host,
-        model=settings.ollama_model,
-        temperature=settings.ollama_temperature,
-        num_ctx=settings.ollama_num_ctx,
-        top_p=settings.ollama_top_p,
-        top_k=settings.ollama_top_k,
-        timeout=settings.ollama_timeout / 1000,
-        async_client=async_client
-    )
+    from backend.utils.llm_factory import LLMFactory
+    return LLMFactory.create_llm()
 
 
 # ============================================================================
@@ -79,18 +65,7 @@ async def planning_node(state: AgentState) -> Dict[str, Any]:
     # Extract user query
     user_message = state["messages"][-1].content
 
-    planning_prompt = f"""You are a planning assistant. Analyze this user query and create a step-by-step plan.
-
-User Query: {user_message}
-
-Consider:
-1. Does this require web search for current information?
-2. Does this require document retrieval (RAG)?
-3. Does this absolutely require Python code generation?
-4. Is this a straightforward chat response?
-5. What tools are needed?
-
-Create a concise plan (2-10 steps) explaining how to answer this query."""
+    planning_prompt = PromptRegistry.get('agent_graph_planning', user_message=user_message)
 
     response = await llm.ainvoke([HumanMessage(content=planning_prompt)])
     logger.info(f"[AGENT: Planning] Plan created: {response.content[:]}...")
@@ -239,23 +214,7 @@ async def reasoning_node(state: AgentState) -> Dict[str, Any]:
     ])
 
     # Build prompt
-    if context:
-        prompt = f"""You are a helpful AI assistant. Use the provided context to answer the user's question.
-
-Context Information:
-{context}
-
-Conversation:
-{conversation}
-
-Provide a clear, accurate, and helpful response based on the context and conversation."""
-    else:
-        prompt = f"""You are a helpful AI assistant. Engage in a natural conversation.
-
-Conversation:
-{conversation}
-
-Provide a clear, accurate, and helpful response."""
+    prompt = PromptRegistry.get('agent_graph_reasoning', conversation=conversation, context=context)
 
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     logger.info("[AGENT: Reasoning] Response generated")
@@ -274,14 +233,9 @@ async def verification_node(state: AgentState) -> Dict[str, Any]:
     user_message = state["messages"][-1].content
 
     # Simple verification: check if response is relevant and complete
-    verification_prompt = f"""Verify if this response adequately answers the user's question.
-
-User Question: {user_message}
-
-Response: {final_output}
-
-Answer with "YES" if the response is adequate and complete, or "NO" if it needs improvement.
-Provide brief reasoning."""
+    verification_prompt = PromptRegistry.get('agent_graph_verification',
+                                              user_message=user_message,
+                                              final_output=final_output)
 
     response = await llm.ainvoke([HumanMessage(content=verification_prompt)])
 

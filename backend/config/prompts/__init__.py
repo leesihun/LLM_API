@@ -36,6 +36,12 @@ from .web_search import (
 from .plan_execute import (
     get_execution_plan_prompt
 )
+from .agent_graph import (
+    get_planning_prompt,
+    get_reasoning_prompt,
+    get_verification_prompt,
+)
+from .file_analyzer import get_deep_analysis_prompt
 
 
 class PromptRegistry:
@@ -83,6 +89,14 @@ class PromptRegistry:
 
         # Plan-Execute
         'execution_plan': get_execution_plan_prompt,
+
+        # Agent Graph prompts
+        'agent_graph_planning': get_planning_prompt,
+        'agent_graph_reasoning': get_reasoning_prompt,
+        'agent_graph_verification': get_verification_prompt,
+
+        # File Analyzer prompts
+        'file_analyzer_deep_analysis': get_deep_analysis_prompt,
     }
 
     # Cache for generated prompts (key: (prompt_name, frozenset(kwargs)))
@@ -215,4 +229,12 @@ __all__ = [
 
     # Plan-Execute
     'get_execution_plan_prompt',
+
+    # Agent Graph
+    'get_planning_prompt',
+    'get_reasoning_prompt',
+    'get_verification_prompt',
+
+    # File Analyzer
+    'get_deep_analysis_prompt',
 ]

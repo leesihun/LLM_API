@@ -32,8 +32,6 @@ import json
 import re
 from typing import List, Optional, Dict, Any
 
-import httpx
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
 from backend.models.schemas import ChatMessage, PlanStep, StepResult
@@ -59,26 +57,11 @@ class PlanExecuteTask:
         """Initialize the Plan-and-Execute agent."""
         self.llm = None
 
-    def _get_llm(self) -> ChatOllama:
-        """
-        Lazy-load LLM instance for planning.
-
-        Returns:
-            ChatOllama: Initialized LLM instance
-        """
+    def _get_llm(self):
+        """Lazy-load the LLM."""
         if self.llm is None:
-            async_client = httpx.AsyncClient(
-                timeout=httpx.Timeout(settings.ollama_timeout / 1000, connect=60.0),
-                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-            )
-            self.llm = ChatOllama(
-                base_url=settings.ollama_host,
-                model=settings.agentic_classifier_model,
-                temperature=settings.ollama_temperature,
-                num_ctx=settings.ollama_num_ctx,
-                timeout=settings.ollama_timeout / 1000,
-                async_client=async_client
-            )
+            from backend.utils.llm_factory import LLMFactory
+            self.llm = LLMFactory.create_llm(temperature=0.3)
         return self.llm
 
     async def _create_execution_plan(

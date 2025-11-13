@@ -39,15 +39,8 @@ async def change_model(request: ModelChangeRequest, current_user: Dict[str, Any]
         settings.ollama_model = request.model
 
         # Reinitialize simple chat LLM to take effect immediately
-        from langchain_ollama import ChatOllama
-        chat_task.llm = ChatOllama(
-            base_url=settings.ollama_host,
-            model=settings.ollama_model,
-            temperature=settings.ollama_temperature,
-            num_ctx=settings.ollama_num_ctx,
-            top_p=settings.ollama_top_p,
-            top_k=settings.ollama_top_k,
-        )
+        from backend.utils.llm_factory import LLMFactory
+        chat_task.llm = LLMFactory.create_llm()
 
         return ModelChangeResponse(success=True, model=settings.ollama_model)
     except Exception as e:

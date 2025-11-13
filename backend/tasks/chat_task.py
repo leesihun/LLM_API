@@ -4,7 +4,6 @@ Simple chat with or without conversation memory
 """
 
 from typing import List, Optional
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from backend.config.settings import settings
@@ -16,14 +15,8 @@ class ChatTask:
     """Handles normal chat conversations"""
 
     def __init__(self):
-        self.llm = ChatOllama(
-            base_url=settings.ollama_host,
-            model=settings.ollama_model,
-            temperature=settings.ollama_temperature,
-            num_ctx=settings.ollama_num_ctx,
-            top_p=settings.ollama_top_p,
-            top_k=settings.ollama_top_k
-        )
+        from backend.utils.llm_factory import LLMFactory
+        self.llm = LLMFactory.create_llm()
 
     async def execute(
         self,

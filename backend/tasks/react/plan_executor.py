@@ -11,6 +11,7 @@ from typing import List, Tuple, Optional
 from langchain_core.messages import HumanMessage
 
 from .models import ToolName
+from backend.config.prompts import PromptRegistry
 from backend.models.schemas import PlanStep, StepResult, ChatMessage
 from backend.utils.logging_utils import get_logger
 
@@ -305,21 +306,13 @@ class PlanExecutor:
         Returns:
             Action input string for the tool
         """
-        prompt = f"""You are executing a specific step in a plan.
-
-Original User Query: {user_query}
-
-Current Step Goal: {plan_step.goal}
-Success Criteria: {plan_step.success_criteria}
-Additional Context: {plan_step.context or 'None'}
-
-Previous Steps Context:
-{context}
-
-Tool to use: {tool_name}
-
-Generate the appropriate input for this tool to achieve the step goal.
-Provide ONLY the tool input, no explanations:"""
+        prompt = PromptRegistry.get('react_action_input_for_step',
+                                     user_query=user_query,
+                                     step_goal=plan_step.goal,
+                                     success_criteria=plan_step.success_criteria,
+                                     context=plan_step.context or 'None',
+                                     previous_context=context,
+                                     tool_name=tool_name)
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
@@ -354,18 +347,10 @@ Provide ONLY the tool input, no explanations:"""
         steps_text = "\n\n".join(steps_summary)
         observations_text = "\n".join(accumulated_observations)
 
-        prompt = f"""Generate a final answer based on step-by-step execution results.
-
-Original User Query: {user_query}
-
-Execution Steps Summary:
-{steps_text}
-
-All Observations:
-{observations_text}
-
-Provide a clear, complete, and accurate final answer to the user's query.
-Include specific details from the observations:"""
+        prompt = PromptRegistry.get('react_final_answer_from_steps',
+                                     user_query=user_query,
+                                     steps_text=steps_text,
+                                     observations_text=observations_text)
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()

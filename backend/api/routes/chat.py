@@ -26,7 +26,6 @@ from backend.storage.conversation_store import conversation_store
 from backend.tasks.chat_task import chat_task
 from backend.tasks.smart_agent_task import smart_agent_task, AgentType
 from backend.config.settings import settings
-from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 from backend.utils.logging_utils import get_logger
 
@@ -42,10 +41,8 @@ async def determine_task_type(query: str) -> str:
     """Determine task type using LLM analysis, fallback to keyword matching"""
     try:
         logger.info(f"[Task Classifier] Determining task type for query: {query[:]}")
-        classifier_llm = ChatOllama(
-            base_url=settings.ollama_host, model=settings.agentic_classifier_model,
-            temperature=0.1, num_ctx=2048
-        )
+        from backend.utils.llm_factory import LLMFactory
+        classifier_llm = LLMFactory.create_classifier_llm()
         messages = [
             SystemMessage(content=settings.agentic_classifier_prompt),
             HumanMessage(content=f"Query: {query}")
