@@ -109,8 +109,15 @@ class FileContextBuilder:
 
         # Text preview
         if 'preview' in metadata:
-            preview = metadata['preview'][:100]
-            lines.append(f"   Preview: {preview}...")
+            preview_data = metadata['preview']
+            # Handle different preview types (string vs list of dicts)
+            if isinstance(preview_data, str):
+                preview = preview_data[:100]
+                lines.append(f"   Preview: {preview}...")
+            elif isinstance(preview_data, list) and len(preview_data) > 0:
+                # For CSV/Excel preview (list of dicts), show first row
+                lines.append(f"   Preview: {len(preview_data)} sample rows available")
+            # Otherwise skip preview display
 
         # Word document metadata
         if file_type == 'docx':
