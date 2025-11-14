@@ -39,18 +39,18 @@ class Settings(BaseSettings):
     ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = 'deepseek0528:latest'
+    ollama_model: str = 'qwen3:8b'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
 
     # Context window - balance between capability and memory usage
-    ollama_num_ctx: int = 16384  # Good balance for most use cases
+    ollama_num_ctx: int = 32768  # Good balance for most use cases
 
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 1.0  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 0.6  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.95      # Nucleus sampling
-    ollama_top_k: int = 64          # Top-k sampling
+    ollama_top_k: int = 20          # Top-k sampling
 
     # ============================================================================
     # API Keys - SECURE THESE IN PRODUCTION
@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     # AGENTIC FLOW
 
     # Agentic flow model
-    agentic_classifier_model: str = 'deepseek0528:latest'
+    agentic_classifier_model: str = 'qwen3:8b'
 
     # NOTE: Agentic classifier prompt is now centralized in config/prompts/task_classification.py
     # Use: from backend.config.prompts import get_agentic_classifier_prompt
