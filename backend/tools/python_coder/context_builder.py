@@ -97,7 +97,17 @@ class FileContextBuilder:
 
         # JSON structure
         if 'structure' in metadata:
-            lines.append(f"   Structure: {metadata['structure']} ({metadata.get('items_count', 0)} items)")
+            structure = metadata['structure']
+            if isinstance(structure, dict):
+                struct_type = structure.get('type', 'unknown')
+                if struct_type == 'list':
+                    lines.append(f"   Structure: {struct_type} ({structure.get('length', 0)} items)")
+                elif struct_type == 'dict':
+                    lines.append(f"   Structure: {struct_type} ({structure.get('num_keys', 0)} keys)")
+                else:
+                    lines.append(f"   Structure: {struct_type}")
+            else:
+                lines.append(f"   Structure: {structure}")
 
             # Detailed JSON structure information
             if file_type == 'json':
@@ -136,11 +146,12 @@ class FileContextBuilder:
             metadata: File metadata dictionary
         """
         # Show top-level keys for objects
-        if 'keys' in metadata and metadata['keys']:
-            keys_display = metadata['keys'][:10]  # Show up to 10 keys
+        structure = metadata.get('structure', {})
+        if isinstance(structure, dict) and 'keys' in structure and structure['keys']:
+            keys_display = structure['keys'][:10]  # Show up to 10 keys
             line = f"   Top-level keys: {', '.join(keys_display)}"
-            if len(metadata['keys']) > 10:
-                line += f" ... (+{len(metadata['keys']) - 10} more)"
+            if len(structure['keys']) > 10:
+                line += f" ... (+{len(structure['keys']) - 10} more)"
             lines.append(line)
 
         # Show depth and item type info
@@ -157,9 +168,10 @@ class FileContextBuilder:
                 lines.append(f"      {pattern}")
 
         # Show safe preview (truncated to avoid context overflow)
-        if 'safe_preview' in metadata:
+        preview_data = metadata.get('preview')
+        if preview_data and not isinstance(preview_data, str):
             try:
-                preview_str = json.dumps(metadata['safe_preview'], indent=2, ensure_ascii=False)[:500]
+                preview_str = json.dumps(preview_data, indent=2, ensure_ascii=False)[:500]
                 lines.append("   Sample Data (first few items):")
                 for line in preview_str.split('\n')[:15]:
                     lines.append(f"      {line}")
@@ -266,11 +278,14 @@ class FileContextBuilder:
                 first_pattern = metadata['access_patterns'][0]
                 lines.append("      # Then use the access patterns above, e.g.:")
                 lines.append(f"      # {first_pattern}")
-            elif 'keys' in metadata and metadata['keys']:
-                example_key = metadata['keys'][0]
-                lines.append(f"      # Access: value = data.get('{example_key}', default)")
-            elif 'first_item_type' in metadata and metadata['first_item_type']:
-                lines.append("      # Access: if len(data) > 0: item = data[0]")
+            else:
+                # Try to get keys from structure dict
+                structure = metadata.get('structure', {})
+                if isinstance(structure, dict) and 'keys' in structure and structure['keys']:
+                    example_key = structure['keys'][0]
+                    lines.append(f"      # Access: value = data.get('{example_key}', default)")
+                elif 'first_item_type' in metadata and metadata['first_item_type']:
+                    lines.append("      # Access: if len(data) > 0: item = data[0]")
 
             # Add error handling note if JSON had issues
             if 'error' in metadata:
