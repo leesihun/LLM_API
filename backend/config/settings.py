@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = 'deepseek-r1:1.5b'
+    ollama_model: str = 'deepseek0528:latest'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     # AGENTIC FLOW
 
     # Agentic flow model
-    agentic_classifier_model: str = 'deepseek-r1:1.5b'
+    agentic_classifier_model: str = 'deepseek0528:latest'
 
     # NOTE: Agentic classifier prompt is now centralized in config/prompts/task_classification.py
     # Use: from backend.config.prompts import get_agentic_classifier_prompt
