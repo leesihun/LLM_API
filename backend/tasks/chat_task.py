@@ -3,7 +3,7 @@ Normal Chat Task
 Simple chat with or without conversation memory
 """
 
-from typing import List, Optional
+from typing import List, Optional, AsyncIterator
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from backend.config.settings import settings
@@ -36,6 +36,45 @@ class ChatTask:
             AI response text
         """
         # Build conversation context
+        conversation = self._build_conversation(messages, session_id, use_memory)
+
+        # Generate response
+        response = await self.llm.ainvoke(conversation)
+
+        return response.content
+
+    async def execute_streaming(
+        self,
+        messages: List[ChatMessage],
+        session_id: Optional[str] = None,
+        use_memory: bool = True
+    ) -> AsyncIterator[str]:
+        """
+        Execute a simple chat interaction with streaming
+
+        Args:
+            messages: List of chat messages (current conversation)
+            session_id: Optional session ID for conversation history
+            use_memory: Whether to use conversation memory
+
+        Yields:
+            AI response tokens as they're generated
+        """
+        # Build conversation context
+        conversation = self._build_conversation(messages, session_id, use_memory)
+
+        # Stream response
+        async for chunk in self.llm.astream(conversation):
+            if hasattr(chunk, 'content') and chunk.content:
+                yield chunk.content
+
+    def _build_conversation(
+        self,
+        messages: List[ChatMessage],
+        session_id: Optional[str] = None,
+        use_memory: bool = True
+    ) -> List:
+        """Build conversation context from messages and history"""
         conversation = []
 
         # Add conversation history if using memory and session exists
@@ -57,10 +96,7 @@ class ChatTask:
             elif msg.role == "system":
                 conversation.insert(0, SystemMessage(content=msg.content))
 
-        # Generate response
-        response = await self.llm.ainvoke(conversation)
-
-        return response.content
+        return conversation
 
 
 # Global chat task instance

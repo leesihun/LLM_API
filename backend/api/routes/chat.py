@@ -4,7 +4,8 @@ Handles chat completions, conversation management, and OpenAI-compatible endpoin
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from typing import Dict, Any, List, Optional
+from fastapi.responses import StreamingResponse
+from typing import Dict, Any, List, Optional, AsyncIterator
 import time
 import uuid
 from pathlib import Path
@@ -36,6 +37,49 @@ openai_router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
 chat_router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
 # Helper Functions
+
+def _save_conversation(
+    session_id: str,
+    user_message: str,
+    response_text: str,
+    file_paths: Optional[List[str]],
+    task_type: str,
+    agent_metadata: Optional[Dict[str, Any]]
+):
+    """Save conversation to history"""
+    try:
+        # Save user message
+        conversation_store.add_message(session_id, "user", user_message, metadata={
+            "file_paths": file_paths if file_paths else None,
+            "task_type": task_type
+        })
+
+        # Save assistant message with agent metadata if available
+        assistant_metadata = {
+            "task_type": task_type
+        }
+        if agent_metadata:
+            assistant_metadata["agent_metadata"] = agent_metadata
+
+        conversation_store.add_message(session_id, "assistant", response_text, metadata=assistant_metadata)
+
+        logger.info(f"[Chat] Saved conversation to session {session_id} (task_type: {task_type})")
+        if agent_metadata:
+            logger.info(f"[Chat] Agent metadata included: {list(agent_metadata.keys())}")
+    except Exception as save_error:
+        logger.error(f"[Chat] Failed to save conversation: {save_error}")
+        logger.error(f"[Chat] Traceback:\n{traceback.format_exc()}")
+        # Don't fail the request if conversation saving fails
+
+def _cleanup_files(file_paths: Optional[List[str]]):
+    """Cleanup temporary files"""
+    if file_paths:
+        for temp_path in file_paths:
+            try:
+                Path(temp_path).unlink(missing_ok=True)
+                logger.debug(f"[Chat] Cleaned up temp file: {temp_path}")
+            except Exception as e:
+                logger.warning(f"[Chat] Failed to cleanup temp file {temp_path}: {e}")
 
 async def determine_task_type(query: str) -> str:
     """Determine task type using LLM analysis, fallback to keyword matching"""
@@ -92,12 +136,13 @@ async def list_models(current_user: Dict[str, Any] = Depends(get_current_user)):
     )
 
 
-@openai_router.post("/chat/completions", response_model=ChatCompletionResponse)
+@openai_router.post("/chat/completions")
 async def chat_completions(
     model: str = Form(...),
     messages: str = Form(...),  # JSON string
     session_id: Optional[str] = Form(None),
     agent_type: str = Form("auto"),
+    stream: str = Form("false"),  # Form fields come as strings
     files: Optional[List[UploadFile]] = File(None),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -105,15 +150,20 @@ async def chat_completions(
     OpenAI-compatible chat completions endpoint with multipart/form-data support
     Automatically routes to appropriate task based on query analysis
     Supports direct file uploads via multipart form
+    Supports streaming with Server-Sent Events (SSE)
 
     Parameters:
         - model: Model name (form field)
         - messages: JSON string of message array (form field)
         - session_id: Optional session ID (form field)
         - agent_type: "auto", "react", or "plan_execute" (form field)
+        - stream: "true" or "false" - enable streaming (form field)
         - files: Optional file uploads (multipart files)
     """
     user_id = current_user["username"]
+
+    # Parse stream parameter (form fields come as strings)
+    is_streaming = stream.lower() == "true"
 
     # Parse messages JSON
     try:
@@ -169,6 +219,132 @@ async def chat_completions(
     try:
         agent_metadata = None
 
+        # Handle streaming vs non-streaming
+        if is_streaming:
+            # Streaming is only supported for simple chat (not agentic workflows)
+            if task_type == "agentic":
+                logger.warning("[Chat] Streaming requested but task is agentic - falling back to non-streaming")
+                # Agentic workflows don't support streaming yet
+                selected_agent_type = AgentType(agent_type) if agent_type else AgentType.AUTO
+                response_text, agent_metadata = await smart_agent_task.execute(
+                    messages=parsed_messages,
+                    session_id=session_id,
+                    user_id=user_id,
+                    agent_type=selected_agent_type,
+                    file_paths=file_paths if file_paths else None
+                )
+
+                # Save to conversation history
+                _save_conversation(session_id, user_message, response_text, file_paths, task_type, agent_metadata)
+
+                # Cleanup temp files
+                _cleanup_files(file_paths)
+
+                # Return standard response
+                return ChatCompletionResponse(
+                    id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
+                    created=int(time.time()),
+                    model=model,
+                    choices=[
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": response_text
+                            },
+                            "finish_reason": "stop"
+                        }
+                    ],
+                    usage={
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0
+                    },
+                    x_session_id=session_id,
+                    x_agent_metadata=agent_metadata
+                )
+            else:
+                # Stream simple chat
+                logger.info("[Chat] Streaming simple chat response")
+
+                async def stream_generator() -> AsyncIterator[str]:
+                    """Generate SSE stream for chat completion"""
+                    completion_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
+                    created_at = int(time.time())
+
+                    # Accumulate full response for saving to history
+                    full_response = []
+
+                    try:
+                        async for token in chat_task.execute_streaming(
+                            messages=parsed_messages,
+                            session_id=session_id,
+                            use_memory=(session_id is not None)
+                        ):
+                            full_response.append(token)
+
+                            # Send SSE chunk in OpenAI format
+                            chunk_data = {
+                                "id": completion_id,
+                                "object": "chat.completion.chunk",
+                                "created": created_at,
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": token},
+                                        "finish_reason": None
+                                    }
+                                ]
+                            }
+                            yield f"data: {json.dumps(chunk_data)}\n\n"
+
+                        # Send final chunk
+                        final_chunk = {
+                            "id": completion_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_at,
+                            "model": model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {},
+                                    "finish_reason": "stop"
+                                }
+                            ],
+                            "x_session_id": session_id
+                        }
+                        yield f"data: {json.dumps(final_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+
+                        # Save complete conversation to history
+                        complete_response = "".join(full_response)
+                        _save_conversation(session_id, user_message, complete_response, file_paths, task_type, None)
+
+                        # Cleanup temp files
+                        _cleanup_files(file_paths)
+
+                    except Exception as e:
+                        logger.error(f"[Chat] Streaming error: {e}")
+                        error_chunk = {
+                            "error": {
+                                "message": str(e),
+                                "type": "streaming_error"
+                            }
+                        }
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
+
+                return StreamingResponse(
+                    stream_generator(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no"  # Disable nginx buffering
+                    }
+                )
+
+        # Non-streaming path
         if task_type == "agentic":
             # Use smart agent (auto-selects ReAct or Plan-and-Execute)
             logger.info(f"[Task Classifier] Using agentic worflow for query: {user_message[:]}")
@@ -188,39 +364,11 @@ async def chat_completions(
                 use_memory=(session_id is not None)
             )
 
-        # Save to conversation history with metadata
-        try:
-            # Save user message
-            conversation_store.add_message(session_id, "user", user_message, metadata={
-                "file_paths": file_paths if file_paths else None,
-                "task_type": task_type
-            })
-
-            # Save assistant message with agent metadata if available
-            assistant_metadata = {
-                "task_type": task_type
-            }
-            if agent_metadata:
-                assistant_metadata["agent_metadata"] = agent_metadata
-
-            conversation_store.add_message(session_id, "assistant", response_text, metadata=assistant_metadata)
-
-            logger.info(f"[Chat] Saved conversation to session {session_id} (task_type: {task_type})")
-            if agent_metadata:
-                logger.info(f"[Chat] Agent metadata included: {list(agent_metadata.keys())}")
-        except Exception as save_error:
-            logger.error(f"[Chat] Failed to save conversation: {save_error}")
-            logger.error(f"[Chat] Traceback:\n{traceback.format_exc()}")
-            # Don't fail the request if conversation saving fails
+        # Save to conversation history
+        _save_conversation(session_id, user_message, response_text, file_paths, task_type, agent_metadata)
 
         # Cleanup temp files after execution
-        if file_paths:
-            for temp_path in file_paths:
-                try:
-                    Path(temp_path).unlink(missing_ok=True)
-                    logger.debug(f"[Chat] Cleaned up temp file: {temp_path}")
-                except Exception as e:
-                    logger.warning(f"[Chat] Failed to cleanup temp file {temp_path}: {e}")
+        _cleanup_files(file_paths)
 
         # Build OpenAI-compatible response
         return ChatCompletionResponse(
