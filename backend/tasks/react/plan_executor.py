@@ -308,9 +308,9 @@ class PlanExecutor:
         """
         prompt = PromptRegistry.get('react_action_input_for_step',
                                      user_query=user_query,
-                                     step_goal=plan_step.goal,
+                                     plan_step_goal=plan_step.goal,
                                      success_criteria=plan_step.success_criteria,
-                                     context=plan_step.context or 'None',
+                                     plan_step_context=plan_step.context or 'None',
                                      previous_context=context,
                                      tool_name=tool_name)
 
