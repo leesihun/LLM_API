@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Backend Server Launcher Script (Direct - No Virtual Environment)
 Starts the FastAPI backend server using system Python
@@ -8,6 +9,12 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+
+# Set UTF-8 encoding for Windows console to handle emojis
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 
 def print_header():

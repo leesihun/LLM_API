@@ -12,23 +12,19 @@ verification, and execution system. This module ties together:
 This is the main entry point for the Python coder tool.
 """
 
-import json
-import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage
-
 from backend.config.settings import settings
-from backend.config import prompts
 from backend.utils.logging_utils import get_logger
+from backend.utils.llm_factory import LLMFactory
 
 # Import all the sub-components
 from .executor import CodeExecutor, SUPPORTED_FILE_TYPES
 from .code_generator import CodeGenerator
 from .code_verifier import CodeVerifier
 from .code_fixer import CodeFixer
+from .auto_fixer import AutoFixer
 from .context_builder import FileContextBuilder
 from .file_handlers import FileHandlerFactory
 from .utils import get_original_filename
@@ -47,28 +43,21 @@ class PythonCoderTool:
     This orchestrator coordinates the full workflow:
     - Phase 0: File preparation and metadata extraction
     - Phase 1: Code generation
-    - Phase 2: Verification loop (max 3 iterations)
-    - Phase 3: Execution loop (max 5 attempts)
+    - Phase 2: Verification loop (max 2 iterations)
+    - Phase 3: Execution loop (max 3 attempts)
     - Phase 4: Result formatting
 
     Features:
     - Code generation using LLM
-    - Verification focused on answering user's question (max 3 iterations)
-    - Code execution with retry on failure (max 5 attempts)
+    - Verification focused on answering user's question (max 2 iterations)
+    - Code execution with retry on failure (max 3 attempts)
     - File handling and metadata extraction
     """
 
     def __init__(self):
         """Initialize the Python coder tool and all sub-components."""
-        # Initialize LLM
-        self.llm = ChatOllama(
-            base_url=settings.ollama_host,
-            model=settings.ollama_model,
-            temperature=settings.ollama_temperature,
-            num_ctx=settings.ollama_num_ctx,
-            top_p=settings.ollama_top_p,
-            top_k=settings.ollama_top_k
-        )
+        # Initialize LLM using factory
+        self.llm = LLMFactory.create_coder_llm()
 
         # Initialize executor
         self.executor = CodeExecutor(
@@ -81,12 +70,13 @@ class PythonCoderTool:
         self.code_generator = CodeGenerator(self.llm)
         self.code_verifier = CodeVerifier(self.llm, self.executor)
         self.code_fixer = CodeFixer(self.llm)
+        self.auto_fixer = AutoFixer()
         self.file_handler_factory = FileHandlerFactory()
         self.context_builder = FileContextBuilder()
 
-        # Configuration
-        self.max_verification_iterations = 3
-        self.max_execution_attempts = 5
+        # Configuration - REDUCED iterations for efficiency
+        self.max_verification_iterations = 2  # Reduced from 3
+        self.max_execution_attempts = 3  # Reduced from 5
         self.allow_partial_execution = settings.python_code_allow_partial_execution
 
         logger.info(f"[PythonCoderTool] Initialized with verification_iterations={self.max_verification_iterations}, execution_attempts={self.max_execution_attempts}")
@@ -161,6 +151,7 @@ class PythonCoderTool:
             context=context,
             validated_files=validated_files,
             file_metadata=file_metadata,
+            file_context=file_context,
             is_prestep=is_prestep
         )
 
@@ -172,15 +163,20 @@ class PythonCoderTool:
                 "output": ""
             }
 
-        # Phase 2: Iterative verification (max 3 iterations)
-        # Focus: Does the code answer the user's question?
+        # Phase 1.5: Apply automatic fixes BEFORE verification
+        code, auto_changes = self.auto_fixer.apply_all_fixes(code, validated_files, file_metadata)
+        modifications = auto_changes.copy()
+
+        if auto_changes:
+            logger.info(f"[PythonCoderTool] 🔧 Applied {len(auto_changes)} automatic fix(es) before verification")
+
+        # Phase 2: Iterative verification (max 2 iterations, reduced from 3)
         verification_history = []
-        modifications = []
 
         for iteration in range(self.max_verification_iterations):
             logger.info(f"[PythonCoderTool] Verification iteration {iteration + 1}/{self.max_verification_iterations}")
 
-            # Verify code (focused on answering user's question)
+            # Verify code
             verified, issues = await self.code_verifier.verify_code_answers_question(
                 code=code,
                 query=query,
@@ -201,28 +197,13 @@ class PythonCoderTool:
             self._save_stage_code(code, validated_files, session_id, stage_name)
 
             if verified:
-                logger.info(f"[PythonCoderTool] ✅ Code verified successfully at iteration {iteration + 1}")
+                logger.info(f"[PythonCoderTool] ✅ Code verified at iteration {iteration + 1}")
                 break
 
-            # AUTO-FIX: Try to automatically fix common issues before calling LLM
-            auto_fixed, auto_changes = self.code_fixer.auto_fix_common_issues(
-                code=code,
-                validated_files=validated_files,
-                file_metadata=file_metadata
-            )
-
-            if auto_changes:
-                logger.info(f"[PythonCoderTool] 🔧 Auto-fixed {len(auto_changes)} issue(s):")
-                for change in auto_changes:
-                    logger.info(f"  - {change}")
-                code = auto_fixed
-                modifications.extend(auto_changes)
-
-            # Modify code with LLM
-            logger.warning(f"[PythonCoderTool] ⚠️  Verification issues found ({len(issues)}):")
+            # Modify code with LLM to fix issues
+            logger.warning(f"[PythonCoderTool] ⚠️  Found {len(issues)} issue(s):")
             for i, issue in enumerate(issues, 1):
                 logger.warning(f"  {i}. {issue}")
-            logger.info(f"[PythonCoderTool] Modifying code to address issues...")
 
             code, changes = await self.code_generator.modify_code(
                 code=code,
@@ -231,19 +212,15 @@ class PythonCoderTool:
                 context=context
             )
             modifications.extend(changes)
-
             verification_history[-1]["action"] = "modified"
 
-            # Check if we've reached max iterations
+            # Check if max iterations reached
             if iteration == self.max_verification_iterations - 1:
-                if self.allow_partial_execution:
-                    logger.warning("[PythonCoderTool] Max verification iterations reached, proceeding with execution")
-                    break
-                else:
-                    logger.warning("[PythonCoderTool] Max verification iterations reached but partial execution not allowed")
-                    # Continue to execution anyway, let retry handle failures
+                logger.warning("[PythonCoderTool] Max verification iterations reached")
+                if not self.allow_partial_execution:
+                    logger.warning("[PythonCoderTool] Partial execution not allowed, but continuing anyway")
 
-        # Phase 3: Execute code with retry logic (max 5 attempts)
+        # Phase 3: Execute code with retry logic (max 3 attempts, reduced from 5)
         execution_result = None
         execution_attempts = []
 
@@ -269,17 +246,14 @@ class PythonCoderTool:
 
             if execution_result["success"]:
                 logger.info(f"[PythonCoderTool] ✅ Execution succeeded on attempt {attempt + 1}")
-                logger.info(f"[PythonCoderTool] Output length: {len(execution_result['output'])} characters")
                 break
 
             # If failed and not last attempt, try to fix the code
             if attempt < self.max_execution_attempts - 1:
                 error_message = execution_result.get("error", "Unknown error")
-                logger.error(f"[PythonCoderTool] ❌ Execution failed on attempt {attempt + 1}")
-                logger.error(f"[PythonCoderTool] Error: {error_message[:200]}...")
-                logger.info(f"[PythonCoderTool] Attempting to fix code...")
+                logger.error(f"[PythonCoderTool] ❌ Execution failed: {error_message[:100]}")
+                logger.info(f"[PythonCoderTool] Attempting to fix...")
 
-                # Pass context to help fix execution errors
                 code, fix_changes = await self.code_fixer.fix_execution_error(
                     code=code,
                     query=query,
@@ -288,8 +262,7 @@ class PythonCoderTool:
                 )
                 modifications.extend(fix_changes)
             else:
-                logger.error(f"[PythonCoderTool] ❌ Execution failed after {self.max_execution_attempts} attempts")
-                logger.error(f"[PythonCoderTool] Final error: {execution_result.get('error', 'Unknown')}")
+                logger.error(f"[PythonCoderTool] ❌ Failed after {self.max_execution_attempts} attempts")
 
         # Phase 4: Format and return result
         result = {

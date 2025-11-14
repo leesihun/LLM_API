@@ -1,0 +1,43 @@
+{
+  "session_id": "4c261867-136d-4136-8e38-867d8d2018f3",
+  "user_id": "admin",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello! Give me a short haiku about autumn.",
+      "timestamp": "2025-11-14T11:29:55.258112+09:00",
+      "metadata": {
+        "file_paths": null,
+        "task_type": "chat"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "In summer, golden dust,  \nThe world turns, the flowers come down;  \nThe branches break apart,  \nThe earth begins to move.",
+      "timestamp": "2025-11-14T11:29:55.268831+09:00",
+      "metadata": {
+        "task_type": "chat"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Now do one about winter.",
+      "timestamp": "2025-11-14T11:30:32.109888+09:00",
+      "metadata": {
+        "file_paths": null,
+        "task_type": "chat"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Crisp land, where ice whispers,  \nThe world begins to freeze,  \nIce lingers near the path.\n\nThat paints a vivid picture of winter's embrace with grace.",
+      "timestamp": "2025-11-14T11:30:32.127686+09:00",
+      "metadata": {
+        "task_type": "chat"
+      }
+    }
+  ],
+  "created_at": "2025-11-14T11:29:23.103250+09:00",
+  "updated_at": "2025-11-14T11:30:32.127696+09:00",
+  "metadata": null
+}

@@ -3,7 +3,12 @@
     "allow": [
       "Bash(curl -s http://127.0.0.1:11434/api/tags)",
       "Bash(powershell:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(start cmd /k:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

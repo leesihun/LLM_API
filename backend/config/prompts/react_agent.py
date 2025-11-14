@@ -20,7 +20,9 @@ def get_react_thought_and_action_prompt(
         context: Formatted context from previous steps
         file_guidance: Optional guidance text when files are attached
     """
-    return f"""You are a helpful AI assistant using the ReAct (Reasoning + Acting) framework.{file_guidance}
+    return f"""You are a helpful AI assistant using the ReAct (Reasoning + Acting) framework.
+    
+{file_guidance}
 
 Question: {query}
 
@@ -36,7 +38,7 @@ ACTION INPUT: [The input for the selected action]
 
 Available Actions:
 
-1. web_search - Search the web for current information
+1. web_search - Search the web for required information
 
    🔍 SEARCH QUERY GUIDELINES:
    When generating search queries, focus on creating effective keywords:

@@ -1,0 +1,43 @@
+{
+  "session_id": "613b418b-5633-496a-90f9-fe2b07afefca",
+  "user_id": "admin",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello! Give me a short haiku about autumn.",
+      "timestamp": "2025-11-14T12:25:12.404771+09:00",
+      "metadata": {
+        "file_paths": null,
+        "task_type": "chat"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "One fallers against night,  \nthousand of breaths were found,  \nA night falls all near,  \na leaf once torn away.",
+      "timestamp": "2025-11-14T12:25:12.420441+09:00",
+      "metadata": {
+        "task_type": "chat"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Now do one about winter.",
+      "timestamp": "2025-11-14T12:25:46.797907+09:00",
+      "metadata": {
+        "file_paths": null,
+        "task_type": "chat"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Well, winter's arrival brings cold and shadowy nights  \nIn contrast to summer's brusquish may  \nA season of change marks the end of one, beginning anew as it grows.",
+      "timestamp": "2025-11-14T12:25:46.812857+09:00",
+      "metadata": {
+        "task_type": "chat"
+      }
+    }
+  ],
+  "created_at": "2025-11-14T12:24:43.597768+09:00",
+  "updated_at": "2025-11-14T12:25:46.812867+09:00",
+  "metadata": null
+}

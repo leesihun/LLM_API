@@ -6,6 +6,7 @@ Defines all Pydantic models for API requests/responses
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime, timezone, timedelta
+from backend.models.tool_metadata import SearchResult
 
 
 # ============================================================================
@@ -180,14 +181,6 @@ class SearchQuery(BaseModel):
     """Web search query"""
     query: str
     max_results: int = 5
-
-
-class SearchResult(BaseModel):
-    """Web search result"""
-    title: str
-    url: str
-    content: str
-    score: Optional[float] = None
 
 
 class RAGQuery(BaseModel):

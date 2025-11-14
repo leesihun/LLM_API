@@ -154,7 +154,7 @@ def build_execution_metadata(steps: List[Any], max_iterations: int) -> Dict[str,
     Returns:
         Dictionary with execution metadata
     """
-    from backend.tasks.React import ToolName
+    from backend.tasks.react.models import ToolName
 
     # Collect unique tools used
     tools_used = list(set([

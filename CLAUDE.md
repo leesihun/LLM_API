@@ -82,17 +82,18 @@ User Request → Classifier → [Agentic Flow vs Simple Chat]
 - Classifier model: `gpt-oss:20b` (configurable in settings.py)
 - Triggers: keywords like "search", "analyze", "code", "calculate", "current", "latest"
 
-**2. ReAct Agent Pattern (backend/tasks/React.py)**
+**2. ReAct Agent Pattern (backend/tasks/react/)**
 - The primary agentic execution engine
 - Implements Thought → Action → Observation loop
 - Max iterations: 10 (configurable via `max_iterations` parameter)
-- Tools available: `web_search`, `rag_retrieval`, `python_coder`, `finish`
+- Tools available: `web_search`, `rag_retrieval`, `python_coder`, `file_analyzer`, `finish`
 - **Critical optimization:** Combined thought-action generation (1 LLM call instead of 2)
 - **Early exit:** Auto-finish when observation contains complete answer
 - **Context pruning:** If >3 steps, summarizes early steps and keeps last 2 in detail
+- **Modular structure** (v2.0.0): Separated into specialized modules for maintainability
 
-**3. Python Code Generation (backend/tools/python_coder_tool.py)**
-- **Unified architecture** (v1.2.0): Single file for generation + execution
+**3. Python Code Generation (backend/tools/python_coder/)**
+- **Modular architecture** (v2.0.0): Separated into specialized modules
 - **Verification phase:** Max 3 iterations, focused ONLY on "Does code answer user's question?"
 - **Execution retry:** Max 5 attempts with auto-fixing between retries
 - **File handling:** Supports CSV, Excel, JSON, PDF, images, etc.
@@ -123,28 +124,67 @@ User Request → Classifier → [Agentic Flow vs Simple Chat]
 
 ```
 backend/
-├── api/              # FastAPI routes and application
-│   ├── app.py       # Main FastAPI app, CORS, middleware, startup
-│   └── routes.py    # API endpoints (chat, auth, files, admin, tools)
+├── api/                      # FastAPI routes and application
+│   ├── app.py               # Main FastAPI app, CORS, middleware, startup
+│   └── routes/              # Modular API routes (v2.0.0)
+│       ├── __init__.py      # Routes registration
+│       ├── chat.py          # Chat endpoints
+│       ├── auth.py          # Authentication endpoints
+│       ├── files.py         # File upload/management
+│       ├── admin.py         # Admin endpoints
+│       └── tools.py         # Tool-specific endpoints
 ├── config/
-│   └── settings.py  # Centralized configuration (all defaults here)
+│   ├── settings.py          # Centralized configuration (all defaults here)
+│   └── prompts.py           # Centralized prompts (PromptRegistry)
 ├── core/
-│   └── agent_graph.py  # LangGraph workflow (alternative to ReAct)
+│   └── agent_graph.py       # LangGraph workflow (alternative to ReAct)
 ├── tasks/
-│   ├── chat_task.py        # Entry point: task classification
-│   ├── React.py            # PRIMARY: ReAct agent implementation
-│   ├── smart_agent_task.py # Plan-Execute workflow
-│   └── Plan_execute.py     # Legacy plan-execute
+│   ├── chat_task.py         # Entry point: task classification
+│   ├── react/               # Modular ReAct implementation (v2.0.0)
+│   │   ├── __init__.py      # Public exports
+│   │   ├── agent.py         # Main ReActAgent orchestration
+│   │   ├── models.py        # ReAct data models (ReActStep, ToolName)
+│   │   ├── thought_action_generator.py  # Thought/action generation
+│   │   ├── tool_executor.py             # Tool execution routing
+│   │   ├── answer_generator.py          # Final answer synthesis
+│   │   ├── context_manager.py           # Context formatting & pruning
+│   │   ├── verification.py              # Step verification logic
+│   │   ├── plan_executor.py             # Plan-based execution
+│   │   └── utils.py                     # Helper utilities
+│   ├── smart_agent_task.py  # Plan-Execute workflow router
+│   ├── Plan_execute.py      # Hybrid Plan+ReAct implementation
+│   └── legacy/
+│       └── React.py         # Legacy monolithic ReAct (deprecated)
 ├── tools/
-│   ├── python_coder_tool.py  # Python code gen/exec (unified v1.2.0)
-│   ├── web_search.py         # Tavily web search
-│   └── rag_retriever.py      # Document retrieval (FAISS)
+│   ├── python_coder/        # Modular Python code tool (v2.0.0)
+│   │   ├── __init__.py      # Public exports
+│   │   ├── tool.py          # PythonCoderTool main class
+│   │   ├── generator.py     # Code generation
+│   │   ├── executor.py      # Code execution (CodeExecutor)
+│   │   ├── verifier.py      # Code verification
+│   │   └── models.py        # Data models
+│   ├── file_analyzer/       # Modular file analyzer (v2.0.0)
+│   │   ├── __init__.py      # Public exports
+│   │   ├── tool.py          # FileAnalyzer main class
+│   │   ├── analyzers.py     # Format-specific analyzers
+│   │   ├── llm_analyzer.py  # LLM-powered deep analysis
+│   │   └── models.py        # Data models
+│   ├── web_search/          # Modular web search (v2.0.0)
+│   │   ├── __init__.py      # Public exports
+│   │   └── tool.py          # WebSearchTool
+│   ├── web_search.py        # Legacy monolithic web search (deprecated)
+│   ├── rag_retriever.py     # Document retrieval (FAISS)
+│   └── legacy/
+│       ├── python_coder_tool.py      # Legacy monolithic (deprecated)
+│       └── file_analyzer_tool.py     # Legacy monolithic (deprecated)
 ├── storage/
 │   └── conversation_store.py  # Conversation persistence
 ├── models/
 │   └── schemas.py            # Pydantic data models
 └── utils/
-    └── auth.py               # JWT authentication
+    ├── auth.py               # JWT authentication
+    ├── llm_factory.py        # Centralized LLM instance creation
+    └── logging_utils.py      # Logging utilities
 
 data/
 ├── conversations/    # Stored chat history (JSON files)
@@ -152,6 +192,13 @@ data/
 ├── scratch/          # Code execution workspace (session-based)
 └── logs/             # Application logs
 ```
+
+**Architecture Improvements (v2.0.0):**
+- **Modular structure:** Large monolithic files split into focused modules
+- **Separation of concerns:** Each module has a single, clear responsibility
+- **Centralized utilities:** LLM creation, prompts, and logging consolidated
+- **Legacy support:** Old monolithic files moved to legacy/ for backward compatibility
+- **Improved maintainability:** Easier to test, debug, and extend individual components
 
 ## Working with Python Code Tool
 
@@ -167,11 +214,14 @@ data/
    - On failure: LLM analyzes error and fixes code
    - Retry with fixed code
 
-### When Modifying python_coder_tool.py:
-- **CodeExecutor class:** Low-level execution (subprocess, file handling, import validation)
-- **PythonCoderTool class:** High-level orchestration (generation, verification, retry)
+### When Modifying python_coder/:
+- **tool.py (PythonCoderTool):** High-level orchestration (generation, verification, retry)
+- **generator.py (CodeGenerator):** LLM-based code generation with file context
+- **executor.py (CodeExecutor):** Low-level execution (subprocess, file handling, import validation)
+- **verifier.py (CodeVerifier):** Static and semantic code verification
+- **models.py:** Data models for code generation/execution
 - Backward compatibility: `PythonExecutor = CodeExecutor` (legacy alias)
-- File metadata extraction is critical for good code generation (see `_extract_file_metadata`)
+- File metadata extraction is critical for good code generation (handled in generator.py)
 
 ### Security Considerations:
 - Blocked imports: socket, subprocess, eval, exec, pickle, etc.
@@ -181,12 +231,19 @@ data/
 
 ## Working with ReAct Agent
 
-### Key Methods in React.py:
-- `execute()`: Main entry point, runs full ReAct loop
-- `execute_with_plan()`: Guided mode for structured plan execution
-- `_generate_thought_and_action()`: Combined LLM call (performance optimization)
-- `_execute_action()`: Routes to appropriate tool (web_search, rag, python_coder)
-- `_generate_final_answer()`: Synthesizes observations into final response
+### Key Modules in backend/tasks/react/:
+- **agent.py (ReActAgent):** Main orchestration class
+  - `execute()`: Main entry point, runs full ReAct loop
+  - `execute_with_plan()`: Guided mode for structured plan execution
+- **thought_action_generator.py:** Generates thoughts and selects actions
+  - Combined thought-action generation (1 LLM call instead of 2)
+- **tool_executor.py:** Routes and executes tool actions
+  - Routes to appropriate tool (web_search, rag, python_coder, file_analyzer)
+- **answer_generator.py:** Synthesizes observations into final response
+- **context_manager.py:** Formats context with pruning optimization
+- **verification.py:** Auto-finish detection and step verification
+- **plan_executor.py:** Plan-based execution for structured workflows
+- **models.py:** Data models (ReActStep, ToolName, ReActResult)
 
 ### ReAct Execution Optimizations:
 1. **Pre-step file handling:** If files attached, tries python_coder before starting loop
@@ -241,7 +298,7 @@ GET /health
 
 ### LangGraph vs ReAct
 - **agent_graph.py:** LangGraph implementation (structured workflow with verification node)
-- **React.py:** Direct ReAct implementation (more flexible, currently primary)
+- **backend/tasks/react/:** Modular ReAct implementation (more flexible, currently primary)
 - Both are available; ReAct is the current production choice
 
 ### Session Management
@@ -257,11 +314,11 @@ GET /health
 ## Common Development Tasks
 
 ### Adding a New Tool
-1. Create tool class in `backend/tools/`
-2. Add to `ToolName` enum in `React.py`
-3. Add execution logic in `ReActAgent._execute_action()`
-4. Update tool selection in `_generate_thought_and_action()` prompt
-5. Add to `settings.available_tools` list
+1. Create tool module in `backend/tools/` (follow modular pattern)
+2. Add to `ToolName` enum in `backend/tasks/react/models.py`
+3. Add execution logic in `backend/tasks/react/tool_executor.py`
+4. Update tool selection in PromptRegistry (backend/config/prompts.py)
+5. Add to `settings.available_tools` list in `backend/config/settings.py`
 
 ### Modifying Agentic Classifier
 - Edit `settings.agentic_classifier_prompt` in settings.py
@@ -270,11 +327,11 @@ GET /health
 
 ### Changing Verification/Retry Limits
 ```python
-# In settings.py:
+# In backend/config/settings.py:
 python_code_max_iterations: int = 5  # Verification iterations
-# In python_coder_tool.py:
+# In backend/tools/python_coder/executor.py:
 self.max_execution_attempts = 5      # Execution retry attempts
-# In React.py:
+# In backend/tasks/react/agent.py:
 react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 ```
 
@@ -286,6 +343,46 @@ react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 
 ## Version History & Breaking Changes
 
+### Version 2.0.0 (January 2025)
+**Major refactoring: Modular architecture for all core components:**
+
+**ReAct Agent Modularization:**
+- Split `backend/tasks/React.py` (2000+ lines) → `backend/tasks/react/` (8 focused modules)
+- Old import: `from backend.tasks.React import ReActAgent`
+- New import: `from backend.tasks.react import ReActAgent`
+- Legacy file moved to `backend/tasks/legacy/React.py`
+
+**Python Coder Tool Modularization:**
+- Split `backend/tools/python_coder_tool.py` → `backend/tools/python_coder/` (5 modules)
+- Old import: `from backend.tools.python_coder_tool import python_coder_tool`
+- New import: `from backend.tools.python_coder import python_coder_tool`
+- Modules: tool.py, generator.py, executor.py, verifier.py, models.py
+- Legacy file moved to `backend/tools/legacy/python_coder_tool.py`
+
+**File Analyzer Tool Modularization:**
+- Split `backend/tools/file_analyzer_tool.py` → `backend/tools/file_analyzer/` (4 modules)
+- Old import: `from backend.tools.file_analyzer_tool import file_analyzer`
+- New import: `from backend.tools.file_analyzer import file_analyzer`
+- Modules: tool.py, analyzers.py, llm_analyzer.py, models.py
+- Legacy file moved to `backend/tools/legacy/file_analyzer_tool.py`
+
+**Web Search Tool Modularization:**
+- Split `backend/tools/web_search.py` → `backend/tools/web_search/` (2 modules)
+- Import unchanged: `from backend.tools.web_search import web_search_tool`
+- Modules: tool.py, models.py
+
+**API Routes Modularization:**
+- Split `backend/api/routes.py` → `backend/api/routes/` (5 modules)
+- Old import: `from backend.api.routes import router`
+- New import: `from backend.api.routes import create_routes`
+- Modules: chat.py, auth.py, files.py, admin.py, tools.py
+
+**Infrastructure Improvements:**
+- Added `backend/utils/llm_factory.py` - centralized LLM instance creation
+- Added `backend/config/prompts.py` - centralized prompt management (PromptRegistry)
+- All old imports updated throughout codebase
+- Legacy files preserved for backward compatibility
+
 ### Version 1.2.0 (October 31, 2024)
 **Major unification of Python code tools:**
 - Merged `python_coder_tool.py` and `python_executor_engine.py` into single file
@@ -294,10 +391,6 @@ react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 - Added execution retry logic: max 5 attempts with auto-fixing
 - `ToolName.PYTHON_CODE` removed → use `ToolName.PYTHON_CODER`
 - Import changes: `PythonExecutor` now alias for `CodeExecutor`
-
-### Critical Breaking Changes from v1.1.0:
-- Old import: `from backend.tools.python_executor_engine import PythonExecutor`
-- New import: `from backend.tools.python_coder_tool import CodeExecutor` (or use `PythonExecutor` alias)
 
 ## Performance Tips
 
@@ -334,11 +427,11 @@ react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 - Verify observations contain data (check tool execution logs)
 
 **Import Errors in Generated Code:**
-- Review BLOCKED_IMPORTS in python_coder_tool.py
+- Review BLOCKED_IMPORTS in backend/tools/python_coder/executor.py
 - Ensure required packages installed in environment
 - Check AST validation in `CodeExecutor.validate_imports()`
 
 ---
 
 **Last Updated:** January 2025
-**Version:** 1.2.0
+**Version:** 2.0.0 (Modular Architecture)

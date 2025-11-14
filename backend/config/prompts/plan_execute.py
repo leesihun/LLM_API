@@ -25,10 +25,12 @@ def get_execution_plan_prompt(
     file_first_note = (
         "\nIMPORTANT: There are attached files for this task. "
         "Prefer local file analysis FIRST using python_coder or python_code. "
-        "Only fall back to rag_retrieval or web_search if local analysis fails or is insufficient."
+        "Only fall back to web_search if local analysis fails or is insufficient."
     ) if has_files else ""
 
-    return f"""You are an AI planning expert. Analyze this user query and create a detailed, structured execution plan.{file_first_note}
+    return f"""You are an AI planning expert. Analyze this user query and create a detailed, structured execution plan.
+
+{file_first_note}
 
 Conversation History:
 {conversation_history}
@@ -60,15 +62,15 @@ Example response format:
 [
   {{
     "step_num": 1,
-    "goal": "Load and analyze the uploaded JSON file",
+    "goal": "Load and analyze the uploaded JSON file, save its reading code to a file ",
     "primary_tools": ["python_coder"],
-    "fallback_tools": ["python_code", "rag_retrieval"],
+    "fallback_tools": ["python_code"],
     "success_criteria": "Data successfully loaded with basic statistics displayed",
-    "context": "Use pandas to read JSON and show head, shape, describe"
+    "context": "Use pandas to read JSON and show head, shape, describe how to access it"
   }},
   {{
     "step_num": 2,
-    "goal": "Calculate mean and median of numeric columns",
+    "goal": "Calculate mean and median of numeric columns, if the user asked file header doesn't match the given data, think and if there are any headers that are semantically similar, use the header that is most similar to the user's query",
     "primary_tools": ["python_code"],
     "fallback_tools": ["python_coder"],
     "success_criteria": "Mean and median values displayed for all numeric columns",

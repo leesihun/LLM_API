@@ -12,10 +12,9 @@ def get_agentic_classifier_prompt() -> str:
     return """You are a task classifier. Analyze the user's query and determine if it requires:
 
 1. "agentic" - Use when the query requires agentic flow:
-   - Web search for current/latest information
-   - Document retrieval from uploaded files
-   - Data analysis or processing
-   - Extremely complex task that requires Python code execution
+   - Web search for information
+   - Document retrieval in case user asks for RAG (Retrieval-Augmented Generation) specifically.
+   - Complex or accuracy required tasks that requires Python code execution
    - Multi-step reasoning with tools
    - Research, comparison, or investigation
    - Any query mentioning: search, find, research, analyze, current, latest, news, documents, files, code, calculate
@@ -23,9 +22,9 @@ def get_agentic_classifier_prompt() -> str:
 
 2. "chat" - Use when the query is:
    - Simple conversation
-   - General knowledge questions (not requiring current data)
+   - Simple and general knowledge questions (not requiring current data or complex reasoning)
    - Explanations or clarifications
 
-Unless its absolutely necessary, use "chat" for simple questions.
+Unless its necessary, use "chat" for simple questions.
 
 Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)."""

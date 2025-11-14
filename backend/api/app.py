@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 from backend.config.settings import settings
-from backend.api.routes import auth_router, openai_router, files_router, admin_router, tools_router, chat_router
+from backend.api.routes import create_routes
 
 
 # ============================================================================
@@ -108,12 +108,8 @@ app.add_middleware(
 # Include Routers
 # ============================================================================
 
-app.include_router(auth_router)
-app.include_router(openai_router)
-app.include_router(files_router)
-app.include_router(admin_router)
-app.include_router(tools_router)
-app.include_router(chat_router)
+for router in create_routes():
+    app.include_router(router)
 
 
 # ============================================================================

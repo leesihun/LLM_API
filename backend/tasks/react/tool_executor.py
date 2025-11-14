@@ -1,39 +1,38 @@
 """
 Tool Executor Module for ReAct Agent
-Handles execution and routing of tool actions (web_search, rag_retrieval, python_coder, file_analyzer)
+
+Handles execution and routing of tool actions with intelligent guard logic.
+Uses llm_factory for LLM instances and tool_metadata models from Phase 2.
 """
 
-import logging
-from typing import Dict, Any, List, Optional
-from langchain_ollama import ChatOllama
+from typing import List, Optional, Tuple, Any
 
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.python_coder import python_coder_tool
-from backend.tools.file_analyzer_tool import file_analyzer
+from backend.tools.file_analyzer import file_analyzer
 from backend.utils.logging_utils import get_logger
-from backend.tasks.react.models import ToolName
+from .models import ToolName
 
 logger = get_logger(__name__)
 
 
 class ToolExecutor:
     """
-    Executes tools for ReAct agent with intelligent routing and guard logic.
+    Executes tools for ReAct agent with direct routing.
 
     Features:
-    - Routes actions to appropriate tools (web_search, rag_retrieval, python_coder, file_analyzer)
-    - GUARD LOGIC: If RAG requested but files present, tries python_coder first
-    - Builds context from execution history for python_coder
+    - Routes actions to appropriate tools
+    - Direct execution: Each tool executes when requested (no guard logic)
     - Handles all tool-specific formatting and error handling
     """
 
-    def __init__(self, llm: ChatOllama):
+    def __init__(self, llm):
         """
-        Initialize ToolExecutor
+        Initialize ToolExecutor.
 
         Args:
-            llm: ChatOllama instance for LLM operations
+            llm: LLM instance for LLM operations
         """
         self.llm = llm
 
@@ -45,9 +44,9 @@ class ToolExecutor:
         session_id: Optional[str] = None,
         attempted_coder: bool = False,
         steps: Optional[List[Any]] = None
-    ) -> tuple[str, bool]:
+    ) -> Tuple[str, bool]:
         """
-        Execute the selected action and return observation
+        Execute the selected action and return observation.
 
         Args:
             action: Tool name to execute (from ToolName enum)
@@ -59,85 +58,55 @@ class ToolExecutor:
 
         Returns:
             Tuple of (observation, attempted_coder_updated)
-            - observation: Result from tool execution
-            - attempted_coder_updated: Updated value of attempted_coder flag
         """
         try:
-            logger.info("")
             logger.info(f"EXECUTING TOOL: {action}")
-            logger.info("")
-            logger.info("Tool Input:")
-            for _line in str(action_input).splitlines():
-                logger.info(_line)
-            logger.info("")
+            logger.info(f"Tool Input: {action_input[:200]}...")
 
             if action == ToolName.WEB_SEARCH:
-                observation = await self._execute_web_search(action_input)
-                return observation, attempted_coder
+                return await self._execute_web_search(action_input), attempted_coder
 
             elif action == ToolName.RAG_RETRIEVAL:
-                observation, attempted_coder = await self._execute_rag_retrieval(
-                    action_input,
-                    file_paths,
-                    session_id,
-                    attempted_coder,
-                    steps
+                return await self._execute_rag_retrieval(
+                    action_input, file_paths, session_id, attempted_coder, steps
                 )
-                return observation, attempted_coder
 
             elif action == ToolName.PYTHON_CODER:
-                observation = await self._execute_python_coder(
-                    action_input,
-                    file_paths,
-                    session_id,
-                    steps
-                )
-                return observation, True  # Mark attempted_coder as True
+                return await self._execute_python_coder(
+                    action_input, file_paths, session_id, steps
+                ), True
 
             elif action == ToolName.FILE_ANALYZER:
-                observation = await self._execute_file_analyzer(action_input, file_paths)
-                return observation, attempted_coder
+                return await self._execute_file_analyzer(action_input, file_paths), attempted_coder
 
             else:
-                logger.warning(f"\n[ToolExecutor] Invalid action attempted: {action}\n")
+                logger.warning(f"Invalid action: {action}")
                 return "Invalid action.", attempted_coder
 
         except Exception as e:
-            logger.error("")
             logger.error(f"ERROR EXECUTING ACTION: {action}")
-            logger.error(f"Exception Type: {type(e).__name__}")
-            logger.error(f"Exception Message: {str(e)}")
-            import traceback
-            logger.error("Traceback:")
-            for _line in traceback.format_exc().splitlines():
-                logger.error(_line)
+            logger.error(f"Exception: {type(e).__name__}: {str(e)}")
             return f"Error executing action: {str(e)}", attempted_coder
 
     async def _execute_web_search(self, query: str) -> str:
-        """Execute web search tool"""
-        # Perform search with temporal context
+        """Execute web search tool."""
         results, context_metadata = await web_search_tool.search(
             query,
             max_results=5,
             include_context=True,
-            user_location=None  # Can be extended to accept user location from session
+            user_location=None
         )
         observation = web_search_tool.format_results(results)
 
-        # Include context metadata in observation
+        # Include context metadata
         if context_metadata.get('query_enhanced'):
             observation = f"[Search performed with contextual enhancement]\n{observation}"
 
         final_observation = observation if observation else "No web search results found."
 
-        logger.info("")
-        logger.info("TOOL OUTPUT (Web Search):")
-        logger.info(f"Context: {context_metadata.get('current_datetime', 'N/A')}")
+        logger.info(f"Web Search Results: {len(results)} results")
         if context_metadata.get('enhanced_query'):
             logger.info(f"Enhanced query: {context_metadata['enhanced_query']}")
-        for _line in str(final_observation).splitlines():
-            logger.info(_line)
-        logger.info("")
 
         return final_observation
 
@@ -148,48 +117,19 @@ class ToolExecutor:
         session_id: Optional[str],
         attempted_coder: bool,
         steps: Optional[List[Any]]
-    ) -> tuple[str, bool]:
+    ) -> Tuple[str, bool]:
         """
-        Execute RAG retrieval tool with GUARD LOGIC
+        Execute RAG retrieval tool directly.
 
-        GUARD LOGIC: If files exist and python_coder not yet attempted, try it first
+        Simplified: No guard logic. If RAG is requested, execute RAG.
+        Let the LLM decide which tool to use.
         """
-        # Guarded fallback: if files exist and python_coder not yet attempted, try it first
-        if file_paths and not attempted_coder:
-            logger.info("[ToolExecutor] Guard: Files present and coder not attempted; trying python_coder before RAG")
-            try:
-                attempted_coder = True
-                # Build context from current execution history
-                context = self._build_context_for_python_coder(steps, session_id)
-
-                coder_result = await python_coder_tool.execute_code_task(
-                    query=query,
-                    file_paths=file_paths,
-                    session_id=session_id,
-                    context=context
-                )
-                if coder_result.get("success") and str(coder_result.get("output", "")).strip():
-                    final_observation = f"Code executed successfully:\n{coder_result.get('output','')}"
-                    logger.info("")
-                    logger.info("TOOL OUTPUT (Python Coder via Guard):")
-                    for _line in str(final_observation).splitlines():
-                        logger.info(_line)
-                    logger.info("")
-                    return final_observation, attempted_coder
-                else:
-                    logger.info("[ToolExecutor] Guard coder attempt insufficient; proceeding with RAG")
-            except Exception as e:
-                logger.warning(f"[ToolExecutor] Guard coder attempt failed: {e}; proceeding with RAG")
-
+        # Execute RAG retrieval directly
         results = await rag_retriever.retrieve(query, top_k=5)
         observation = rag_retriever.format_results(results)
         final_observation = observation if observation else "No relevant documents found."
 
-        logger.info("")
-        logger.info("TOOL OUTPUT (RAG Retrieval):")
-        for _line in str(final_observation).splitlines():
-            logger.info(_line)
-        logger.info("")
+        logger.info(f"RAG Retrieval: {len(results)} documents")
 
         return final_observation, attempted_coder
 
@@ -200,13 +140,12 @@ class ToolExecutor:
         session_id: Optional[str],
         steps: Optional[List[Any]]
     ) -> str:
-        """Execute python_coder tool"""
-        # Build context from current execution history
+        """Execute python_coder tool."""
+        # Build context from execution history
         context = self._build_context_for_python_coder(steps, session_id)
 
-        # Pass attached file paths, session_id, execution context, and step number to python_coder
-        # Use ReAct step number for stage prefix (e.g., "step1", "step2")
-        current_step_num = len(steps) + 1 if steps else 1  # Current iteration number
+        # Use ReAct step number for stage prefix
+        current_step_num = len(steps) + 1 if steps else 1
         stage_prefix = f"step{current_step_num}"
 
         result = await python_coder_tool.execute_code_task(
@@ -217,32 +156,12 @@ class ToolExecutor:
             stage_prefix=stage_prefix
         )
 
-        logger.info("")
-        logger.info("TOOL OUTPUT (Python Coder - Detailed):")
-        logger.info(f"Success: {result['success']}")
+        logger.info(f"Python Coder - Success: {result['success']}")
         logger.info(f"Verification Iterations: {result.get('verification_iterations', 'N/A')}")
         logger.info(f"Execution Attempts: {result.get('execution_attempts', 'N/A')}")
-        logger.info(f"Execution Time: {result.get('execution_time', 'N/A'):.2f}s" if isinstance(result.get('execution_time'), (int, float)) else f"Execution Time: {result.get('execution_time', 'N/A')}")
-        if file_paths:
-            logger.info(f"Files Used: {len(file_paths)} files")
-        logger.info("")
 
         if result["success"]:
-            logger.info("Generated Code:")
-            for _line in str(result.get('code', 'N/A')).splitlines():
-                logger.info(_line)
-            logger.info("")
-            logger.info("Execution Output:")
-            for _line in str(result['output']).splitlines():
-                logger.info(_line)
-            logger.info("")
-            if result.get('verification_issues'):
-                logger.info("Verification Issues:")
-                for _line in str(result['verification_issues']).splitlines():
-                    logger.info(_line)
-                logger.info("")
-
-            # Build execution details string safely
+            # Build execution details safely
             exec_details_parts = []
             if result.get('verification_iterations'):
                 exec_details_parts.append(f"{result['verification_iterations']} verification iterations")
@@ -252,61 +171,30 @@ class ToolExecutor:
                 exec_details_parts.append(f"{result['execution_time']:.2f}s")
 
             exec_details = ", ".join(exec_details_parts) if exec_details_parts else "completed"
-            final_observation = f"Code executed successfully:\n{result['output']}\n\nExecution details: {exec_details}"
+            return f"Code executed successfully:\n{result['output']}\n\nExecution details: {exec_details}"
         else:
-            logger.info("Error Details:")
-            for _line in str(result.get('error', 'Unknown error')).splitlines():
-                logger.info(_line)
-            logger.info("")
-            if result.get('code'):
-                logger.info("Failed Code:")
-                for _line in str(result['code']).splitlines():
-                    logger.info(_line)
-                logger.info("")
-
-            final_observation = f"Code execution failed: {result.get('error', 'Unknown error')}"
-
-        logger.info("")
-        return final_observation
+            return f"Code execution failed: {result.get('error', 'Unknown error')}"
 
     async def _execute_file_analyzer(
         self,
         query: str,
         file_paths: Optional[List[str]]
     ) -> str:
-        """Execute file_analyzer tool"""
-        # FILE_ANALYZER should only be used in pre-step, but handle it just in case
-        logger.warning("[ToolExecutor] FILE_ANALYZER called during ReAct loop (should only be in pre-step)")
+        """Execute file_analyzer tool."""
+        logger.warning("FILE_ANALYZER called during ReAct loop (should only be in pre-step)")
 
         if not file_paths:
             return "No files attached to analyze."
 
-        result = file_analyzer.analyze(
-            file_paths=file_paths,
-            user_query=query
-        )
+        result = file_analyzer.analyze(file_paths=file_paths, user_query=query)
 
-        logger.info("")
-        logger.info("TOOL OUTPUT (File Analyzer):")
-        logger.info(f"Success: {result.get('success', False)}")
+        logger.info(f"File Analyzer - Success: {result.get('success', False)}")
         logger.info(f"Files Analyzed: {result.get('files_analyzed', 0)}")
-        logger.info("")
 
         if result.get("success"):
-            logger.info("Analysis Summary:")
-            for _line in str(result.get('summary', '')).splitlines():
-                logger.info(_line)
-            logger.info("")
-            final_observation = f"File analysis completed:\n{result.get('summary','')}"
+            return f"File analysis completed:\n{result.get('summary','')}"
         else:
-            logger.info("Error Details:")
-            for _line in str(result.get('error', 'Unknown error')).splitlines():
-                logger.info(_line)
-            logger.info("")
-            final_observation = f"File analysis failed: {result.get('error','Unknown error')}"
-
-        logger.info("")
-        return final_observation
+            return f"File analysis failed: {result.get('error','Unknown error')}"
 
     def _build_context_for_python_coder(
         self,
@@ -314,7 +202,7 @@ class ToolExecutor:
         session_id: Optional[str]
     ) -> str:
         """
-        Build context string from ReAct execution history for python_coder
+        Build context string from ReAct execution history for python_coder.
 
         Args:
             steps: List of ReActStep objects from execution history
@@ -345,8 +233,7 @@ class ToolExecutor:
                 context_parts.append("```")
                 context_parts.append("")
 
-            context_parts.append("You can reference and build upon these previous code versions.")
-            context_parts.append("Use them as a starting point to avoid repeating work.\n")
+            context_parts.append("You can reference and build upon these previous code versions.\n")
 
         if not steps:
             return "\n".join(context_parts) if context_parts else ""
@@ -365,18 +252,18 @@ class ToolExecutor:
             obs_preview = step.observation[:500] if len(step.observation) > 500 else step.observation
             context_parts.append(f"  Result: {obs_preview}")
 
-            # Highlight if there were errors
+            # Highlight errors
             if "error" in step.observation.lower() or "failed" in step.observation.lower():
                 context_parts.append(f"  ⚠ Note: This action encountered errors")
 
             context_parts.append("")
 
-        # Add summary of what's been tried
+        # Add summary of tools tried
         tools_tried = [step.action for step in steps if step.action != ToolName.FINISH]
         if tools_tried:
             context_parts.append(f"Tools already attempted: {', '.join(set(tools_tried))}")
 
-        context_parts.append("\nThis context shows what has already been tried. Use this information to:")
+        context_parts.append("\nUse this context to:")
         context_parts.append("- Avoid repeating failed approaches")
         context_parts.append("- Build upon partial results from previous steps")
         context_parts.append("- Generate more targeted code based on what's already known")
