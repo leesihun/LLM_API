@@ -181,6 +181,7 @@ async def chat_completions(
     # Handle file uploads - save to temp location
     file_paths = []
     old_file_paths = []
+    new_files_uploaded = False  # Track if we uploaded new files
 
     # If continuing session, retrieve old files from conversation history
     if session_id:
@@ -221,6 +222,7 @@ async def chat_completions(
                 continue
 
         if file_paths:
+            new_files_uploaded = True
             logger.info(f"[Chat] Prepared {len(file_paths)} new files for session {session_id}")
 
             # Clean up old files since we have new ones (replacement strategy)
@@ -265,8 +267,9 @@ async def chat_completions(
                 # Save to conversation history
                 _save_conversation(session_id, user_message, response_text, file_paths, task_type, agent_metadata)
 
-                # Cleanup temp files
-                _cleanup_files(file_paths)
+                # Cleanup temp files (only clean up newly uploaded files, not reused old files)
+                if new_files_uploaded:
+                    _cleanup_files(file_paths)
 
                 # Return standard response
                 return ChatCompletionResponse(
@@ -349,8 +352,9 @@ async def chat_completions(
                         complete_response = "".join(full_response)
                         _save_conversation(session_id, user_message, complete_response, file_paths, task_type, None)
 
-                        # Cleanup temp files
-                        _cleanup_files(file_paths)
+                        # Cleanup temp files (only clean up newly uploaded files, not reused old files)
+                        if new_files_uploaded:
+                            _cleanup_files(file_paths)
 
                     except Exception as e:
                         logger.error(f"[Chat] Streaming error: {e}")
@@ -395,8 +399,9 @@ async def chat_completions(
         # Save to conversation history
         _save_conversation(session_id, user_message, response_text, file_paths, task_type, agent_metadata)
 
-        # Cleanup temp files after execution
-        _cleanup_files(file_paths)
+        # Cleanup temp files after execution (only clean up newly uploaded files, not reused old files)
+        if new_files_uploaded:
+            _cleanup_files(file_paths)
 
         # Build OpenAI-compatible response
         return ChatCompletionResponse(
