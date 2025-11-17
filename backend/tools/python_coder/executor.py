@@ -73,6 +73,8 @@ class PersistentREPL:
                 stderr=subprocess.PIPE,
                 cwd=str(self.execution_dir),
                 text=True,
+                encoding='utf-8',
+                errors='replace',  # Replace unencodable characters instead of crashing
                 bufsize=0  # Unbuffered
             )
 
@@ -596,7 +598,9 @@ class CodeExecutor:
                 capture_output=True,
                 timeout=self.timeout,
                 cwd=str(execution_dir),
-                text=True
+                text=True,
+                encoding='utf-8',
+                errors='replace'  # Replace unencodable characters instead of crashing
             )
             execution_time = time.time() - start_time
 
