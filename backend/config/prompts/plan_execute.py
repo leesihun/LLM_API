@@ -71,7 +71,7 @@ Example response format:
     "primary_tools": ["python_coder"],
     "fallback_tools": [],
     "success_criteria": "Successfully loaded data with structure information (columns, types, shape) and preview displayed",
-    "context": "Use pandas to read JSON. Show df.head(), df.info(), df.describe(). Handle nested JSON structures if present."
+    "context": "Use json.load() to read JSON. Show df.head(), df.info(), df.describe(). Handle nested JSON structures if present."
   }},
   {{
     "step_num": 2,
@@ -79,7 +79,7 @@ Example response format:
     "primary_tools": ["python_coder"],
     "fallback_tools": [],
     "success_criteria": "Mean and median values calculated and displayed for all numeric columns with clear labels",
-    "context": "Use pandas df.select_dtypes(include=np.number) to get numeric columns. Use df.mean() and df.median(). Handle column name mismatches intelligently."
+    "context": "Use numpy statistical functions"
   }}
 ]
 
