@@ -191,6 +191,19 @@ async def startup_event():
         logger.error("  3. Try: curl http://127.0.0.1:11434/api/tags")
         logger.error("=" * 80)
 
+    # Preload model into VRAM for faster first request
+    try:
+        logger.info(f"Preloading model '{settings.ollama_model}' into VRAM...")
+        from backend.utils.llm_factory import LLMFactory
+
+        llm = LLMFactory.create_llm()
+        # Send a minimal warmup request to load model
+        await llm.ainvoke("Hello")
+        logger.info(f"✓ Model '{settings.ollama_model}' preloaded successfully!")
+    except Exception as e:
+        logger.warning(f"⚠ Model preload failed (non-critical): {e}")
+        logger.warning("First API request may be slower while model loads")
+
     logger.info("Application started successfully")
 
 

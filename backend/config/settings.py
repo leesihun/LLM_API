@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
 
-    # Context window - balance between capability and memory usage
-    ollama_num_ctx: int = 32768  # Good balance for most use cases
+    # Context window - optimized for speed (reduced from 32768)
+    ollama_num_ctx: int = 16384  # Faster inference while maintaining capability
 
     # Sampling parameters - optimized for coherent responses
     ollama_temperature: float = 0.2  # 0.1=conservative, 1.0=creative

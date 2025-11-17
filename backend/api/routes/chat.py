@@ -180,6 +180,23 @@ async def chat_completions(
 
     # Handle file uploads - save to temp location
     file_paths = []
+    old_file_paths = []
+
+    # If continuing session, retrieve old files from conversation history
+    if session_id:
+        try:
+            conversation = conversation_store.load_conversation(session_id)
+            if conversation:
+                # Get file_paths from the most recent user message with files
+                for message in reversed(conversation.messages):
+                    if message.role == "user" and message.metadata and message.metadata.get("file_paths"):
+                        old_file_paths = message.metadata["file_paths"]
+                        logger.info(f"[Chat] Retrieved {len(old_file_paths)} old files from session history")
+                        break
+        except Exception as e:
+            logger.warning(f"[Chat] Failed to retrieve old files from session: {e}")
+
+    # Handle new file uploads
     if files:
         uploads_path = Path(settings.uploads_path) / user_id
         uploads_path.mkdir(parents=True, exist_ok=True)
@@ -204,7 +221,18 @@ async def chat_completions(
                 continue
 
         if file_paths:
-            logger.info(f"[Chat] Prepared {len(file_paths)} files for session {session_id}")
+            logger.info(f"[Chat] Prepared {len(file_paths)} new files for session {session_id}")
+
+            # Clean up old files since we have new ones (replacement strategy)
+            if old_file_paths:
+                logger.info(f"[Chat] Cleaning up {len(old_file_paths)} old files (replaced by new uploads)")
+                _cleanup_files(old_file_paths)
+                old_file_paths = []  # Clear old files list after cleanup
+
+    # Use new files if uploaded, otherwise use old files from session
+    if not file_paths and old_file_paths:
+        file_paths = old_file_paths
+        logger.info(f"[Chat] No new files uploaded; using {len(file_paths)} files from session history")
 
     # Determine task type based on query
     user_message = parsed_messages[-1].content if parsed_messages else ""
