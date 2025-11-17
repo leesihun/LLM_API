@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = 'qwen3:8b'
+    ollama_model: str = 'qwen3-coder:30b'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 32768  # Good balance for most use cases
 
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.6  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 0.2  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.95      # Nucleus sampling
     ollama_top_k: int = 20          # Top-k sampling
 
