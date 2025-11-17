@@ -195,7 +195,7 @@ class PythonCoderTool:
 
             # If execution failed, prepare for retry
             if not execution_result["success"]:
-                logger.error(f"[PythonCoderTool] ❌ Execution failed: {execution_result.get('error', 'Unknown')[:100]}")
+                logger.error(f"[PythonCoderTool] [X] Execution failed: {execution_result.get('error', 'Unknown')[:100]}")
                 if attempt < self.max_retry_attempts - 1:
                     logger.info("[PythonCoderTool] Will retry with error feedback...")
                     context = self._build_retry_context(context, execution_result.get("error"), issues)
@@ -205,7 +205,7 @@ class PythonCoderTool:
                     break
 
             # Phase 3: Check output adequacy (1 LLM call, only if execution succeeded)
-            logger.info("[PythonCoderTool] ✅ Execution succeeded, checking output adequacy...")
+            logger.info("[PythonCoderTool] [OK] Execution succeeded, checking output adequacy...")
             is_adequate, adequacy_reason, suggestion = await self._check_output_adequacy(
                 query=query,
                 code=code,
@@ -214,7 +214,7 @@ class PythonCoderTool:
             )
 
             if is_adequate:
-                logger.info(f"[PythonCoderTool] ✅ Output is adequate: {adequacy_reason}")
+                logger.info(f"[PythonCoderTool] [OK] Output is adequate: {adequacy_reason}")
                 # SUCCESS - return result
                 return self._build_success_result(
                     code=code,
@@ -226,7 +226,7 @@ class PythonCoderTool:
                 )
             else:
                 # Output not adequate - retry if attempts remain
-                logger.warning(f"[PythonCoderTool] ⚠️  Output not adequate: {adequacy_reason}")
+                logger.warning(f"[PythonCoderTool] [WARNING] Output not adequate: {adequacy_reason}")
                 if attempt < self.max_retry_attempts - 1:
                     logger.info(f"[PythonCoderTool] Suggestion: {suggestion}")
                     context = self._build_retry_context(context, None, [suggestion])
@@ -271,7 +271,7 @@ class PythonCoderTool:
 
             stage_script_path = execution_dir / f"script_{stage_name}.py"
             stage_script_path.write_text(code, encoding='utf-8')
-            logger.info(f"[PythonCoderTool] 💾 Saved {stage_name} code to {stage_script_path.name}")
+            logger.info(f"[PythonCoderTool] [SAVED] Saved {stage_name} code to {stage_script_path.name}")
         except Exception as e:
             logger.warning(f"[PythonCoderTool] Failed to save stage code: {e}")
 

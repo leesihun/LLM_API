@@ -470,7 +470,7 @@ class CodeExecutor:
             if stage_name:
                 stage_script_path = execution_dir / f"script_{stage_name}.py"
                 stage_script_path.write_text(code, encoding='utf-8')
-                logger.info(f"[CodeExecutor] 💾 Saved stage code to {stage_script_path.name}")
+                logger.info(f"[CodeExecutor] [SAVED] Saved stage code to {stage_script_path.name}")
 
             # Choose execution mode based on configuration and session
             if self.use_persistent_repl and session_id:
@@ -696,7 +696,7 @@ class CodeExecutor:
             stdout_lower = result["output"].lower()
             for pattern in error_patterns:
                 if pattern.lower() in stdout_lower:
-                    logger.warning(f"[CodeExecutor] ⚠️  Error pattern detected: '{pattern}'")
+                    logger.warning(f"[CodeExecutor] [WARNING] Error pattern detected: '{pattern}'")
                     result["success"] = False
                     result["error"] = result["output"]
                     logger.error(f"[CodeExecutor] Code printed error messages despite return code 0")

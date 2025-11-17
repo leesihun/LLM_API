@@ -48,7 +48,7 @@ class FileContextBuilder:
         # Critical header warning
         lines.append("")
         lines.append("")
-        lines.append("🚨 CRITICAL - EXACT FILENAMES REQUIRED 🚨")
+        lines.append("[!!!] CRITICAL - EXACT FILENAMES REQUIRED [!!!]")
         lines.append("ALL files are in the current working directory.")
         lines.append("YOU MUST use the EXACT filenames shown below - NO generic names like 'file.json' or 'data.csv'!")
         lines.append("")
@@ -163,7 +163,7 @@ class FileContextBuilder:
 
         # Show smart access patterns (most important!)
         if 'access_patterns' in metadata and metadata['access_patterns']:
-            lines.append("   📋 Access Patterns (COPY THESE EXACTLY):")
+            lines.append("   [PATTERNS] Access Patterns (COPY THESE EXACTLY):")
             for pattern in metadata['access_patterns'][:6]:  # Show first 6 patterns
                 lines.append(f"      {pattern}")
 
@@ -180,9 +180,9 @@ class FileContextBuilder:
 
         # Warnings for special cases
         if metadata.get('requires_null_check'):
-            lines.append("   ⚠️  IMPORTANT: Contains null values - use .get() method for safe access")
+            lines.append("   [!] IMPORTANT: Contains null values - use .get() method for safe access")
         if metadata.get('max_depth', 0) > 3:
-            lines.append("   ⚠️  IMPORTANT: Deep nesting detected - validate each level before accessing")
+            lines.append("   [!] IMPORTANT: Deep nesting detected - validate each level before accessing")
 
     def _add_docx_metadata(self, lines: list, metadata: Dict[str, Any]) -> None:
         """
@@ -220,10 +220,10 @@ class FileContextBuilder:
             lines.append(f"   Sheets ({metadata['total_sheets']} total): {sheets}")
 
         if metadata.get('has_formulas'):
-            lines.append("   ⚠️  Contains formulas - use data_only=True or read_excel()")
+            lines.append("   [!] Contains formulas - use data_only=True or read_excel()")
 
         if metadata.get('has_merged_cells'):
-            lines.append("   ⚠️  Contains merged cells - may affect data reading")
+            lines.append("   [!] Contains merged cells - may affect data reading")
 
         if metadata.get('has_named_ranges'):
             lines.append("   Contains named ranges")
@@ -289,9 +289,9 @@ class FileContextBuilder:
 
             # Add error handling note if JSON had issues
             if 'error' in metadata:
-                lines.append("   ⚠️  CRITICAL: Wrap in try/except json.JSONDecodeError (file has parsing issues)")
+                lines.append("   [!] CRITICAL: Wrap in try/except json.JSONDecodeError (file has parsing issues)")
             elif 'parsing_note' in metadata:
-                lines.append(f"   ⚠️  {metadata['parsing_note']}")
+                lines.append(f"   [!] {metadata['parsing_note']}")
 
         # Excel access example
         elif file_type == 'excel':

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = 'gpt-oss:20b'
+    ollama_model: str = 'GLM-4.5-Air:latest'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
