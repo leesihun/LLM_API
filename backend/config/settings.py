@@ -48,9 +48,9 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 16384  # Faster inference while maintaining capability
 
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.2  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 0.001  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.95      # Nucleus sampling
-    ollama_top_k: int = 20          # Top-k sampling
+    ollama_top_k: int = 40          # Top-k sampling
 
     # ============================================================================
     # API Keys - SECURE THESE IN PRODUCTION
