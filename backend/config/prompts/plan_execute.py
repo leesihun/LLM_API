@@ -24,11 +24,10 @@ def get_execution_plan_prompt(
     """
     file_first_note = (
         "\nIMPORTANT: There are attached files for this task. "
-        "Prefer local file analysis FIRST using python_coder or python_code. "
-        "Only fall back to web_search if local analysis fails or is insufficient."
+        "Perform local file analysis FIRST. "
     ) if has_files else ""
 
-    return f"""You are an AI planning expert. Analyze this user query and create a detailed, structured execution plan.
+    return f"""You are an AI planning expert. Analyze this user query and create a MINIMAL, focused execution plan.
 
 {file_first_note}
 
@@ -40,49 +39,47 @@ Current User Query: {query}
 Available Tools:
 {available_tools}
 
-Create a step-by-step execution plan. For EACH step, provide:
-1. Goal: What this step aims to accomplish
-2. Primary Tools: Main tools to try (in order of preference)
-3. Fallback Tools: Alternative tools if primary fails
-4. Success Criteria: How to know the step succeeded
+Create a MINIMAL step-by-step execution plan with ONLY the work steps needed to answer the query. For EACH step, provide:
+1. Goal: What this step aims to accomplish (be specific and detailed)
+2. Primary Tools: Main tools to use
+3. Success Criteria: How to verify the step succeeded
+4. Context: Additional instructions or notes for executing this step
 
 CRITICAL: You MUST respond with a JSON array of steps. Each step must have this exact structure:
 {{
   "step_num": 1,
-  "goal": "Clear description of what to accomplish",
-  "primary_tools": ["tool_name1", "tool_name2"],
-  "fallback_tools": ["backup_tool1"],
+  "goal": "Clear, detailed description of what to accomplish",
+  "primary_tools": ["tool_name"],
+  "fallback_tools": [],
   "success_criteria": "How to verify success",
-  "context": "Additional context or notes"
+  "context": "Additional context or specific instructions for this step"
 }}
 
-Valid tool names ONLY: web_search, rag_retrieval, python_code, python_coder
+Valid tool names ONLY: web_search, rag_retrieval, python_coder
+
+IMPORTANT RULES:
+- Only include ACTUAL WORK steps (file analysis, data processing, searches, etc.)
+- Do NOT include a "finish" or "generate answer" step - this happens automatically
+- Keep plans minimal (2-3 steps max for most tasks)
+- Each step should produce concrete output/data
 
 Example response format:
 [
   {{
     "step_num": 1,
-    "goal": "Load and analyze the uploaded JSON file, save its reading code to a file ",
+    "goal": "Load and explore the uploaded JSON file structure, extract column names, data types, and preview first few rows",
     "primary_tools": ["python_coder"],
-    "fallback_tools": ["python_code"],
-    "success_criteria": "Data successfully loaded with basic statistics displayed",
-    "context": "Use pandas to read JSON and show head, shape, describe how to access it"
+    "fallback_tools": [],
+    "success_criteria": "Successfully loaded data with structure information (columns, types, shape) and preview displayed",
+    "context": "Use pandas to read JSON. Show df.head(), df.info(), df.describe(). Handle nested JSON structures if present."
   }},
   {{
     "step_num": 2,
-    "goal": "Calculate mean and median of numeric columns, if the user asked file header doesn't match the given data, think and if there are any headers that are semantically similar, use the header that is most similar to the user's query",
-    "primary_tools": ["python_code"],
-    "fallback_tools": ["python_coder"],
-    "success_criteria": "Mean and median values displayed for all numeric columns",
-    "context": "Use numpy or pandas statistical functions"
-  }},
-  {{
-    "step_num": 3,
-    "goal": "Generate final summary answer",
-    "primary_tools": ["finish"],
+    "goal": "Calculate mean and median of all numeric columns. If user-requested column names don't match, find semantically similar columns.",
+    "primary_tools": ["python_coder"],
     "fallback_tools": [],
-    "success_criteria": "Complete answer provided to user",
-    "context": "Synthesize all results into coherent answer"
+    "success_criteria": "Mean and median values calculated and displayed for all numeric columns with clear labels",
+    "context": "Use pandas df.select_dtypes(include=np.number) to get numeric columns. Use df.mean() and df.median(). Handle column name mismatches intelligently."
   }}
 ]
 

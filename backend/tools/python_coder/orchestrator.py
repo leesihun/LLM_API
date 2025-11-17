@@ -74,12 +74,11 @@ class PythonCoderTool:
         self.file_handler_factory = FileHandlerFactory()
         self.context_builder = FileContextBuilder()
 
-        # Configuration - REDUCED iterations for efficiency
-        self.max_verification_iterations = 2  # Reduced from 3
-        self.max_execution_attempts = 3  # Reduced from 5
+        # Configuration - OPTIMIZED for minimal LLM calls
+        self.max_retry_attempts = 3  # Max attempts for execution + adequacy check
         self.allow_partial_execution = settings.python_code_allow_partial_execution
 
-        logger.info(f"[PythonCoderTool] Initialized with verification_iterations={self.max_verification_iterations}, execution_attempts={self.max_execution_attempts}")
+        logger.info(f"[PythonCoderTool] Initialized with OPTIMIZED workflow (max_retry_attempts={self.max_retry_attempts})")
 
     async def execute_code_task(
         self,
@@ -91,15 +90,22 @@ class PythonCoderTool:
         stage_prefix: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Main entry point for code generation and execution.
+        OPTIMIZED: Main entry point for code generation and execution.
+
+        New Workflow (Reduced LLM calls):
+        0. Prepare files (non-LLM)
+        1. Generate code WITH self-verification (1 LLM call - combined!)
+        2. Execute code (non-LLM)
+        3. Check output adequacy (1 LLM call only if needed)
+        4. Retry if needed (max 3 total attempts)
 
         Args:
             query: User's question/task
             context: Optional additional context
             file_paths: Optional list of input file paths
             session_id: Optional session ID
-            is_prestep: Whether this is called from ReAct pre-step (uses specialized prompt)
-            stage_prefix: Optional stage prefix (e.g., "step5", "stage3") for code file naming
+            is_prestep: Whether this is called from ReAct pre-step
+            stage_prefix: Optional stage prefix for code file naming
 
         Returns:
             Dict with execution results
@@ -112,9 +118,9 @@ class PythonCoderTool:
                 "output": ""
             }
 
-        logger.info(f"[PythonCoderTool] Executing task: {query[:100]}...")
+        logger.info(f"[PythonCoderTool OPTIMIZED] Executing task: {query[:100]}...")
 
-        # Phase 0: Prepare input files
+        # Phase 0: Prepare input files (non-LLM)
         validated_files = {}
         file_metadata = {}
         if file_paths:
@@ -130,106 +136,46 @@ class PythonCoderTool:
                     "output": ""
                 }
 
-            # Log file metadata summary
-            logger.info(f"[PythonCoderTool] Validated {len(validated_files)} file(s):")
-            for file_path, filename in validated_files.items():
-                metadata = file_metadata.get(file_path, {})
-                logger.info(f"  - '{filename}' ({metadata.get('type', 'unknown')})")
-                if metadata.get('type') == 'json':
-                    logger.info(f"    Structure: {metadata.get('structure')}, Keys: {len(metadata.get('keys', []))}, Depth: {metadata.get('max_depth')}")
-
-        # Build file context (reused in both generation and verification)
+        # Build file context
         file_context = self.context_builder.build_context(validated_files, file_metadata)
+        has_json_files = any(m.get('type') == 'json' for m in file_metadata.values())
 
-        if file_context:
-            logger.info("[PythonCoderTool] File context built successfully")
-            logger.debug(f"[PythonCoderTool] File context preview:\n{file_context[:500]}...")
+        # Tracking
+        attempt_history = []
+        modifications = []
 
-        # Phase 1: Generate initial code
-        code = await self.code_generator.generate_code(
-            query=query,
-            context=context,
-            validated_files=validated_files,
-            file_metadata=file_metadata,
-            file_context=file_context,
-            is_prestep=is_prestep
-        )
+        # Main retry loop (max 3 attempts)
+        for attempt in range(self.max_retry_attempts):
+            logger.info(f"\n[PythonCoderTool] === ATTEMPT {attempt + 1}/{self.max_retry_attempts} ===")
 
-        if not code:
-            return {
-                "success": False,
-                "error": "Failed to generate code",
-                "code": "",
-                "output": ""
-            }
-
-        # Phase 1.5: Apply automatic fixes BEFORE verification
-        code, auto_changes = self.auto_fixer.apply_all_fixes(code, validated_files, file_metadata)
-        modifications = auto_changes.copy()
-
-        if auto_changes:
-            logger.info(f"[PythonCoderTool] 🔧 Applied {len(auto_changes)} automatic fix(es) before verification")
-
-        # Phase 2: Iterative verification (max 2 iterations, reduced from 3)
-        verification_history = []
-
-        for iteration in range(self.max_verification_iterations):
-            logger.info(f"[PythonCoderTool] Verification iteration {iteration + 1}/{self.max_verification_iterations}")
-
-            # Verify code
-            verified, issues = await self.code_verifier.verify_code_answers_question(
-                code=code,
+            # Phase 1: Generate code WITH self-verification (1 LLM call!)
+            code, self_verified, issues = await self._generate_code_with_self_verification(
                 query=query,
                 context=context,
                 file_context=file_context,
-                file_metadata=file_metadata
+                validated_files=validated_files,
+                file_metadata=file_metadata,
+                is_prestep=is_prestep,
+                has_json_files=has_json_files,
+                attempt_num=attempt + 1
             )
 
-            verification_history.append({
-                "iteration": iteration + 1,
-                "issues": issues,
-                "action": "approved" if verified else "needs_modification"
-            })
+            if not code:
+                return {
+                    "success": False,
+                    "error": "Failed to generate code",
+                    "code": "",
+                    "output": ""
+                }
 
-            # Save verification stage code
-            stage_suffix = f"verify{iteration + 1}"
-            stage_name = f"{stage_prefix}_{stage_suffix}" if stage_prefix else stage_suffix
-            self._save_stage_code(code, validated_files, session_id, stage_name)
+            # Apply automatic fixes
+            code, auto_changes = self.auto_fixer.apply_all_fixes(code, validated_files, file_metadata)
+            if auto_changes:
+                modifications.extend(auto_changes)
+                logger.info(f"[PythonCoderTool] Applied {len(auto_changes)} automatic fix(es)")
 
-            if verified:
-                logger.info(f"[PythonCoderTool] ✅ Code verified at iteration {iteration + 1}")
-                break
-
-            # Modify code with LLM to fix issues
-            logger.warning(f"[PythonCoderTool] ⚠️  Found {len(issues)} issue(s):")
-            for i, issue in enumerate(issues, 1):
-                logger.warning(f"  {i}. {issue}")
-
-            code, changes = await self.code_generator.modify_code(
-                code=code,
-                issues=issues,
-                query=query,
-                context=context
-            )
-            modifications.extend(changes)
-            verification_history[-1]["action"] = "modified"
-
-            # Check if max iterations reached
-            if iteration == self.max_verification_iterations - 1:
-                logger.warning("[PythonCoderTool] Max verification iterations reached")
-                if not self.allow_partial_execution:
-                    logger.warning("[PythonCoderTool] Partial execution not allowed, but continuing anyway")
-
-        # Phase 3: Execute code with retry logic (max 3 attempts, reduced from 5)
-        execution_result = None
-        execution_attempts = []
-
-        for attempt in range(self.max_execution_attempts):
-            logger.info(f"[PythonCoderTool] Execution attempt {attempt + 1}/{self.max_execution_attempts}")
-
-            # Save execution stage code
-            stage_suffix = f"exec{attempt + 1}"
-            stage_name = f"{stage_prefix}_{stage_suffix}" if stage_prefix else stage_suffix
+            # Phase 2: Execute code (non-LLM)
+            stage_name = f"{stage_prefix}_attempt{attempt + 1}" if stage_prefix else f"attempt{attempt + 1}"
             execution_result = self.executor.execute(
                 code=code,
                 input_files=validated_files,
@@ -237,70 +183,66 @@ class PythonCoderTool:
                 stage_name=stage_name
             )
 
-            execution_attempts.append({
+            attempt_history.append({
                 "attempt": attempt + 1,
-                "success": execution_result["success"],
-                "error": execution_result.get("error"),
+                "self_verified": self_verified,
+                "issues_found": issues,
+                "execution_success": execution_result["success"],
+                "execution_error": execution_result.get("error"),
                 "execution_time": execution_result["execution_time"]
             })
 
-            if execution_result["success"]:
-                logger.info(f"[PythonCoderTool] ✅ Execution succeeded on attempt {attempt + 1}")
-                break
+            # If execution failed, prepare for retry
+            if not execution_result["success"]:
+                logger.error(f"[PythonCoderTool] ❌ Execution failed: {execution_result.get('error', 'Unknown')[:100]}")
+                if attempt < self.max_retry_attempts - 1:
+                    logger.info("[PythonCoderTool] Will retry with error feedback...")
+                    context = self._build_retry_context(context, execution_result.get("error"), issues)
+                    continue
+                else:
+                    logger.error(f"[PythonCoderTool] Max attempts ({self.max_retry_attempts}) reached")
+                    break
 
-            # If failed and not last attempt, try to fix the code
-            if attempt < self.max_execution_attempts - 1:
-                error_message = execution_result.get("error", "Unknown error")
-                logger.error(f"[PythonCoderTool] ❌ Execution failed: {error_message[:100]}")
-                logger.info(f"[PythonCoderTool] Attempting to fix...")
+            # Phase 3: Check output adequacy (1 LLM call, only if execution succeeded)
+            logger.info("[PythonCoderTool] ✅ Execution succeeded, checking output adequacy...")
+            is_adequate, adequacy_reason, suggestion = await self._check_output_adequacy(
+                query=query,
+                code=code,
+                output=execution_result["output"],
+                context=context
+            )
 
-                code, fix_changes = await self.code_fixer.fix_execution_error(
+            if is_adequate:
+                logger.info(f"[PythonCoderTool] ✅ Output is adequate: {adequacy_reason}")
+                # SUCCESS - return result
+                return self._build_success_result(
                     code=code,
-                    query=query,
-                    error_message=error_message,
-                    context=context
+                    execution_result=execution_result,
+                    attempt_history=attempt_history,
+                    modifications=modifications,
+                    validated_files=validated_files,
+                    file_metadata=file_metadata
                 )
-                modifications.extend(fix_changes)
             else:
-                logger.error(f"[PythonCoderTool] ❌ Failed after {self.max_execution_attempts} attempts")
+                # Output not adequate - retry if attempts remain
+                logger.warning(f"[PythonCoderTool] ⚠️  Output not adequate: {adequacy_reason}")
+                if attempt < self.max_retry_attempts - 1:
+                    logger.info(f"[PythonCoderTool] Suggestion: {suggestion}")
+                    context = self._build_retry_context(context, None, [suggestion])
+                    continue
+                else:
+                    logger.warning(f"[PythonCoderTool] Max attempts reached, returning current result")
+                    break
 
-        # Phase 4: Format and return result
-        result = {
-            "success": execution_result["success"],
-            "code": code,
-            "output": execution_result["output"],
-            "error": execution_result.get("error"),
-            "execution_time": execution_result["execution_time"],
-            "verification_iterations": len(verification_history),
-            "execution_attempts": len(execution_attempts),
-            "modifications": modifications,
-            "input_files": list(validated_files.keys()),
-            "file_metadata": file_metadata,
-            "verification_history": verification_history,
-            "execution_attempts_history": execution_attempts
-        }
-
-        # Final summary log
-        logger.header("PYTHON CODER EXECUTION COMPLETE", "heavy")
-
-        summary = {
-            "Status": "SUCCESS" if result['success'] else "FAILED",
-            "Verification Iterations": result['verification_iterations'],
-            "Execution Attempts": result['execution_attempts'],
-            "Code Modifications": len(modifications),
-            "Execution Time": f"{result['execution_time']:.2f}s"
-        }
-
-        if result['success']:
-            summary["Output Length"] = f"{len(result['output'])} chars"
-            logger.key_values(summary, title="Execution Summary")
-            logger.success("Code generation and execution completed successfully")
-        else:
-            summary["Error"] = result.get('error', 'Unknown')[:150]
-            logger.key_values(summary, title="Execution Summary")
-            logger.failure("Code execution failed", result.get('error', 'Unknown')[:100])
-
-        return result
+        # If we get here, all attempts exhausted - return last result
+        return self._build_final_result(
+            code=code,
+            execution_result=execution_result,
+            attempt_history=attempt_history,
+            modifications=modifications,
+            validated_files=validated_files,
+            file_metadata=file_metadata
+        )
 
     def _save_stage_code(
         self,
@@ -438,6 +380,187 @@ class PythonCoderTool:
             logger.info(f"[PythonCoderTool] Validated file: {original_filename} (temp: {path.name}, {size_mb:.2f}MB)")
 
         return validated_files, file_metadata
+
+    async def _generate_code_with_self_verification(
+        self,
+        query: str,
+        context: Optional[str],
+        file_context: str,
+        validated_files: Dict[str, str],
+        file_metadata: Dict[str, Any],
+        is_prestep: bool,
+        has_json_files: bool,
+        attempt_num: int
+    ) -> Tuple[str, bool, List[str]]:
+        """
+        OPTIMIZED: Generate code WITH self-verification in single LLM call.
+
+        Returns:
+            Tuple of (code, self_verified, issues_list)
+        """
+        from backend.config.prompts.python_coder import get_code_generation_with_self_verification_prompt
+        from langchain_core.messages import HumanMessage
+        import json
+
+        prompt = get_code_generation_with_self_verification_prompt(
+            query=query,
+            context=context,
+            file_context=file_context,
+            is_prestep=is_prestep,
+            has_json_files=has_json_files
+        )
+
+        logger.info(f"[PythonCoderTool] Generating code with self-verification (attempt {attempt_num})...")
+
+        try:
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content.strip()
+
+            # Parse JSON response
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+
+            result = json.loads(response_text.strip())
+
+            code = result.get("code", "")
+            self_verified = result.get("self_check_passed", False)
+            issues = result.get("issues", [])
+
+            logger.info(f"[PythonCoderTool] Generated code (self-verified: {self_verified}, issues: {len(issues)})")
+            if issues:
+                for i, issue in enumerate(issues, 1):
+                    logger.warning(f"  Issue {i}: {issue}")
+
+            return code, self_verified, issues
+
+        except Exception as e:
+            logger.error(f"[PythonCoderTool] Failed to generate code with self-verification: {e}")
+            # Fallback: try old method
+            logger.warning("[PythonCoderTool] Falling back to old generation method...")
+            code = await self.code_generator.generate_code(
+                query=query,
+                context=context,
+                validated_files=validated_files,
+                file_metadata=file_metadata,
+                file_context=file_context,
+                is_prestep=is_prestep
+            )
+            return code, False, []
+
+    async def _check_output_adequacy(
+        self,
+        query: str,
+        code: str,
+        output: str,
+        context: Optional[str]
+    ) -> Tuple[bool, str, str]:
+        """
+        OPTIMIZED: Check if code output adequately answers the question.
+
+        Returns:
+            Tuple of (is_adequate, reason, suggestion)
+        """
+        from backend.config.prompts.python_coder import get_output_adequacy_check_prompt
+        from langchain_core.messages import HumanMessage
+        import json
+
+        prompt = get_output_adequacy_check_prompt(
+            query=query,
+            code=code,
+            output=output,
+            context=context
+        )
+
+        try:
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content.strip()
+
+            # Parse JSON response
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+
+            result = json.loads(response_text.strip())
+
+            is_adequate = result.get("adequate", True)  # Default to adequate if parsing fails
+            reason = result.get("reason", "")
+            suggestion = result.get("suggestion", "")
+
+            return is_adequate, reason, suggestion
+
+        except Exception as e:
+            logger.warning(f"[PythonCoderTool] Failed to check output adequacy: {e}")
+            # Default to adequate if check fails
+            return True, "Adequacy check failed, assuming adequate", ""
+
+    def _build_retry_context(
+        self,
+        original_context: Optional[str],
+        error: Optional[str],
+        suggestions: List[str]
+    ) -> str:
+        """Build context for retry attempt with error/suggestion feedback."""
+        parts = []
+
+        if original_context:
+            parts.append(original_context)
+
+        if error:
+            parts.append(f"\n\nPrevious execution error:\n{error}")
+
+        if suggestions:
+            parts.append(f"\n\nSuggestions for improvement:\n" + "\n".join(f"- {s}" for s in suggestions))
+
+        return "\n".join(parts)
+
+    def _build_success_result(
+        self,
+        code: str,
+        execution_result: Dict[str, Any],
+        attempt_history: List[Dict],
+        modifications: List[str],
+        validated_files: Dict[str, str],
+        file_metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Build success result dictionary."""
+        return {
+            "success": True,
+            "code": code,
+            "output": execution_result["output"],
+            "error": None,
+            "execution_time": execution_result["execution_time"],
+            "total_attempts": len(attempt_history),
+            "modifications": modifications,
+            "input_files": list(validated_files.keys()),
+            "file_metadata": file_metadata,
+            "attempt_history": attempt_history
+        }
+
+    def _build_final_result(
+        self,
+        code: str,
+        execution_result: Dict[str, Any],
+        attempt_history: List[Dict],
+        modifications: List[str],
+        validated_files: Dict[str, str],
+        file_metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Build final result dictionary (may be success or failure)."""
+        return {
+            "success": execution_result["success"],
+            "code": code,
+            "output": execution_result.get("output", ""),
+            "error": execution_result.get("error"),
+            "execution_time": execution_result["execution_time"],
+            "total_attempts": len(attempt_history),
+            "modifications": modifications,
+            "input_files": list(validated_files.keys()),
+            "file_metadata": file_metadata,
+            "attempt_history": attempt_history
+        }
 
 
 # ============================================================================

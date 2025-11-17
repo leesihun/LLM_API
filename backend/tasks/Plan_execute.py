@@ -81,7 +81,7 @@ class PlanExecuteTask:
         Returns:
             List of PlanStep objects with structured plan
         """
-        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:200]}...")
+        logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:]}...")
 
         llm = self._get_llm()
 

@@ -370,3 +370,119 @@ Execution error:
 {error_message}
 
 Analyze the error and fix the code. Output ONLY the corrected code, no explanations:"""
+
+
+def get_code_generation_with_self_verification_prompt(
+    query: str,
+    context: Optional[str],
+    file_context: str,
+    is_prestep: bool = False,
+    has_json_files: bool = False
+) -> str:
+    """
+    OPTIMIZED: Combined code generation + self-verification prompt.
+    Generates code AND verifies it in a single LLM call.
+
+    Args:
+        query: User's task
+        context: Optional additional context
+        file_context: File information
+        is_prestep: Whether this is pre-step (fast analysis mode)
+        has_json_files: Whether JSON files are present
+
+    Returns:
+        Prompt that requests JSON response with code and self-check
+    """
+    # Build generation prompt (reuse existing logic)
+    generation_prompt = get_python_code_generation_prompt(
+        query=query,
+        context=context,
+        file_context=file_context,
+        is_prestep=is_prestep,
+        has_json_files=has_json_files
+    )
+
+    # Remove the last line "Generate ONLY the Python code, no explanations or markdown:"
+    generation_lines = generation_prompt.split('\n')
+    generation_prompt_clean = '\n'.join(generation_lines[:-1])
+
+    # Add self-verification instructions
+    verification_instructions = f"""
+
+🔍 SELF-VERIFICATION CHECKLIST (Check your own code before responding):
+1. Does the code directly answer the user's question?
+2. Are ALL filenames HARDCODED (no sys.argv, no input())?
+3. Are filenames EXACT matches from the file list (not generic names)?
+{f"4. Does JSON handling follow safety patterns (.get(), isinstance(), etc.)?" if has_json_files else ""}
+{f"5. Is error handling present for file operations and JSON parsing?" if has_json_files else "4. Is error handling present for file operations?"}
+
+📋 REQUIRED RESPONSE FORMAT (JSON):
+{{
+  "code": "your python code here (as a string)",
+  "self_check_passed": true or false,
+  "issues": ["list of issues found, if any - empty array if no issues"]
+}}
+
+IMPORTANT:
+- Set "self_check_passed": true ONLY if ALL checklist items pass
+- If any issues found, set "self_check_passed": false and list them in "issues"
+- The code should be executable Python (no markdown, no explanations)
+- Be strict with filename checking - this is the #1 cause of failures
+
+Generate code and self-verify. Respond with ONLY the JSON object:"""
+
+    return generation_prompt_clean + verification_instructions
+
+
+def get_output_adequacy_check_prompt(
+    query: str,
+    code: str,
+    output: str,
+    context: Optional[str] = None
+) -> str:
+    """
+    OPTIMIZED: Check if code execution output adequately answers the user's question.
+
+    Args:
+        query: Original user query
+        code: The Python code that was executed
+        output: The output from executing the code
+        context: Optional additional context
+
+    Returns:
+        Prompt for checking output adequacy
+    """
+    return f"""Analyze if this code execution output adequately answers the user's question.
+
+User Question: {query}
+{f"Context: {context}" if context else ""}
+
+Generated Code:
+```python
+{code}
+```
+
+Execution Output:
+```
+{output[:2000]}  # First 2000 chars
+```
+
+🔍 EVALUATION CRITERIA:
+1. Does the output contain the information requested by the user?
+2. Is the output clear and understandable?
+3. Are there any errors or warnings in the output?
+4. Is the output complete (not truncated or missing data)?
+
+📋 REQUIRED RESPONSE FORMAT (JSON):
+{{
+  "adequate": true or false,
+  "reason": "Brief explanation of why adequate or not",
+  "suggestion": "If not adequate, what changes are needed to the code (empty string if adequate)"
+}}
+
+IMPORTANT:
+- Set "adequate": true if output answers the question, even if not perfect
+- Set "adequate": false only if output is clearly wrong, missing, or contains errors
+- Be lenient - if the output provides useful information, consider it adequate
+
+Respond with ONLY the JSON object:"""

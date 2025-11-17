@@ -248,9 +248,8 @@ class PlanExecutor:
         Returns:
             Tuple of (observation, success)
         """
-        # Generate action input for this tool
-        action_input = await self._generate_action_input(
-            tool_name=tool_name,
+        # Use plan step's goal + context directly as action input (no LLM call needed!)
+        action_input = self._build_action_input_from_plan(
             plan_step=plan_step,
             user_query=user_query,
             context=context
@@ -278,27 +277,22 @@ class PlanExecutor:
             steps=None
         )
 
-        # Verify if goal is achieved
-        success = await self.verifier.verify_step_success(
-            plan_step=plan_step,
-            observation=observation,
-            tool_used=tool_name
-        )
+        # Trust tool execution result - no separate verification needed
+        # Success is determined by whether tool produced output without errors
+        success = bool(observation and len(observation.strip()) > 0 and "error" not in observation.lower()[:100])
 
         return observation, success
 
-    async def _generate_action_input(
+    def _build_action_input_from_plan(
         self,
-        tool_name: str,
         plan_step: PlanStep,
         user_query: str,
         context: str
     ) -> str:
         """
-        Generate appropriate input for a tool based on step goal.
+        Build action input directly from plan step (no LLM call needed).
 
         Args:
-            tool_name: Tool to generate input for
             plan_step: Current plan step
             user_query: Original user query
             context: Context from previous steps
@@ -306,16 +300,24 @@ class PlanExecutor:
         Returns:
             Action input string for the tool
         """
-        prompt = PromptRegistry.get('react_action_input_for_step',
-                                     user_query=user_query,
-                                     plan_step_goal=plan_step.goal,
-                                     success_criteria=plan_step.success_criteria,
-                                     plan_step_context=plan_step.context or 'None',
-                                     previous_context=context,
-                                     tool_name=tool_name)
+        # Combine plan step goal + context + step-specific instructions
+        parts = []
 
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        return response.content.strip()
+        # Add original user query for context
+        parts.append(f"User Query: {user_query}")
+
+        # Add step goal (this is the main instruction)
+        parts.append(f"\nTask for this step: {plan_step.goal}")
+
+        # Add step-specific context/instructions if available
+        if plan_step.context:
+            parts.append(f"\nInstructions: {plan_step.context}")
+
+        # Add context from previous steps
+        if context and context.strip() != "This is the first step.":
+            parts.append(f"\nPrevious step results:\n{context}")
+
+        return "\n".join(parts)
 
     async def _generate_final_answer_from_steps(
         self,
