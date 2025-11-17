@@ -64,7 +64,7 @@ def should_auto_finish(observation: str, step_num: int) -> bool:
 
     if should_finish:
         logger.info("")
-        logger.info("⚡ EARLY EXIT: Observation contains complete answer")
+        logger.info("[EARLY EXIT] Observation contains complete answer")
         logger.info("")
 
     return should_finish

@@ -76,12 +76,12 @@ class StepVerifier:
         # Heuristic 3: Has answer keywords - DO finish
         answer_keywords = ['answer is', 'result is', 'found that', 'shows that', 'indicates']
         if any(keyword in observation_lower for keyword in answer_keywords):
-            logger.info("⚡ EARLY EXIT: Observation contains answer keywords")
+            logger.info("[EARLY EXIT] Observation contains answer keywords")
             return True
 
         # Heuristic 3b: Very long observation (> 500 chars) with data - probably complete
         if len(observation) > 500:
-            logger.info("⚡ EARLY EXIT: Observation is substantial (> 500 chars)")
+            logger.info("[EARLY EXIT] Observation is substantial (> 500 chars)")
             return True
 
         return False

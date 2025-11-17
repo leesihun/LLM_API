@@ -30,6 +30,8 @@ def get_python_code_generation_prompt(
             "You are a Python code generator in FAST PRE-ANALYSIS MODE.",
             "Your goal is to quickly analyze the attached files and provide an immediate answer to the user's question.",
             "",
+            "IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.",
+            "",
             f"Task: {query}",
             "",
             file_context,
@@ -42,15 +44,15 @@ def get_python_code_generation_prompt(
 
         if file_context:
             prompt_parts.extend([
-                "🚨 CRITICAL: Use the EXACT filenames shown in the file list above",
-                "🚨 DO NOT use generic names like 'file.json', 'data.csv', 'input.json', etc.",
-                "🚨 COPY the actual filename from the list - character by character",
+                "[!!!] CRITICAL: Use the EXACT filenames shown in the file list above",
+                "[!!!] DO NOT use generic names like 'file.json', 'data.csv', 'input.json', etc.",
+                "[!!!] COPY the actual filename from the list - character by character",
                 "- NEVER makeup data, ALWAYS use the real files provided"
             ])
 
         prompt_parts.extend([
             "",
-            "🚨 EXECUTION ENVIRONMENT (CRITICAL - READ CAREFULLY):",
+            "[!!!] EXECUTION ENVIRONMENT (CRITICAL - READ CAREFULLY):",
             "- Code will be executed via subprocess WITHOUT command-line arguments",
             "- DO NOT use sys.argv - it will be empty (only script name)",
             "- DO NOT use input() - this is non-interactive execution",
@@ -58,15 +60,15 @@ def get_python_code_generation_prompt(
             "- Files are in the current working directory - use filenames directly",
             "- If you create functions, call them with HARDCODED filenames in main code",
             "",
-            "❌ FORBIDDEN PATTERNS:",
+            "[X] FORBIDDEN PATTERNS:",
             "  if __name__ == '__main__':",
             "      import sys",
             "      if len(sys.argv) > 1:",
-            "          main(sys.argv[1])  # ❌ WRONG - no arguments available!",
+            "          main(sys.argv[1])  # [X] WRONG - no arguments available!",
             "",
-            "✅ CORRECT PATTERN:",
+            "[OK] CORRECT PATTERN:",
             "  if __name__ == '__main__':",
-            "      main('complex_json.json')  # ✅ CORRECT - hardcoded filename",
+            "      main('complex_json.json')  # [OK] CORRECT - hardcoded filename",
             "",
             "- Output results using print() statements with clear labels",
             "- Include basic error handling (try/except)",
@@ -84,7 +86,7 @@ def get_python_code_generation_prompt(
                 "",
                 "JSON FILE HANDLING (CRITICAL - READ CAREFULLY):",
                 "1. ALWAYS use: with open('EXACT_FILENAME_FROM_LIST.json', 'r', encoding='utf-8') as f: data = json.load(f)",
-                "   🚨 Replace 'EXACT_FILENAME_FROM_LIST.json' with the ACTUAL filename from the file list above!",
+                "   [!!!] Replace 'EXACT_FILENAME_FROM_LIST.json' with the ACTUAL filename from the file list above!",
                 "2. Wrap in try/except json.JSONDecodeError for error handling",
                 "3. Check structure type FIRST: isinstance(data, dict) or isinstance(data, list)",
                 "4. Use .get() method for dict access: data.get('key', default) NEVER data['key']",
@@ -104,6 +106,8 @@ def get_python_code_generation_prompt(
         prompt_parts = [
             "You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:",
             "",
+            "IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.",
+            "",
             f"Task: {query}",
             ""
         ]
@@ -118,16 +122,16 @@ def get_python_code_generation_prompt(
 
         if file_context:
             prompt_parts.extend([
-                "🚨 CRITICAL: Use the EXACT filenames shown in the file list above",
-                "🚨 DO NOT use generic names like 'file.json', 'data.csv', 'input.xlsx', 'output.txt', etc.",
-                "🚨 COPY the actual filename from the list - including ALL special characters, numbers, Korean text",
+                "[!!!] CRITICAL: Use the EXACT filenames shown in the file list above",
+                "[!!!] DO NOT use generic names like 'file.json', 'data.csv', 'input.xlsx', 'output.txt', etc.",
+                "[!!!] COPY the actual filename from the list - including ALL special characters, numbers, Korean text",
                 "- Never add raw data to the code, always use the actual filenames to read the data",
                 "- Always use the real data. NEVER makeup data and ask user to input data."
             ])
 
         prompt_parts.extend([
             "",
-            "🚨 EXECUTION ENVIRONMENT (CRITICAL - READ CAREFULLY):",
+            "[!!!] EXECUTION ENVIRONMENT (CRITICAL - READ CAREFULLY):",
             "- Code will be executed via subprocess WITHOUT command-line arguments",
             "- DO NOT use sys.argv - it will be empty (only script name)",
             "- DO NOT use input() - this is non-interactive execution",
@@ -135,16 +139,16 @@ def get_python_code_generation_prompt(
             "- Files are in the current working directory - use filenames directly",
             "- If you create functions, call them with HARDCODED filenames in main code",
             "",
-            "❌ FORBIDDEN PATTERNS:",
+            "[X] FORBIDDEN PATTERNS:",
             "  if __name__ == '__main__':",
             "      import sys",
             "      if len(sys.argv) > 1:",
-            "          main(sys.argv[1])  # ❌ WRONG - no arguments available!",
+            "          main(sys.argv[1])  # [X] WRONG - no arguments available!",
             "",
-            "✅ CORRECT PATTERN:",
+            "[OK] CORRECT PATTERN:",
             "  if __name__ == '__main__':",
             "      filename = 'data.json'  # Use actual filename from file list",
-            "      main(filename)  # ✅ CORRECT - hardcoded filename",
+            "      main(filename)  # [OK] CORRECT - hardcoded filename",
             "",
             "- Output results using print() statements",
             "- Include error handling (try/except)",
@@ -157,15 +161,15 @@ def get_python_code_generation_prompt(
                 "",
                 "JSON FILE REQUIREMENTS (STRICT - FOLLOW EXACTLY):",
                 "1. File loading: with open('EXACT_FILENAME_FROM_LIST.json', 'r', encoding='utf-8') as f: data = json.load(f)",
-                "   🚨 Replace 'EXACT_FILENAME_FROM_LIST.json' with the ACTUAL filename from the file list!",
-                "   🚨 DO NOT use 'file.json', 'data.json', 'input.json' - use the REAL name!",
+                "   [!!!] Replace 'EXACT_FILENAME_FROM_LIST.json' with the ACTUAL filename from the file list!",
+                "   [!!!] DO NOT use 'file.json', 'data.json', 'input.json' - use the REAL name!",
                 "2. Error handling: Wrap in try/except json.JSONDecodeError",
                 "3. Type validation: Check isinstance(data, dict) or isinstance(data, list) BEFORE accessing",
                 "4. Safe dict access: ALWAYS use data.get('key', default) NEVER data['key']",
-                "5. Key validation: ONLY use keys from \"📋 Access Patterns\" section - NO guessing or making up keys",
+                "5. Key validation: ONLY use keys from \"[PATTERNS] Access Patterns\" section - NO guessing or making up keys",
                 "6. Nested access: Use chained .get(): data.get('parent', {}).get('child', default)",
                 "7. Array safety: Check length before indexing: if len(data) > 0: item = data[0]",
-                "8. Copy patterns: The \"📋 Access Patterns\" are pre-validated - copy them exactly",
+                "8. Copy patterns: The \"[PATTERNS] Access Patterns\" are pre-validated - copy them exactly",
                 "9. Null handling: Check if value is not None before using",
                 "10. Debugging: Print data structure first: print(\"Type:\", type(data), \"Keys:\", list(data.keys()) if isinstance(data, dict) else len(data))"
             ])
@@ -195,7 +199,9 @@ def get_python_code_verification_prompt(
     prompt_parts = [
         "You are a STRICT Python code verifier. Your job is to identify ANY potential errors or issues in the code.",
         "",
-        "🚨 VERIFICATION MODE: Find problems that could cause execution failures or incorrect results.",
+        "IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.",
+        "",
+        "[!!!] VERIFICATION MODE: Find problems that could cause execution failures or incorrect results.",
         "",
         f"User Question: {query}",
         ""
@@ -213,20 +219,20 @@ def get_python_code_verification_prompt(
         code,
         "```",
         "",
-        "🔍 CRITICAL VERIFICATION CHECKLIST:",
+        "[CHECK] CRITICAL VERIFICATION CHECKLIST:",
         "",
-        "1️⃣ LOGIC & CORRECTNESS:",
+        "[1] LOGIC & CORRECTNESS:",
         "   - Does the code address the user's specific question?",
         "   - Will it produce the expected output?",
         "   - Are calculations/operations logically correct?",
         "",
-        "2️⃣ SYNTAX & RUNTIME ERRORS:",
+        "[2] SYNTAX & RUNTIME ERRORS:",
         "   - Any syntax errors (missing colons, parentheses, quotes)?",
         "   - Undefined variables or functions?",
         "   - Import statements correct?",
         "   - Blocked/dangerous modules (socket, subprocess, eval, exec)?",
         "",
-        "3️⃣ ERROR HANDLING:",
+        "[3] ERROR HANDLING:",
         "   - Try/except blocks present where needed?",
         "   - File operations wrapped in error handling?",
         "   - Division by zero checks if applicable?",
@@ -235,7 +241,7 @@ def get_python_code_verification_prompt(
 
     if file_context:
         prompt_parts.extend([
-            "4️⃣ FILE HANDLING:",
+            "[4] FILE HANDLING:",
             "   - Uses EXACT filenames from the file list?",
             "   - NO generic names like 'file.json', 'data.csv', 'input.xlsx'?",
             "   - File paths are strings, properly quoted?",
@@ -246,53 +252,53 @@ def get_python_code_verification_prompt(
 
     if has_json_files:
         prompt_parts.extend([
-            "5️⃣ JSON FILE HANDLING (CRITICAL):",
+            "[5] JSON FILE HANDLING (CRITICAL):",
             "   - Uses EXACT JSON filename from file list (NOT 'file.json', 'data.json')?",
             "   - Has isinstance() check for data structure validation?",
             "   - Uses .get() for dict access (NEVER data['key'])?",
             "   - Checks for None/null values before nested access?",
-            "   - ONLY uses keys from \"📋 Access Patterns\" (NO guessing keys)?",
+            "   - ONLY uses keys from \"[PATTERNS] Access Patterns\" (NO guessing keys)?",
             "   - Arrays checked with len() before indexing?",
-            "   - Follows the \"📋 Access Patterns\" exactly?",
+            "   - Follows the \"[PATTERNS] Access Patterns\" exactly?",
             "   - Has json.JSONDecodeError handling?",
             ""
         ])
 
     prompt_parts.extend([
-        "6️⃣ EXECUTION COMPATIBILITY (CRITICAL - MUST CATCH THESE!):",
-        "   - ❌ Does code use sys.argv? (FORBIDDEN - no command-line arguments available!)",
-        "   - ❌ Does code check len(sys.argv) or access sys.argv[1], sys.argv[2], etc.?",
-        "   - ❌ Does code use input() for user interaction? (FORBIDDEN - non-interactive)",
-        "   - ❌ Does code print 'Usage:' messages expecting command-line args?",
-        "   - ✅ Are ALL filenames HARDCODED in the code?",
-        "   - ✅ If main() or other functions are called, are filenames passed as HARDCODED strings?",
-        "   - ✅ Does code run standalone without any external input or arguments?",
+        "[6] EXECUTION COMPATIBILITY (CRITICAL - MUST CATCH THESE!):",
+        "   - [X] Does code use sys.argv? (FORBIDDEN - no command-line arguments available!)",
+        "   - [X] Does code check len(sys.argv) or access sys.argv[1], sys.argv[2], etc.?",
+        "   - [X] Does code use input() for user interaction? (FORBIDDEN - non-interactive)",
+        "   - [X] Does code print 'Usage:' messages expecting command-line args?",
+        "   - [OK] Are ALL filenames HARDCODED in the code?",
+        "   - [OK] If main() or other functions are called, are filenames passed as HARDCODED strings?",
+        "   - [OK] Does code run standalone without any external input or arguments?",
         "",
-        "   🚨 COMMON BAD PATTERNS TO FLAG:",
+        "   [!!!] COMMON BAD PATTERNS TO FLAG:",
         "   - if len(sys.argv) > 1: ... (MUST FLAG THIS!)",
         "   - main(sys.argv[1]) (MUST FLAG THIS!)",
         "   - filename = sys.argv[1] if len(sys.argv) > 1 else 'default.json' (MUST FLAG THIS!)",
         "   - parser = argparse.ArgumentParser() (MUST FLAG THIS!)",
         "   - input('Enter filename:') (MUST FLAG THIS!)",
         "",
-        "🚨 ERROR DETECTION PRIORITY:",
+        "[!!!] ERROR DETECTION PRIORITY:",
         "- Your primary goal is to find potential ERRORS (not style issues)",
         "- Focus on issues that will cause EXECUTION FAILURES or WRONG RESULTS",
         "- Be STRICT - even small issues can cause failures",
         "- If uncertain about filename correctness, mark it as an issue",
         "- ESPECIALLY check for sys.argv usage - this is the #1 failure cause",
         "",
-        "📋 RESPONSE FORMAT:",
+        "[RESPONSE FORMAT]:",
         'Return a JSON object: {"verified": true/false, "issues": ["issue1", "issue2", ...]}',
         "",
-        '✅ Return {"verified": true, "issues": []} ONLY IF:',
+        '[OK] Return {"verified": true, "issues": []} ONLY IF:',
         "   - Code is 100% correct and will execute without errors",
         "   - All filenames are exact matches from the file list",
         "   - All filenames are HARDCODED (no sys.argv, no input())",
         "   - All required safety checks are present",
         f"{'   - All JSON safety patterns are followed' if has_json_files else ''}",
         "",
-        '❌ Return {"verified": false, "issues": [...]} IF:',
+        '[X] Return {"verified": false, "issues": [...]} IF:',
         "   - ANY potential error detected (syntax, runtime, logic)",
         "   - Uses sys.argv or input() (CRITICAL ERROR)",
         "   - Filenames don't match EXACTLY",
@@ -301,7 +307,7 @@ def get_python_code_verification_prompt(
         "   - Unsafe data access patterns",
         f"{'   - JSON access patterns not followed' if has_json_files else ''}",
         "",
-        "⚠️  BE THOROUGH: It's better to flag a potential issue than miss a real error.",
+        "[WARNING] BE THOROUGH: It's better to flag a potential issue than miss a real error.",
         ""
     ])
 
@@ -325,6 +331,8 @@ def get_python_code_modification_prompt(
         issues: List of issues to fix
     """
     return f"""Fix the following Python code to address these issues:
+
+IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Original request: {query}
 {f"Context: {context}" if context else ""}
@@ -357,6 +365,8 @@ def get_python_code_execution_fix_prompt(
         error_message: Error from execution
     """
     return f"""Fix the following Python code that failed during execution:
+
+IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Original request: {query}
 {f"Context: {context}" if context else ""}
@@ -409,14 +419,14 @@ def get_code_generation_with_self_verification_prompt(
     # Add self-verification instructions
     verification_instructions = f"""
 
-🔍 SELF-VERIFICATION CHECKLIST (Check your own code before responding):
+[CHECK] SELF-VERIFICATION CHECKLIST (Check your own code before responding):
 1. Does the code directly answer the user's question?
 2. Are ALL filenames HARDCODED (no sys.argv, no input())?
 3. Are filenames EXACT matches from the file list (not generic names)?
 {f"4. Does JSON handling follow safety patterns (.get(), isinstance(), etc.)?" if has_json_files else ""}
 {f"5. Is error handling present for file operations and JSON parsing?" if has_json_files else "4. Is error handling present for file operations?"}
 
-📋 REQUIRED RESPONSE FORMAT (JSON):
+[RESPONSE FORMAT] REQUIRED RESPONSE FORMAT (JSON):
 {{
   "code": "your python code here (as a string)",
   "self_check_passed": true or false,
@@ -454,6 +464,8 @@ def get_output_adequacy_check_prompt(
     """
     return f"""Analyze if this code execution output adequately answers the user's question.
 
+IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
+
 User Question: {query}
 {f"Context: {context}" if context else ""}
 
@@ -467,13 +479,13 @@ Execution Output:
 {output[:2000]}  # First 2000 chars
 ```
 
-🔍 EVALUATION CRITERIA:
+[CHECK] EVALUATION CRITERIA:
 1. Does the output contain the information requested by the user?
 2. Is the output clear and understandable?
 3. Are there any errors or warnings in the output?
 4. Is the output complete (not truncated or missing data)?
 
-📋 REQUIRED RESPONSE FORMAT (JSON):
+[RESPONSE FORMAT] REQUIRED RESPONSE FORMAT (JSON):
 {{
   "adequate": true or false,
   "reason": "Brief explanation of why adequate or not",

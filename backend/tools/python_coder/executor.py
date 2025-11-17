@@ -73,8 +73,6 @@ class PersistentREPL:
                 stderr=subprocess.PIPE,
                 cwd=str(self.execution_dir),
                 text=True,
-                encoding='utf-8',
-                errors='replace',  # Replace unencodable characters instead of crashing
                 bufsize=0  # Unbuffered
             )
 
@@ -543,7 +541,7 @@ class CodeExecutor:
         try:
             # Get or create REPL for this session
             if session_id not in self._repls:
-                logger.info(f"[CodeExecutor] 🚀 Starting persistent REPL for session {session_id[:8]}")
+                logger.info(f"[CodeExecutor] [STARTING] Starting persistent REPL for session {session_id[:8]}")
                 repl = PersistentREPL(execution_dir, timeout=self.timeout)
                 if repl.start():
                     self._repls[session_id] = repl
@@ -554,7 +552,7 @@ class CodeExecutor:
             repl = self._repls[session_id]
 
             # Execute in REPL
-            logger.info("[CodeExecutor] ⚡ Executing in persistent REPL (fast mode)")
+            logger.info("[CodeExecutor] [FAST] Executing in persistent REPL (fast mode)")
             result = repl.execute(code)
 
             # Log execution result (same as subprocess)
@@ -591,16 +589,14 @@ class CodeExecutor:
         script_path = execution_dir / "script.py"
 
         try:
-            logger.info("[CodeExecutor] 🐢 Executing in subprocess mode")
+            logger.info("[CodeExecutor] [SLOW] Executing in subprocess mode")
             start_time = time.time()
             result = subprocess.run(
                 [sys.executable, str(script_path)],
                 capture_output=True,
                 timeout=self.timeout,
                 cwd=str(execution_dir),
-                text=True,
-                encoding='utf-8',
-                errors='replace'  # Replace unencodable characters instead of crashing
+                text=True
             )
             execution_time = time.time() - start_time
 
