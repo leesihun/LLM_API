@@ -77,10 +77,11 @@ class JSONFileHandler(BaseFileHandler):
                     keys_str += '...'
                 lines.append(f"   Available keys: {keys_str}")
 
-        # Access patterns
+        # Access patterns - SHOW MORE to help LLM understand nested structure
         if metadata.get('access_patterns'):
-            lines.append("   Recommended access:")
-            for pattern in metadata['access_patterns'][:3]:
+            lines.append("   Recommended access patterns (deep structure):")
+            # Show up to 12 patterns (was 3) to reveal full nesting
+            for pattern in metadata['access_patterns'][:12]:
                 lines.append(f"     - {pattern}")
 
         # Null check
@@ -117,39 +118,64 @@ class JSONFileHandler(BaseFileHandler):
                 'value': str(data)[:100]
             }
 
-    def _generate_access_patterns(self, data: Any, max_patterns: int = 5) -> List[str]:
-        """Generate recommended access patterns for the JSON data."""
+    def _generate_access_patterns(self, data: Any, max_patterns: int = 15) -> List[str]:
+        """
+        Generate recommended access patterns for the JSON data.
+
+        IMPROVED: Now recursively explores nested structures up to 4-5 levels deep
+        to help LLM understand the full data hierarchy and avoid accessing
+        fields at wrong nesting levels.
+
+        This is critical for complex JSON with nested arrays/objects (e.g.,
+        departments[i].sales[j].revenue) where the LLM needs to see the full path.
+        """
         patterns = []
 
-        if isinstance(data, dict):
-            # Top-level keys
-            for key in list(data.keys())[:max_patterns]:
-                patterns.append(f"data['{key}']")
+        def explore_structure(obj: Any, path: str, depth: int = 0, max_depth: int = 5):
+            """Recursively explore structure and collect access patterns."""
+            if depth > max_depth or len(patterns) >= max_patterns:
+                return
 
-            # Nested patterns
-            for key, value in list(data.items())[:3]:
-                if isinstance(value, dict) and value:
-                    nested_key = list(value.keys())[0]
-                    patterns.append(f"data['{key}']['{nested_key}']")
-                elif isinstance(value, list) and value:
-                    patterns.append(f"data['{key}'][0]")
+            # Add current path (skip empty root path)
+            if path and path not in patterns:
+                patterns.append(path)
 
-        elif isinstance(data, list) and data:
-            patterns.append("data[0]")
-            if isinstance(data[0], dict):
-                for key in list(data[0].keys())[:max_patterns - 1]:
-                    patterns.append(f"data[0]['{key}']")
+            # Explore nested structures
+            if isinstance(obj, dict):
+                for key, value in list(obj.items())[:5]:  # Explore first 5 keys
+                    new_path = f"{path}['{key}']" if path else f"data['{key}']"
+                    explore_structure(value, new_path, depth + 1, max_depth)
+
+            elif isinstance(obj, list) and len(obj) > 0:
+                # Show array access pattern
+                array_path = f"{path}[0]" if path else "data[0]"
+                # Continue exploring inside the array item
+                explore_structure(obj[0], array_path, depth + 1, max_depth)
+
+        # Start exploration (depth=0 is root, max_depth=5 allows deep nesting)
+        explore_structure(data, "", depth=0, max_depth=5)
+
+        # Ensure we have at least top-level patterns
+        if not patterns and isinstance(data, dict):
+            patterns = [f"data['{key}']" for key in list(data.keys())[:max_patterns]]
+        elif not patterns and isinstance(data, list) and data:
+            patterns = ["data[0]"]
 
         return patterns[:max_patterns]
 
     def _create_safe_preview(
         self,
         data: Any,
-        max_depth: int = 2,
+        max_depth: int = 4,  # IMPROVED: Increased from 2 to 4 to show deeper nesting
         max_items: int = 3,
-        max_size: int = 1000
+        max_size: int = 2000  # IMPROVED: Increased from 1000 to 2000 for more context
     ) -> Any:
-        """Create a safe preview of JSON data with size limits."""
+        """
+        Create a safe preview of JSON data with size limits.
+
+        IMPROVED: Increased max_depth from 2 to 4 and max_size from 1000 to 2000
+        to provide LLM with better visibility into nested structures.
+        """
         # Check total size
         preview_str = str(data)
         if len(preview_str) > max_size:
