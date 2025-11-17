@@ -63,7 +63,8 @@ class PythonCoderTool:
         self.executor = CodeExecutor(
             timeout=settings.python_code_timeout,
             max_memory_mb=settings.python_code_max_memory,
-            execution_base_dir=settings.python_code_execution_dir
+            execution_base_dir=settings.python_code_execution_dir,
+            use_persistent_repl=settings.python_code_use_persistent_repl
         )
 
         # Initialize all sub-components

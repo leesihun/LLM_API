@@ -74,6 +74,7 @@ class LLMFactory:
             "num_ctx": num_ctx or settings.ollama_num_ctx,
             "top_p": top_p if top_p is not None else settings.ollama_top_p,
             "top_k": top_k if top_k is not None else settings.ollama_top_k,
+            "keep_alive": "60m",  # Keep model loaded in VRAM for 60 minutes
         }
 
         # Add timeout if specified (convert to seconds)

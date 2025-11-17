@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     # Maximum input file size (MB) for code execution
     python_code_max_file_size: int = 500
 
+    # Use persistent REPL for faster retry execution (EXPERIMENTAL)
+    python_code_use_persistent_repl: bool = True
+
     model_config = SettingsConfigDict(
         # DO NOT read from system environment variables - only use defaults from this file
         env_prefix='NONEXISTENT_PREFIX_',  # Ignore all env vars
