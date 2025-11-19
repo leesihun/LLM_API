@@ -527,6 +527,9 @@ class PythonCoderTool:
         file_metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Build success result dictionary."""
+        # Extract namespace from execution result
+        namespace = execution_result.get("namespace", {})
+        
         return {
             "success": True,
             "code": code,
@@ -537,7 +540,8 @@ class PythonCoderTool:
             "modifications": modifications,
             "input_files": list(validated_files.keys()),
             "file_metadata": file_metadata,
-            "attempt_history": attempt_history
+            "attempt_history": attempt_history,
+            "namespace": namespace  # Add namespace to result
         }
 
     def _build_final_result(
@@ -550,6 +554,9 @@ class PythonCoderTool:
         file_metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Build final result dictionary (may be success or failure)."""
+        # Extract namespace from execution result
+        namespace = execution_result.get("namespace", {})
+        
         return {
             "success": execution_result["success"],
             "code": code,
@@ -560,7 +567,8 @@ class PythonCoderTool:
             "modifications": modifications,
             "input_files": list(validated_files.keys()),
             "file_metadata": file_metadata,
-            "attempt_history": attempt_history
+            "attempt_history": attempt_history,
+            "namespace": namespace  # Add namespace to result
         }
 
 

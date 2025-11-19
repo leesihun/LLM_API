@@ -109,6 +109,7 @@ class PersistentREPL:
 import sys
 import traceback
 import io
+import json
 
 # Force UTF-8 encoding for stdout/stderr (fixes Windows cp949 codec errors)
 if sys.platform == 'win32':
@@ -118,6 +119,55 @@ if sys.platform == 'win32':
 
 # Signal ready
 print("<<<REPL_READY>>>", flush=True)
+
+def _extract_namespace_info(namespace):
+    """Extract variable information from namespace."""
+    info = {}
+    for name, value in namespace.items():
+        # Skip private and built-in variables
+        if name.startswith('_'):
+            continue
+        
+        # Get type information
+        var_type = type(value).__name__
+        var_module = type(value).__module__
+        
+        # Skip modules and callables
+        if var_module == 'builtins' and var_type == 'module':
+            continue
+        if callable(value) and not isinstance(value, type):
+            continue
+        
+        # Build type info
+        full_type = f"{var_module}.{var_type}" if var_module != "builtins" else var_type
+        
+        # Get additional metadata based on type
+        meta = {"type": full_type}
+        
+        try:
+            # Check for pandas DataFrame
+            if var_type == 'DataFrame' and 'pandas' in var_module:
+                meta["shape"] = list(value.shape)
+                meta["columns"] = list(value.columns)
+            # Check for numpy array
+            elif var_type == 'ndarray' and 'numpy' in var_module:
+                meta["shape"] = list(value.shape)
+                meta["dtype"] = str(value.dtype)
+            # Check for dict
+            elif var_type == 'dict':
+                meta["keys"] = list(value.keys())[:10]
+            # Check for list
+            elif var_type == 'list':
+                meta["length"] = len(value)
+            # Simple types
+            elif var_type in ['int', 'float', 'str', 'bool']:
+                meta["value"] = str(value)[:100]
+        except Exception:
+            pass
+        
+        info[name] = meta
+    
+    return info
 
 # Main REPL loop
 while True:
@@ -152,9 +202,19 @@ while True:
             stdout_val = sys.stdout.getvalue()
             stderr_val = sys.stderr.getvalue()
 
+            # Extract namespace information
+            namespace_info = _extract_namespace_info(namespace)
+
             # Signal success
             print("<<<EXEC_SUCCESS>>>", file=old_stdout, flush=True)
             print(stdout_val, file=old_stdout, end="", flush=True)
+            
+            # Send namespace info
+            if namespace_info:
+                print("<<<NAMESPACE_START>>>", file=old_stdout, flush=True)
+                print(json.dumps(namespace_info), file=old_stdout, flush=True)
+                print("<<<NAMESPACE_END>>>", file=old_stdout, flush=True)
+            
             print("<<<EXEC_END>>>", file=old_stdout, flush=True)
 
             if stderr_val:
@@ -272,10 +332,15 @@ while True:
 
     def _wait_for_result(self, timeout: float) -> Dict[str, Any]:
         """Wait for execution result from REPL."""
+        import json
+        
         start_time = time.time()
         output_lines = []
         error_lines = []
         success = None
+        namespace_info = {}
+        in_namespace = False
+        namespace_lines = []
 
         while time.time() - start_time < timeout:
             try:
@@ -287,12 +352,24 @@ while True:
                         success = True
                     elif "<<<EXEC_ERROR>>>" in line:
                         success = False
+                    elif "<<<NAMESPACE_START>>>" in line:
+                        in_namespace = True
+                    elif "<<<NAMESPACE_END>>>" in line:
+                        in_namespace = False
+                        # Parse namespace JSON
+                        try:
+                            namespace_json = "".join(namespace_lines)
+                            namespace_info = json.loads(namespace_json)
+                        except Exception as e:
+                            logger.warning(f"[PersistentREPL] Failed to parse namespace: {e}")
+                        namespace_lines = []
                     elif "<<<EXEC_END>>>" in line:
                         # Execution finished
                         return {
                             "success": success if success is not None else False,
                             "output": "".join(output_lines),
-                            "error": "".join(error_lines) if not success else None
+                            "error": "".join(error_lines) if not success else None,
+                            "namespace": namespace_info
                         }
                     elif "<<<REPL_ERROR>>>" in line:
                         # REPL itself crashed
@@ -300,10 +377,15 @@ while True:
                         return {
                             "success": False,
                             "output": "",
-                            "error": f"REPL crashed: {line}"
+                            "error": f"REPL crashed: {line}",
+                            "namespace": {}
                         }
                     else:
-                        output_lines.append(line)
+                        # Collect lines
+                        if in_namespace:
+                            namespace_lines.append(line)
+                        else:
+                            output_lines.append(line)
                 except queue.Empty:
                     pass
 
@@ -323,7 +405,8 @@ while True:
         return {
             "success": False,
             "output": "".join(output_lines),
-            "error": f"Execution timeout after {timeout} seconds"
+            "error": f"Execution timeout after {timeout} seconds",
+            "namespace": {}
         }
 
     def _clear_queues(self):
@@ -624,7 +707,8 @@ class CodeExecutor:
                 "output": result.stdout,
                 "error": result.stderr if result.returncode != 0 else None,
                 "execution_time": execution_time,
-                "return_code": result.returncode
+                "return_code": result.returncode,
+                "namespace": {}  # Subprocess mode doesn't capture namespace
             }
 
             # Log execution result

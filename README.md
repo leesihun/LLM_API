@@ -216,6 +216,66 @@ The system can generate and execute Python code safely:
 
 ---
 
+### Version 1.3.0 (November 19, 2024)
+
+**Feature: Session Notepad & Variable Persistence**
+
+Implemented an automatic session memory system that maintains continuity across ReAct agent executions within the same session.
+
+**New Components:**
+- `backend/tools/notepad.py` - SessionNotepad class for persistent memory storage
+- `backend/tools/python_coder/variable_storage.py` - Type-specific variable serialization
+
+**Key Features:**
+1. **Automatic Notepad Generation**: After each ReAct execution, the LLM analyzes what was accomplished and creates a structured notepad entry
+2. **Variable Persistence**: Variables from successful code executions are automatically saved with type-specific serialization:
+   - DataFrames → Parquet format
+   - NumPy arrays → .npy files
+   - Simple types → JSON
+   - Matplotlib figures → PNG images
+3. **Context Auto-Injection**: All notepad entries and variable metadata are automatically injected into subsequent executions within the same session
+4. **Namespace Capture**: Enhanced REPL mode now captures execution namespace and returns variable metadata
+
+**Modified Files:**
+- `backend/tools/python_coder/executor.py` - Added namespace capture in REPL bootstrap
+- `backend/tools/python_coder/orchestrator.py` - Added namespace to success/final results
+- `backend/tasks/react/agent.py` - Added post-execution hook and notepad loading
+- `backend/tasks/react/context_manager.py` - Added notepad context injection
+- `backend/config/prompts/react_agent.py` - Added notepad entry generation prompt
+
+**Storage Structure:**
+```
+./data/scratch/{session_id}/
+├── notepad.json                 # Session memory entries
+├── {task}_{timestamp}.py        # Saved code files with descriptive names
+└── variables/                   # Persisted variables
+    ├── variables_metadata.json  # Variable catalog with load instructions
+    ├── df_*.parquet            # DataFrames
+    ├── *.json                  # Simple types
+    └── *.npy                   # NumPy arrays
+```
+
+**Benefits:**
+- Seamless session continuity - agent remembers previous work
+- Efficient data reuse - no need to recompute variables
+- Explicit variable loading - agent sees what's available and writes code to load when needed
+- Safe serialization - no pickle, uses native formats
+- Task-based organization - code and variables organized by descriptive task names
+
+**Example Flow:**
+1. User: "Analyze the warpage data"
+   - Agent executes code, creates `df_warpage` and `stats_summary`
+   - System automatically saves code as `data_analysis_20241119.py`
+   - Variables saved: `df_warpage.parquet`, `stats_summary.json`
+   - Notepad entry created with task summary
+
+2. User: "Create a heatmap visualization"
+   - System injects notepad context showing available code and variables
+   - Agent sees `df_warpage` is available and writes code to load it
+   - New visualization code builds on previous work
+
+---
+
 ### Version 1.1.0 (Previous)
 - Multi-agent architecture implementation
 - ReAct pattern for reasoning and acting
@@ -297,6 +357,6 @@ jupyter notebook API_examples.ipynb
 
 ---
 
-**Last Updated**: October 31, 2024
-**Version**: 1.2.0
+**Last Updated**: November 19, 2024
+**Version**: 1.3.0
 

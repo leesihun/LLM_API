@@ -36,6 +36,19 @@ class ContextManager:
             session_id: Optional session ID for code history retrieval
         """
         self.session_id = session_id
+        self.notepad = None
+        self.variable_metadata = None
+
+    def set_notepad(self, notepad, variable_metadata: Optional[dict] = None):
+        """
+        Set notepad and variable metadata for context injection.
+
+        Args:
+            notepad: SessionNotepad instance
+            variable_metadata: Optional variable metadata dictionary
+        """
+        self.notepad = notepad
+        self.variable_metadata = variable_metadata
 
     def build_tool_context(self, steps: List[ReActStep]) -> str:
         """
@@ -52,15 +65,26 @@ class ContextManager:
         Returns:
             Formatted context string for LLM consumption
         """
+        context_parts = []
+
+        # Inject notepad context at the top
+        notepad_context = self._build_notepad_context()
+        if notepad_context:
+            context_parts.append(notepad_context)
+            context_parts.append("")  # Blank line separator
+
+        # Build step history context
         if not steps:
-            return ""
+            return "\n".join(context_parts) if context_parts else ""
 
         # If few steps, return all details
         if len(steps) <= 3:
-            return self._format_all_steps(steps)
+            context_parts.append(self._format_all_steps(steps))
+        else:
+            # Context pruning: summary + recent steps
+            context_parts.append(self._format_pruned_steps(steps))
 
-        # Context pruning: summary + recent steps
-        return self._format_pruned_steps(steps)
+        return "\n".join(context_parts)
 
     def prune_context(self, steps: List[ReActStep], keep_last_n: int = 3) -> List[ReActStep]:
         """
@@ -277,3 +301,21 @@ Step {step.step_num}:
         except Exception:
             # If python_coder_tool is unavailable or errors, return None
             return None
+
+    def _build_notepad_context(self) -> str:
+        """
+        Build notepad context string for injection into agent context.
+
+        Returns:
+            Formatted notepad context string with all entries and variables
+        """
+        if not self.notepad:
+            return ""
+
+        try:
+            # Use the notepad's get_full_context method
+            return self.notepad.get_full_context(self.variable_metadata)
+        except Exception as e:
+            logger = get_logger(__name__)
+            logger.warning(f"[ContextManager] Failed to build notepad context: {e}")
+            return ""
