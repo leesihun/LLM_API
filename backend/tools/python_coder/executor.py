@@ -78,7 +78,7 @@ class PersistentREPL:
                 stderr=subprocess.PIPE,
                 cwd=str(self.execution_dir),
                 encoding='utf-8',
-                errors='replace',
+                errors='backslashreplace',
                 bufsize=0,  # Unbuffered
                 env=env  # Pass environment with UTF-8 encoding
             )
@@ -113,8 +113,8 @@ import io
 # Force UTF-8 encoding for stdout/stderr (fixes Windows cp949 codec errors)
 if sys.platform == 'win32':
     import codecs
-    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'replace')
-    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'replace')
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'backslashreplace')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'backslashreplace')
 
 # Signal ready
 print("<<<REPL_READY>>>", flush=True)
@@ -614,7 +614,7 @@ class CodeExecutor:
                 timeout=self.timeout,
                 cwd=str(execution_dir),
                 encoding='utf-8',
-                errors='replace',
+                errors='backslashreplace',
                 env=env  # Pass environment with UTF-8 encoding
             )
             execution_time = time.time() - start_time
