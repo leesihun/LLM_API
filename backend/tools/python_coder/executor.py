@@ -1,6 +1,7 @@
 """Code executor for running Python code in isolated subprocess."""
 
 import ast
+import os
 import shutil
 import subprocess
 import sys
@@ -65,6 +66,10 @@ class PersistentREPL:
             True if started successfully, False otherwise
         """
         try:
+            # Create environment with UTF-8 encoding forced (fixes Windows cp949 codec errors)
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+
             # Start Python in unbuffered mode (-u) with working directory
             self.process = subprocess.Popen(
                 [sys.executable, "-u", "-c", self._get_repl_bootstrap()],
@@ -74,7 +79,8 @@ class PersistentREPL:
                 cwd=str(self.execution_dir),
                 encoding='utf-8',
                 errors='replace',
-                bufsize=0  # Unbuffered
+                bufsize=0,  # Unbuffered
+                env=env  # Pass environment with UTF-8 encoding
             )
 
             # Start reader threads for stdout/stderr
@@ -103,6 +109,12 @@ class PersistentREPL:
 import sys
 import traceback
 import io
+
+# Force UTF-8 encoding for stdout/stderr (fixes Windows cp949 codec errors)
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'replace')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'replace')
 
 # Signal ready
 print("<<<REPL_READY>>>", flush=True)
@@ -590,6 +602,10 @@ class CodeExecutor:
         script_path = execution_dir / "script.py"
 
         try:
+            # Create environment with UTF-8 encoding forced (fixes Windows cp949 codec errors)
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+
             logger.info("[CodeExecutor] [SLOW] Executing in subprocess mode")
             start_time = time.time()
             result = subprocess.run(
@@ -598,7 +614,8 @@ class CodeExecutor:
                 timeout=self.timeout,
                 cwd=str(execution_dir),
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                env=env  # Pass environment with UTF-8 encoding
             )
             execution_time = time.time() - start_time
 
