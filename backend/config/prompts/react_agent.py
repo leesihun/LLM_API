@@ -366,7 +366,7 @@ def get_notepad_entry_generation_prompt(
         steps_summary: Summary of execution steps
         final_answer: The final answer generated
     """
-    return f"""You are analyzing a completed task execution to create a concise memory entry.
+    return f"""You are analyzing a completed task execution to create a structured memory entry with rich metadata.
 
 User Query: {user_query}
 
@@ -375,8 +375,8 @@ Execution Steps:
 
 Final Answer: {final_answer[:500]}...
 
-Analyze this execution and generate a structured notepad entry in JSON format.
-Focus on what was accomplished and what data/code is now available for future use.
+Analyze this execution and generate a comprehensive notepad entry in JSON format.
+Focus on what was accomplished, data/code available, and metadata for future reference.
 
 Provide your response in this JSON format:
 {{
@@ -384,14 +384,20 @@ Provide your response in this JSON format:
   "description": "<brief_description_of_what_was_accomplished>",
   "code_summary": "<what_the_code_does_if_applicable>",
   "variables": ["<list>", "<of>", "<variable_names>"],
-  "key_outputs": "<important_results_or_findings>"
+  "key_outputs": "<important_results_or_findings>",
+  "tags": ["<relevant>", "<keywords>", "<for>", "<categorization>"],
+  "importance": "<low|medium|high>",
+  "success_score": <0.0-1.0>
 }}
 
 Guidelines:
-- task: Use snake_case, e.g., "data_analysis", "visualization", "web_research"
+- task: Use snake_case, e.g., "data_analysis", "visualization", "web_research", "file_processing"
 - description: One sentence, max 100 characters
 - code_summary: Brief description if code was executed, otherwise empty string
 - variables: List variable names that were created (empty list if none)
 - key_outputs: Key findings, numbers, or results (one sentence)
+- tags: 2-5 relevant keywords for categorization (e.g., ["pandas", "csv", "statistics"])
+- importance: Rate as "low" (trivial), "medium" (useful), or "high" (critical/valuable)
+- success_score: Estimate task success as decimal 0.0 (failed) to 1.0 (perfect success)
 
 Provide ONLY the JSON, no other text:"""

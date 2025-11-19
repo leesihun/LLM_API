@@ -141,6 +141,11 @@ class PythonCoderTool:
         file_context = self.context_builder.build_context(validated_files, file_metadata)
         has_json_files = any(m.get('type') == 'json' for m in file_metadata.values())
 
+        # Add variable context (inform LLM about available saved variables)
+        variable_context = self.code_generator.build_variable_context(session_id)
+        if variable_context:
+            file_context += variable_context
+
         # Tracking
         attempt_history = []
         modifications = []
@@ -174,6 +179,12 @@ class PythonCoderTool:
             if auto_changes:
                 modifications.extend(auto_changes)
                 logger.info(f"[PythonCoderTool] Applied {len(auto_changes)} automatic fix(es)")
+
+            # Auto-inject variable loading if variables are referenced
+            code, loaded_vars = self.code_generator.inject_variable_loading(code, session_id, query)
+            if loaded_vars:
+                logger.info(f"[PythonCoderTool] Auto-loaded {len(loaded_vars)} saved variable(s): {', '.join(loaded_vars)}")
+                modifications.append(f"Auto-loaded variables: {', '.join(loaded_vars)}")
 
             # Phase 2: Execute code (non-LLM)
             stage_name = f"{stage_prefix}_attempt{attempt + 1}" if stage_prefix else f"attempt{attempt + 1}"

@@ -151,7 +151,7 @@ class ReActAgent:
 
             # Generate thought and action
             logger.subsection("Thought + Action Generation")
-            context = self.context_manager.build_tool_context(self.steps)
+            context = self.context_manager.build_tool_context(self.steps, user_query=user_query)
             thought, action, action_input = await self.thought_action_generator.generate(
                 user_query=user_query,
                 steps=self.steps,
@@ -443,8 +443,12 @@ class ReActAgent:
             code_summary = entry_data.get("code_summary", "")
             variables_list = entry_data.get("variables", [])
             key_outputs = entry_data.get("key_outputs", "")
-            
+            tags = entry_data.get("tags", [])
+            importance = entry_data.get("importance", "medium")
+            success_score = entry_data.get("success_score", 1.0)
+
             logger.info(f"[ReActAgent] Entry generated: [{task}] {description}")
+            logger.info(f"[ReActAgent] Metadata: tags={tags}, importance={importance}, success={success_score}")
             
             # Load notepad
             notepad = SessionNotepad.load(self.session_id)
@@ -478,13 +482,35 @@ class ReActAgent:
                     
                     logger.info(f"[ReActAgent] Variables mentioned: {variables_list}")
             
-            # Add entry to notepad
+            # Determine which tool was primarily used
+            tool_used = None
+            if python_coder_result:
+                tool_used = "python_coder"
+            elif any(s.action == ToolName.WEB_SEARCH for s in self.steps):
+                tool_used = "web_search"
+            elif any(s.action == ToolName.RAG_RETRIEVAL for s in self.steps):
+                tool_used = "rag_retrieval"
+
+            # Calculate execution time (approximate)
+            from datetime import datetime
+            if self.steps:
+                # Rough estimate based on number of steps
+                execution_time_ms = len(self.steps) * 1000  # 1 second per step (rough estimate)
+            else:
+                execution_time_ms = None
+
+            # Add entry to notepad with enhanced metadata
             entry_id = notepad.add_entry(
                 task=task,
                 description=description,
                 code_file=code_file,
                 variables_saved=variables_list,
-                key_outputs=key_outputs
+                key_outputs=key_outputs,
+                tags=tags,
+                importance=importance,
+                execution_time_ms=execution_time_ms,
+                success_score=success_score,
+                tool_used=tool_used
             )
             
             # Save notepad

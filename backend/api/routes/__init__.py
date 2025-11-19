@@ -14,6 +14,7 @@ from .chat import chat_router, openai_router
 from .admin import admin_router
 from .files import files_router
 from .tools import tools_router
+from .notepad import router as notepad_router
 
 
 def create_routes() -> List[APIRouter]:
@@ -34,7 +35,8 @@ def create_routes() -> List[APIRouter]:
         chat_router,
         admin_router,
         files_router,
-        tools_router
+        tools_router,
+        notepad_router
     ]
 
 
@@ -46,5 +48,6 @@ __all__ = [
     "openai_router",
     "admin_router",
     "files_router",
-    "tools_router"
+    "tools_router",
+    "notepad_router"
 ]
