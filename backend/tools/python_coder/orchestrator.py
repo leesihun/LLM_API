@@ -43,14 +43,14 @@ class PythonCoderTool:
     This orchestrator coordinates the full workflow:
     - Phase 0: File preparation and metadata extraction
     - Phase 1: Code generation
-    - Phase 2: Verification loop (max 2 iterations)
-    - Phase 3: Execution loop (max 3 attempts)
+    - Phase 2: Verification loop (configurable via settings.python_code_max_iterations)
+    - Phase 3: Execution loop (configurable via settings.python_code_max_iterations)
     - Phase 4: Result formatting
 
     Features:
     - Code generation using LLM
-    - Verification focused on answering user's question (max 2 iterations)
-    - Code execution with retry on failure (max 3 attempts)
+    - Verification focused on answering user's question
+    - Code execution with retry on failure (max attempts from settings)
     - File handling and metadata extraction
     """
 
@@ -76,7 +76,7 @@ class PythonCoderTool:
         self.context_builder = FileContextBuilder()
 
         # Configuration - OPTIMIZED for minimal LLM calls
-        self.max_retry_attempts = 3  # Max attempts for execution + adequacy check
+        self.max_retry_attempts = settings.python_code_max_iterations  # Max attempts for execution + adequacy check
         self.allow_partial_execution = settings.python_code_allow_partial_execution
 
         logger.info(f"[PythonCoderTool] Initialized with OPTIMIZED workflow (max_retry_attempts={self.max_retry_attempts})")
@@ -98,7 +98,7 @@ class PythonCoderTool:
         1. Generate code WITH self-verification (1 LLM call - combined!)
         2. Execute code (non-LLM)
         3. Check output adequacy (1 LLM call only if needed)
-        4. Retry if needed (max 3 total attempts)
+        4. Retry if needed (max attempts from settings.python_code_max_iterations)
 
         Args:
             query: User's question/task
@@ -145,7 +145,7 @@ class PythonCoderTool:
         attempt_history = []
         modifications = []
 
-        # Main retry loop (max 3 attempts)
+        # Main retry loop (max attempts from settings)
         for attempt in range(self.max_retry_attempts):
             logger.info(f"\n[PythonCoderTool] === ATTEMPT {attempt + 1}/{self.max_retry_attempts} ===")
 
