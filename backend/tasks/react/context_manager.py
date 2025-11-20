@@ -319,3 +319,53 @@ Step {step.step_num}:
             logger = get_logger(__name__)
             logger.warning(f"[ContextManager] Failed to build notepad context: {e}")
             return ""
+
+    def format_phase_handoff(
+        self,
+        phase_name: str,
+        previous_findings: str,
+        current_task: str,
+        files_as_fallback: bool = True
+    ) -> str:
+        """
+        Format context for multi-phase workflows with explicit handoffs.
+
+        This method enables conversation context reuse by instructing the agent
+        to prioritize information from previous phases over re-processing files.
+
+        Args:
+            phase_name: Name of the current phase (e.g., "Visualization Generation")
+            previous_findings: Summary of findings from previous phase(s)
+            current_task: Description of the current task
+            files_as_fallback: Whether to include files-as-fallback instruction
+
+        Returns:
+            Formatted prompt for phase handoff
+
+        Example:
+            >>> context_mgr = ContextManager()
+            >>> prompt = context_mgr.format_phase_handoff(
+            ...     phase_name="Visualization",
+            ...     previous_findings="Analyzed 100 files, found 10 outliers...",
+            ...     current_task="Create charts based on the analysis"
+            ... )
+        """
+        prompt_parts = [
+            f"**PRIORITY: Use your {phase_name} findings first.**\n",
+            "**Previous Analysis:**",
+            previous_findings,
+            "",
+            "**Current Task:**",
+            current_task,
+            ""
+        ]
+
+        if files_as_fallback:
+            prompt_parts.extend([
+                "**IMPORTANT:** The attached files are ONLY for reference if you need to verify specific values.",
+                "Your primary data source should be what you already calculated in previous phases.",
+                "DO NOT re-analyze the raw data files from scratch.",
+                ""
+            ])
+
+        return "\n".join(prompt_parts)

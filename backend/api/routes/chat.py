@@ -458,3 +458,52 @@ async def get_history(session_id: str, current_user: Dict[str, Any] = Depends(ge
     if conv is None or conv.user_id != current_user["username"]:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return ConversationHistoryResponse(session_id=session_id, messages=conv.messages)
+
+
+@chat_router.get("/sessions/{session_id}/artifacts")
+async def get_session_artifacts(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    List all files generated during a session (charts, reports, code outputs, etc.)
+
+    Returns:
+        - session_id: The session identifier
+        - artifacts: List of files with metadata (filename, path, size, modified time)
+    """
+    user_id = current_user["username"]
+
+    # Verify session belongs to user
+    conv = conversation_store.load_conversation(session_id)
+    if conv is None or conv.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Check session scratch directory for generated files
+    session_dir = Path(settings.scratch_dir) / session_id
+    artifacts = []
+
+    if session_dir.exists():
+        for file_path in session_dir.rglob("*"):
+            if file_path.is_file():
+                try:
+                    stat = file_path.stat()
+                    artifacts.append({
+                        "filename": file_path.name,
+                        "relative_path": str(file_path.relative_to(session_dir)),
+                        "full_path": str(file_path),
+                        "size_kb": round(stat.st_size / 1024, 2),
+                        "modified": stat.st_mtime,
+                        "extension": file_path.suffix.lower()
+                    })
+                except Exception as e:
+                    logger.warning(f"[Artifacts] Failed to stat file {file_path}: {e}")
+                    continue
+
+    # Sort by modification time (newest first)
+    artifacts.sort(key=lambda x: x["modified"], reverse=True)
+
+    logger.info(f"[Artifacts] Found {len(artifacts)} artifacts for session {session_id}")
+
+    return {
+        "session_id": session_id,
+        "artifact_count": len(artifacts),
+        "artifacts": artifacts
+    }

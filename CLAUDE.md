@@ -409,6 +409,75 @@ react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 - **Single tool tasks:** ReAct agent (fast, flexible)
 - **Complex multi-step:** Smart agent with Plan-Execute (structured, reliable)
 
+### Multi-Phase Workflows: Files as Fallback Pattern
+**Key insight:** For multi-step workflows (analyze → visualize → report), process data files ONCE and reuse conversation memory.
+
+**Pattern:**
+```
+Phase 1: Process files → findings stored in conversation context
+           ↓
+Phase 2: Reuse Phase 1 findings from memory (files only for verification)
+           ↓
+Phase 3: Reuse Phase 1 & 2 findings from memory
+```
+
+**Benefits:**
+- 90% fewer LLM calls - no redundant file parsing
+- Faster execution - reuse existing calculations
+- Better consistency - all phases use same base analysis
+- Lower costs - reduced token usage
+
+**Implementation:**
+```python
+# Phase 1: Analysis (process files ONCE)
+phase1_prompt = """
+Analyze the attached CSV file.
+Calculate and store in memory: [list of calculations]
+I'll ask follow-up questions in subsequent messages.
+"""
+result1, session_id = client.chat_new(MODEL, phase1_prompt, files=[csv_path])
+
+# Phase 2: Visualization (reuse Phase 1 findings)
+phase2_prompt = """
+**PRIORITY: Use your Phase 1 analysis from conversation memory.**
+
+You already calculated: [summary of Phase 1 findings]
+
+**DO NOT re-analyze the raw files.** Use your Phase 1 findings.
+The attached files are ONLY for verification if needed.
+
+Current Task: Create visualizations based on Phase 1 results
+"""
+result2, _ = client.chat_continue(MODEL, session_id, phase2_prompt, files=[csv_path])
+
+# Phase 3: Reporting (reuse Phase 1 & 2)
+phase3_prompt = """
+**PRIORITY: Use Phase 1 & 2 findings from conversation memory.**
+
+Based on your previous analysis and visualizations:
+[specific task using prior work]
+"""
+result3, _ = client.chat_continue(MODEL, session_id, phase3_prompt)
+```
+
+**Key phrases for phase handoff:**
+- "**PRIORITY: Use your Phase X findings from conversation memory**"
+- "You already calculated/analyzed..."
+- "**DO NOT re-analyze the raw files**"
+- "The attached files are ONLY for verification if needed"
+
+**See examples:**
+- [PPTX_Report_Generator_Agent_v2.ipynb](PPTX_Report_Generator_Agent_v2.ipynb) - PowerPoint generation with 90% shorter prompts
+- [Multi_Phase_Workflow_Example.ipynb](Multi_Phase_Workflow_Example.ipynb) - Detailed pattern demonstration
+- Backend utilities: `backend/utils/phase_manager.py`, `backend/tasks/react/context_manager.py`
+
+**Anti-pattern (avoid):**
+```python
+# BAD: Re-processing file in every phase
+result1, sid = client.chat_new(MODEL, "Analyze file X", files=[path])
+result2, _ = client.chat_continue(MODEL, sid, "Analyze file X again for Y", files=[path])  # Wasteful!
+```
+
 ## Troubleshooting
 
 **Ollama Connection Errors:**
