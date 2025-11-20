@@ -60,7 +60,7 @@ Valid tool names ONLY: web_search, rag_retrieval, python_coder
 IMPORTANT RULES:
 - Only include ACTUAL WORK steps (file analysis, data processing, searches, etc.)
 - Do NOT include a "finish" or "generate answer" step - this happens automatically
-- Keep plans minimal (2-3 steps max for most tasks)
+- Generate step-by-step plan for the task.
 - Each step should produce concrete output/data
 
 Example response format:

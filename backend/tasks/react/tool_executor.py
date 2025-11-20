@@ -147,8 +147,8 @@ class ToolExecutor:
         # Build context from execution history
         context = self._build_context_for_python_coder(steps, session_id)
 
-        # Build react_context with failed attempts
-        react_context = self._build_react_context(steps)
+        # Build react_context with failed attempts (including saved code)
+        react_context = self._build_react_context(steps, session_id)
 
         # Load conversation_history from conversation store
         conversation_history = self._load_conversation_history(session_id)
@@ -249,13 +249,15 @@ class ToolExecutor:
 
     def _build_react_context(
         self,
-        steps: Optional[List[Any]]
+        steps: Optional[List[Any]],
+        session_id: Optional[str] = None
     ) -> Optional[dict]:
         """
         Build structured react_context with failed attempts for python_coder prompt.
 
         Args:
             steps: List of ReActStep objects from execution history
+            session_id: Session ID for loading saved code files
 
         Returns:
             Dict with iteration history including failed code and errors, or None if no steps
@@ -276,17 +278,14 @@ class ToolExecutor:
 
             # Check if this was a python_coder action
             if step.action == ToolName.PYTHON_CODER:
-                # Try to extract code from session directory
-                from pathlib import Path
-                from backend.config.settings import settings
-
-                # Look for code files in session directory
-                # The code would be saved as script_step{N}.py
-                # We can try to read it or extract from observation
-
-                # For now, add observation and check for errors
                 step_info['observation'] = step.observation
 
+                # Try to load the actual code from session directory
+                code = self._load_code_for_step(session_id, step.step_num)
+                if code:
+                    step_info['code'] = code
+
+                # Determine if failed or succeeded
                 if "failed" in step.observation.lower() or "error" in step.observation.lower():
                     step_info['status'] = 'error'
                     # Try to extract error message
@@ -315,6 +314,51 @@ class ToolExecutor:
             'iteration': current_iteration,
             'history': history
         }
+
+    def _load_code_for_step(
+        self,
+        session_id: Optional[str],
+        step_num: int
+    ) -> Optional[str]:
+        """
+        Load saved code for a specific ReAct step from session directory.
+
+        Args:
+            session_id: Session ID
+            step_num: Step number to find code for
+
+        Returns:
+            Code string if found, None otherwise
+        """
+        if not session_id:
+            return None
+
+        try:
+            from pathlib import Path
+            from backend.config.settings import settings
+
+            session_dir = Path(settings.python_code_execution_dir) / session_id
+            if not session_dir.exists():
+                return None
+
+            # Look for code files matching this step (script_step{N}_*.py)
+            pattern = f"script_step{step_num}_*.py"
+            matching_files = list(session_dir.glob(pattern))
+
+            if not matching_files:
+                return None
+
+            # Get the most recent file (by modification time)
+            latest_file = max(matching_files, key=lambda p: p.stat().st_mtime)
+
+            # Read the code
+            code = latest_file.read_text(encoding='utf-8')
+            logger.info(f"[ToolExecutor] Loaded code for step {step_num} from {latest_file.name}")
+            return code
+
+        except Exception as e:
+            logger.warning(f"[ToolExecutor] Failed to load code for step {step_num}: {e}")
+            return None
 
     def _build_context_for_python_coder(
         self,

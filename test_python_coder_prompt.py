@@ -192,6 +192,8 @@ except FileNotFoundError:
         ("Conversation history included", "Can you analyze my sales data" in prompt),
         ("Plan context included", "Step 2 of 3" in prompt or "current_step" in prompt.lower()),
         ("React failed attempts included", "FileNotFoundError" in prompt or "KeyError" in prompt),
+        ("React generated code included", "Generated Code:" in prompt and "```python" in prompt),
+        ("React error reasons included", "need to use .get() for safe dict access" in prompt),
         ("File context included", "sales_data.json" in prompt),
         ("Access patterns included", "Access Patterns" in prompt or ".get(" in prompt),
         ("Rules section included", "EXACT FILENAMES" in prompt or "RULE 1" in prompt),
