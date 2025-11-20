@@ -28,6 +28,7 @@ from .auto_fixer import AutoFixer
 from .context_builder import FileContextBuilder
 from .file_handlers import FileHandlerFactory
 from .utils import get_original_filename
+from .file_context_storage import FileContextStorage
 
 logger = get_logger(__name__)
 
@@ -140,6 +141,15 @@ class PythonCoderTool:
         # Build file context
         file_context = self.context_builder.build_context(validated_files, file_metadata)
         has_json_files = any(m.get('type') == 'json' for m in file_metadata.values())
+
+        # Save file context to session directory for multi-phase workflows
+        if session_id and validated_files:
+            FileContextStorage.save_file_context(
+                session_id=session_id,
+                validated_files=validated_files,
+                file_metadata=file_metadata,
+                file_context_text=file_context
+            )
 
         # Tracking
         attempt_history = []
@@ -331,6 +341,33 @@ class PythonCoderTool:
         except Exception as e:
             logger.warning(f"[PythonCoderTool] Failed to load code history: {e}")
             return []
+
+    def get_saved_file_context(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """
+        Load previously saved file context from session directory.
+
+        This enables multi-phase workflows where file analysis is done once
+        and reused across multiple phases without re-processing files.
+
+        Args:
+            session_id: Session ID for directory path
+
+        Returns:
+            Dict with file context data, or None if not found
+        """
+        return FileContextStorage.load_file_context(session_id)
+
+    def has_saved_file_context(self, session_id: Optional[str]) -> bool:
+        """
+        Check if saved file context exists for session.
+
+        Args:
+            session_id: Session ID to check
+
+        Returns:
+            True if context file exists, False otherwise
+        """
+        return FileContextStorage.has_file_context(session_id)
 
     def _prepare_files(
         self,
