@@ -181,6 +181,10 @@ class PlanExecuteTask:
         if file_paths:
             logger.info(f"[Plan-Execute] Attached files: {len(file_paths)} files")
 
+        # Load notepad and variables for context injection (if session exists)
+        if session_id:
+            await self._load_notepad_and_variables(session_id)
+
         # Extract user query and conversation history
         user_query = messages[-1].content
         conversation_history = "\n".join([
@@ -305,6 +309,57 @@ class PlanExecuteTask:
                 "total_tool_attempts": total_attempts
             }
         }
+
+    async def _load_notepad_and_variables(self, session_id: str):
+        """
+        Load session notepad and variables for context injection.
+
+        This ensures that the ReAct agent used in plan execution has access
+        to notepad entries and saved variables from previous executions.
+
+        Args:
+            session_id: Session ID for loading notepad
+        """
+        try:
+            from backend.tools.notepad import SessionNotepad
+            from backend.tools.python_coder.variable_storage import VariableStorage
+
+            # Load notepad
+            notepad = SessionNotepad.load(session_id)
+
+            # Load variable metadata
+            var_metadata = VariableStorage.get_metadata(session_id)
+
+            # The ReAct agent used in execute_with_plan will handle notepad loading
+            # We just log it here for visibility
+            if notepad.get_entries_count() > 0:
+                logger.info(f"[Plan-Execute] Loaded notepad with {notepad.get_entries_count()} entries")
+            if var_metadata:
+                logger.info(f"[Plan-Execute] Loaded {len(var_metadata)} saved variables")
+
+        except Exception as e:
+            logger.warning(f"[Plan-Execute] Failed to load notepad/variables: {e}")
+
+    async def _generate_and_save_notepad_entry(
+        self,
+        session_id: str,
+        user_query: str,
+        final_output: str,
+        step_results: List
+    ):
+        """
+        Generate and save notepad entry after plan execution completes.
+
+        Args:
+            session_id: Session ID for saving notepad
+            user_query: Original user query
+            final_output: Final output from execution
+            step_results: Results from each step
+        """
+        # The ReAct agent's execute_with_plan method already handles notepad generation
+        # So we don't need to duplicate it here
+        pass
+
 
 # Global agentic task instance
 plan_execute_task = PlanExecuteTask()

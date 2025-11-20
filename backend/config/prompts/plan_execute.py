@@ -42,7 +42,7 @@ Available Tools:
 Create a MINIMAL step-by-step execution plan with ONLY the work steps needed to answer the query. For EACH step, provide:
 1. Goal: What this step aims to accomplish (be specific and detailed)
 2. Primary Tools: Main tools to use
-3. Success Criteria: How to verify the step succeeded
+3. Success Criteria: How to verify the step succeeded (be concrete and measurable)
 4. Context: Additional instructions or notes for executing this step
 
 CRITICAL: You MUST respond with a JSON array of steps. Each step must have this exact structure:
@@ -59,9 +59,25 @@ Valid tool names ONLY: web_search, rag_retrieval, python_coder
 
 IMPORTANT RULES:
 - Only include ACTUAL WORK steps (file analysis, data processing, searches, etc.)
-- Do NOT include a "finish" or "generate answer" step - this happens automatically
-- Generate step-by-step plan for the task.
+- Do NOT include a separate "synthesize results" or "generate final answer" step - this happens automatically
 - Each step should produce concrete output/data
+- The final work step should naturally lead to a complete answer
+
+SUCCESS CRITERIA EXAMPLES:
+
+GOOD Success Criteria (Specific, Measurable):
+✓ "Successfully loaded data with column names, types, and shape displayed"
+✓ "Mean and median calculated for all numeric columns with values printed"
+✓ "Search returned at least 3 relevant articles from 2025"
+✓ "Chart saved to temp_charts/sales_trend.png with proper labels"
+✓ "Outliers identified and count displayed (expect 5-10 outliers)"
+
+BAD Success Criteria (Vague, Unmeasurable):
+✗ "Data processed successfully" (what does "processed" mean?)
+✗ "Analysis complete" (what analysis? what outputs?)
+✗ "Information retrieved" (how much? what quality?)
+✗ "Code runs without errors" (but what should it output?)
+✗ "Step finished" (not helpful for verification)
 
 Example response format:
 [

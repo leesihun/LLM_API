@@ -20,8 +20,8 @@ Architecture:
 - plan_executor.py: Plan-based execution
 """
 
-# Main agent class
-from .agent import ReActAgent, react_agent
+# Main agent class and factory
+from .agent import ReActAgent, ReActAgentFactory, react_agent
 
 # Data models
 from .models import ToolName, ReActStep, ReActResult
@@ -37,7 +37,8 @@ from .plan_executor import PlanExecutor
 __all__ = [
     # Main exports (public API)
     "ReActAgent",
-    "react_agent",
+    "ReActAgentFactory",  # Factory pattern (recommended)
+    "react_agent",  # Legacy singleton (deprecated)
 
     # Data models
     "ToolName",

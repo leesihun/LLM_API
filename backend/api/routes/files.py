@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from pathlib import Path
 import uuid
 
-from backend.utils.auth import get_current_user
+from backend.api.dependencies import get_current_user
 from backend.config.settings import settings
 from backend.utils.logging_utils import get_logger
 

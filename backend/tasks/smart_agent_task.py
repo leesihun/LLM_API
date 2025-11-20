@@ -61,7 +61,7 @@ class SmartAgentTask:
         # Auto-select agent if not specified
         selected_agent = agent_type
         if agent_type == AgentType.AUTO:
-            selected_agent = AgentType.PLAN_EXECUTE
+            selected_agent = self._select_agent(messages, file_paths)
 
         logger.info(f"[Smart Agent] Selected agent: {selected_agent}")
 
@@ -78,6 +78,68 @@ class SmartAgentTask:
         metadata["agent_selection_mode"] = "auto" if agent_type == AgentType.AUTO else "manual"
 
         return response, metadata
+
+    def _select_agent(
+        self,
+        messages: List[ChatMessage],
+        file_paths: Optional[List[str]] = None
+    ) -> AgentType:
+        """
+        Intelligently select agent based on query characteristics.
+
+        Heuristic:
+        - Use Plan-Execute if:
+          - Multiple files (>2) are attached (complex data analysis)
+          - Query contains multi-step keywords (AND, then, after, followed by)
+          - Query is very long (>500 chars, likely complex)
+        - Use ReAct for:
+          - Simple queries or exploratory tasks
+          - Single file or no files
+          - Short, focused queries
+
+        Args:
+            messages: Conversation messages
+            file_paths: Optional list of attached files
+
+        Returns:
+            Selected agent type (REACT or PLAN_EXECUTE)
+        """
+        # Extract user query
+        user_query = messages[-1].content.lower() if messages else ""
+
+        # Heuristic 1: Multiple files suggest complex analysis -> Plan-Execute
+        file_count = len(file_paths) if file_paths else 0
+        if file_count > 2:
+            logger.info(f"[SmartAgent] Selecting Plan-Execute: {file_count} files attached")
+            return AgentType.PLAN_EXECUTE
+
+        # Heuristic 2: Multi-step keywords suggest structured workflow -> Plan-Execute
+        multi_step_keywords = [
+            ' and then ', ' then ', ' after that', ' followed by',
+            ' next ', ' subsequently', ' finally', ' first', ' second',
+            'step 1', 'step 2', 'multiple steps', 'several steps'
+        ]
+        if any(keyword in user_query for keyword in multi_step_keywords):
+            logger.info("[SmartAgent] Selecting Plan-Execute: multi-step keywords detected")
+            return AgentType.PLAN_EXECUTE
+
+        # Heuristic 3: Very long query suggests complexity -> Plan-Execute
+        if len(user_query) > 500:
+            logger.info(f"[SmartAgent] Selecting Plan-Execute: long query ({len(user_query)} chars)")
+            return AgentType.PLAN_EXECUTE
+
+        # Heuristic 4: Explicit planning keywords -> Plan-Execute
+        planning_keywords = [
+            'plan', 'organize', 'structure', 'comprehensive', 'detailed analysis',
+            'break down', 'systematically', 'thorough'
+        ]
+        if any(keyword in user_query for keyword in planning_keywords):
+            logger.info("[SmartAgent] Selecting Plan-Execute: planning keywords detected")
+            return AgentType.PLAN_EXECUTE
+
+        # Default: ReAct for simple, exploratory tasks
+        logger.info("[SmartAgent] Selecting ReAct: simple/exploratory query")
+        return AgentType.REACT
 
 
 # Global smart agent instance

@@ -122,6 +122,12 @@ class PlanExecutor:
                     f"Step {step_result.step_num} ({step_result.goal}): {step_result.observation}"
                 )
 
+                # Apply pruning if observations grow too large (keep last 5 steps)
+                if len(accumulated_observations) > 5:
+                    pruned_observations = accumulated_observations[-5:]
+                    logger.info(f"[PlanExecutor] Context pruned: keeping last 5 observations (removed {len(accumulated_observations) - 5})")
+                    accumulated_observations = pruned_observations
+
             logger.info(f"\n[PlanExecutor] Step {plan_step.step_num} {'✓ SUCCESS' if step_result.success else '✗ FAILED'}")
             logger.info(f"Tool used: {step_result.tool_used}")
             logger.info(f"Attempts: {step_result.attempts}\n")
@@ -289,12 +295,11 @@ class PlanExecutor:
             return f"Unknown tool: {tool_name}", False
 
         # Execute the tool
-        observation, _ = await self.tool_executor.execute(
+        observation = await self.tool_executor.execute(
             action=tool_enum,
             action_input=action_input,
             file_paths=file_paths,
             session_id=session_id,
-            attempted_coder=False,
             steps=None,
             plan_context=plan_context
         )

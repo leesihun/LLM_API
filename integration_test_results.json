@@ -1,0 +1,127 @@
+{
+  "prompt_registry": {
+    "total_prompts": 39,
+    "validation_passed": 39,
+    "validation_failed": 0,
+    "adoption_rate": 37.142857142857146,
+    "registry_calls": 13
+  },
+  "imports": {
+    "old_imports_count": 6,
+    "new_imports_count": 29,
+    "old_import_details": {
+      "backend.tasks.React": [
+        "/home/user/LLM_API/verify_feature_parity.py",
+        "/home/user/LLM_API/integration_test.py"
+      ],
+      "backend.tools.python_coder_tool": [
+        "/home/user/LLM_API/integration_test.py"
+      ],
+      "backend.tools.file_analyzer_tool": [],
+      "backend.tools.web_search.tool": [],
+      "backend.api.routes": [
+        "/home/user/LLM_API/backend/api/app.py",
+        "/home/user/LLM_API/backend/api/routes/__init__.py"
+      ],
+      "backend.core.agent_graph": [
+        "/home/user/LLM_API/integration_test.py"
+      ]
+    },
+    "new_import_details": {
+      "backend.tasks.react": [
+        "/home/user/LLM_API/verify_feature_parity.py",
+        "/home/user/LLM_API/backend/tasks/smart_agent_task.py",
+        "/home/user/LLM_API/backend/tasks/Plan_execute.py",
+        "/home/user/LLM_API/backend/tasks/react/context_builder.py",
+        "/home/user/LLM_API/backend/tasks/react/utils.py"
+      ],
+      "backend.tools.python_coder": [
+        "/home/user/LLM_API/verify_feature_parity.py",
+        "/home/user/LLM_API/integration_test.py",
+        "/home/user/LLM_API/backend/tools/python_coder/tool.py",
+        "/home/user/LLM_API/backend/tools/python_coder/executor/__init__.py",
+        "/home/user/LLM_API/backend/tools/file_analyzer/llm_analyzer.py",
+        "/home/user/LLM_API/backend/tasks/Plan_execute.py",
+        "/home/user/LLM_API/backend/tasks/react/context_builder.py",
+        "/home/user/LLM_API/backend/tasks/react/tool_executor.py",
+        "/home/user/LLM_API/backend/tasks/react/agent.py",
+        "/home/user/LLM_API/backend/tasks/react/context_manager.py",
+        "/home/user/LLM_API/backend/tasks/legacy/agent_graph.py"
+      ],
+      "backend.tools.file_analyzer": [
+        "/home/user/LLM_API/verify_feature_parity.py",
+        "/home/user/LLM_API/backend/tools/file_analyzer/__init__.py",
+        "/home/user/LLM_API/backend/tools/file_analyzer/tool.py",
+        "/home/user/LLM_API/backend/tasks/react/tool_executor.py",
+        "/home/user/LLM_API/backend/tasks/react/agent.py"
+      ],
+      "backend.tools.web_search": [
+        "/home/user/LLM_API/verify_feature_parity.py",
+        "/home/user/LLM_API/backend/tools/web_search/tool.py",
+        "/home/user/LLM_API/backend/tasks/react/tool_executor.py",
+        "/home/user/LLM_API/backend/tasks/legacy/agent_graph.py",
+        "/home/user/LLM_API/backend/api/routes/tools.py"
+      ],
+      "backend.api.routes": [
+        "/home/user/LLM_API/backend/api/app.py",
+        "/home/user/LLM_API/backend/api/routes/__init__.py"
+      ],
+      "backend.config.prompts.registry": [
+        "/home/user/LLM_API/integration_test.py"
+      ]
+    }
+  },
+  "security": {
+    "password_hashing": true,
+    "security_headers": true,
+    "rbac_dependencies": true,
+    "file_validation": true
+  },
+  "architecture": {
+    "violations_count": 1,
+    "violations": [
+      {
+        "file": "backend/utils/phase_manager.py",
+        "layer": "utils",
+        "imports_from": "tools",
+        "rule": "utils should not import from tools"
+      }
+    ]
+  },
+  "file_counts": {
+    "backend/core": 5,
+    "backend/services": 12,
+    "backend/tools": 53,
+    "backend/tasks": 16,
+    "backend/api": 13,
+    "backend/config/prompts": 19,
+    "backend/utils": 6,
+    "backend/models": 3
+  },
+  "dead_code": {
+    "agent_graph_in_legacy": true,
+    "agent_graph_in_old_location": false,
+    "orphaned_imports": 7,
+    "orphaned_details": {
+      "from backend.core.agent_graph": [
+        "integration_test.py"
+      ],
+      "import backend.core.agent_graph": [
+        "integration_test.py"
+      ],
+      "from backend.tasks.React import": [
+        "verify_feature_parity.py",
+        "integration_test.py"
+      ],
+      "from backend.tools.python_coder_tool import": [
+        "integration_test.py"
+      ],
+      "python_executor_engine": [
+        "integration_test.py"
+      ],
+      "PythonExecutorEngine": [
+        "integration_test.py"
+      ]
+    }
+  }
+}

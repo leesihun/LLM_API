@@ -19,10 +19,10 @@ def get_react_thought_and_action_prompt(
         query: User's question
         context: Formatted context from previous steps
         file_guidance: Optional guidance text when files are attached
+
+    Simplified version: Removed ASCII markers, reduced from 70 to ~40 lines.
     """
     return f"""You are a helpful AI assistant using the ReAct (Reasoning + Acting) framework.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 {file_guidance}
 
@@ -30,7 +30,7 @@ Question: {query}
 
 {context}
 
-Think step-by-step and then decide on an action. Provide BOTH your reasoning AND your action in this format:
+Think step-by-step and decide on an action. Provide BOTH your reasoning AND your action in this format:
 
 THOUGHT: [Your step-by-step reasoning about what to do next]
 
@@ -40,36 +40,15 @@ ACTION INPUT: [The input for the selected action]
 
 Available Actions:
 
-1. web_search - Search the web for required information
-
-   [SEARCH] SEARCH QUERY GUIDELINES:
-   When generating search queries, focus on creating effective keywords:
-
-   [OK] GOOD PRACTICES:
-   • Use 3-10 specific keywords
-   • Include important names, dates, places, products
-   • Use concrete terms (nouns, verbs) rather than vague adjectives
-   • Think about what words would appear in relevant results
-   • Natural language is okay - the system will automatically optimize it
-
-   [OK] GOOD EXAMPLES:
-   • "latest AI developments artificial intelligence 2025"
-   • "OpenAI GPT-4 features capabilities pricing"
-   • "Python vs JavaScript performance comparison"
-   • "weather forecast Seoul tomorrow"
-   • "electric vehicles vs gas cars comparison 2025"
-
-   [X] AVOID:
-   • Single word queries ("AI", "weather")
-   • Overly long sentences (>15 words)
-   • Too vague ("tell me about technology")
-
-   [TIP] You can use natural questions - the query will be automatically
-   optimized for search engines. Just be specific about what you're looking for!
+1. web_search - Search the web for current information
+   - Use 3-10 specific keywords
+   - Include names, dates, places, products
+   - Examples: "latest AI developments 2025", "Python vs JavaScript performance"
+   - Avoid single words or vague queries
 
 2. rag_retrieval - Retrieve relevant documents from uploaded files
 
-3. python_coder - Generate and execute Python code with file processing and data analysis
+3. python_coder - Generate and execute Python code for data analysis and file processing
 
 4. finish - Provide the final answer (use ONLY when you have complete information)
 
@@ -89,10 +68,10 @@ def get_react_final_answer_prompt(
     Args:
         query: User's original question
         context: Formatted context from all steps
+
+    Simplified version: Removed ASCII markers.
     """
     return f"""You are a helpful AI assistant. Based on all your reasoning and observations, provide a final answer.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Question: {query}
 
@@ -122,10 +101,10 @@ def get_react_final_answer_for_finish_step_prompt(
         user_query: Original user query
         plan_step_goal: Goal of the finish step
         context: Context from all previous steps
+
+    Simplified version: Removed ASCII markers.
     """
     return f"""You are completing a multi-step task. Generate a final, comprehensive answer based on all the work done so far.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Original User Query: {user_query}
 
@@ -165,13 +144,13 @@ def get_react_action_input_for_step_prompt(
         previous_context: Context from previous steps
         tool_name: Tool being used
         step_goal: Alias for plan_step_goal (for backward compatibility)
+
+    Simplified version: Removed ASCII markers.
     """
     # Handle backward compatibility - use step_goal if plan_step_goal not provided
     if plan_step_goal is None and step_goal is not None:
         plan_step_goal = step_goal
     return f"""You are executing a specific step in a plan.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Original User Query: {user_query}
 
@@ -203,10 +182,10 @@ def get_react_step_verification_prompt(
         success_criteria: Success criteria for the step
         tool_used: Which tool was used
         observation: Observation from tool execution
+
+    Simplified version: Removed ASCII markers.
     """
     return f"""Verify if the step goal was achieved.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Step Goal: {plan_step_goal}
 Success Criteria: {success_criteria}
@@ -231,10 +210,10 @@ def get_react_final_answer_from_steps_prompt(
         user_query: Original user query
         steps_text: Summary of execution steps
         observations_text: All observations from steps
+
+    Simplified version: Removed ASCII markers.
     """
     return f"""You are a helpful AI assistant. Generate a final, comprehensive answer based on the step-by-step execution results.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Original User Query: {user_query}
 
@@ -263,10 +242,10 @@ def get_react_thought_prompt(
         query: User's question
         context: Formatted context from previous steps
         available_tools: List of available tools
+
+    Simplified version: Removed ASCII markers.
     """
     return f"""You are a helpful AI assistant using the ReAct (Reasoning + Acting) framework.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 Question: {query}
 
@@ -309,10 +288,10 @@ def get_react_action_selection_prompt(
         context: Formatted context from previous steps
         thought: The reasoning generated in thought phase
         file_guidance: Optional guidance text when files are attached
+
+    Simplified version: Removed ASCII markers.
     """
     return f"""You are a helpful AI assistant. Based on your reasoning, select the next action.
-
-IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
 
 {file_guidance}
 
