@@ -39,7 +39,8 @@ class Settings(BaseSettings):
     ollama_host: str = 'http://127.0.0.1:11434'
 
     # Model selection - gpt-oss:20b
-    ollama_model: str = 'gemma3:12b' # 'gpt-oss:120b'
+    ollama_model: str = 'qwen3-coder:32b'
+    #'gemma3:12b' 'gpt-oss:120b'
 
     # Request timeout - 5 minutes for most requests, adjust based on model size
     ollama_timeout: int = 3000000  # 50 minutes
@@ -113,7 +114,8 @@ class Settings(BaseSettings):
     # AGENTIC FLOW
 
     # Agentic flow model
-    agentic_classifier_model: str = 'gemma3:12b' # 'gpt-oss:120b''gpt-oss:120b'
+    agentic_classifier_model: str = 'qwen3-coder:32b'
+    #'gemma3:12b' # 'gpt-oss:120b''gpt-oss:120b'
 
     # NOTE: Agentic classifier prompt is now centralized in config/prompts/task_classification.py
     # Use: from backend.config.prompts import get_agentic_classifier_prompt
