@@ -162,12 +162,30 @@ class FileContextBuilder:
         if 'first_item_type' in metadata and metadata['first_item_type']:
             lines.append(f"   Array items are: {metadata['first_item_type']}")
 
-        # Show smart access patterns (most important!)
+        # Show smart access patterns as COPY-PASTE code (most important!)
         if 'access_patterns' in metadata and metadata['access_patterns']:
-            lines.append("   [PATTERNS] Access Patterns (COPY THESE EXACTLY):")
-            # Show ALL patterns to reveal complete nested structure
-            for pattern in metadata['access_patterns']:
-                lines.append(f"      {pattern}")
+            lines.append("")
+            lines.append("   " + "="*70)
+            lines.append("   [>>>] COPY-PASTE READY: Access Patterns (Pre-Validated)")
+            lines.append("   " + "="*70)
+            lines.append("   # These patterns match your JSON structure - copy them directly:")
+            lines.append("")
+
+            # Show ALL patterns as executable code
+            for i, pattern in enumerate(metadata['access_patterns'], 1):
+                var_name = f"value{i}"
+                lines.append(f"   # Pattern {i}:")
+                lines.append(f"   {var_name} = {pattern}")
+                if i <= 3:  # Show print statement for first 3 as examples
+                    lines.append(f"   print(f'Pattern {i}: {{{var_name}}}')")
+                lines.append("")
+
+                # Add visual break every 10 patterns for readability
+                if i % 10 == 0 and i < len(metadata['access_patterns']):
+                    lines.append("   # ... (more patterns below) ...")
+                    lines.append("")
+
+            lines.append("   " + "-"*70)
 
         # Show safe preview (truncated to avoid context overflow)
         preview_data = metadata.get('preview')
@@ -267,32 +285,53 @@ class FileContextBuilder:
             if metadata.get('total_tables', 0) > 0:
                 lines.append("      # Extract tables: tables = doc.tables")
 
-        # JSON access example
+        # JSON access example - COMPLETE TEMPLATE
         elif file_type == 'json':
-            lines.append("   Example loading code:")
-            lines.append("      import json")
-            lines.append(f"      with open('{original_filename}', 'r', encoding='utf-8') as f:")
-            lines.append("          data = json.load(f)")
+            lines.append("")
+            lines.append("   " + "="*70)
+            lines.append("   [>>>] COMPLETE TEMPLATE: Copy this entire block")
+            lines.append("   " + "="*70)
+            lines.append("")
+            lines.append("   import json")
+            lines.append("")
+            lines.append(f"   # Load JSON file (EXACT filename - don't change!)")
+            lines.append(f"   filename = '{original_filename}'")
+            lines.append("   try:")
+            lines.append("       with open(filename, 'r', encoding='utf-8') as f:")
+            lines.append("           data = json.load(f)")
+            lines.append("       ")
+            lines.append("       # Verify data type (always do this!)")
+            lines.append("       print(f'Loaded: {type(data).__name__}')")
+            lines.append("       if isinstance(data, dict):")
+            lines.append("           print(f'Keys: {list(data.keys())}')")
+            lines.append("       elif isinstance(data, list):")
+            lines.append("           print(f'Items: {len(data)}')")
+            lines.append("       ")
+            lines.append("       # Now use the access patterns shown above")
 
-            # Add structure-specific access example
+            # Add specific access example if patterns available
             if 'access_patterns' in metadata and metadata['access_patterns']:
-                # Use the first access pattern as example
                 first_pattern = metadata['access_patterns'][0]
-                lines.append("      # Then use the access patterns above, e.g.:")
-                lines.append(f"      # {first_pattern}")
-            else:
-                # Try to get keys from structure dict
-                structure = metadata.get('structure', {})
-                if isinstance(structure, dict) and 'keys' in structure and structure['keys']:
-                    example_key = structure['keys'][0]
-                    lines.append(f"      # Access: value = data.get('{example_key}', default)")
-                elif 'first_item_type' in metadata and metadata['first_item_type']:
-                    lines.append("      # Access: if len(data) > 0: item = data[0]")
+                lines.append("       # Example (copy from patterns above):")
+                lines.append(f"       value1 = {first_pattern}")
+                lines.append("       print(f'Value: {value1}')")
+
+            lines.append("       ")
+            lines.append("   except json.JSONDecodeError as e:")
+            lines.append("       print(f'JSON Error: {e}')")
+            lines.append("       exit(1)")
+            lines.append("   except KeyError as e:")
+            lines.append("       print(f'Key not found: {e}')")
+            lines.append("       exit(1)")
+            lines.append("")
+            lines.append("   " + "-"*70)
 
             # Add error handling note if JSON had issues
             if 'error' in metadata:
-                lines.append("   [!] CRITICAL: Wrap in try/except json.JSONDecodeError (file has parsing issues)")
+                lines.append("")
+                lines.append("   [!] CRITICAL: This file had parsing issues - extra error handling needed!")
             elif 'parsing_note' in metadata:
+                lines.append("")
                 lines.append(f"   [!] {metadata['parsing_note']}")
 
         # Excel access example

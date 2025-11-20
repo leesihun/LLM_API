@@ -102,79 +102,98 @@ def get_python_code_generation_prompt(
         return "\n".join(prompt_parts)
 
     else:
-        # Normal mode
-        prompt_parts = [
-            "You are a Python code generator. Generate clean, efficient Python code to accomplish the following task:",
+        # Normal mode - RESTRUCTURED for maximum clarity
+        prompt_parts = []
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 1: TASK (First thing LLM sees)
+        # ═══════════════════════════════════════════════════════════════
+        prompt_parts.extend([
+            "="*80,
+            "YOUR TASK".center(80),
+            "="*80,
             "",
-            "IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.",
-            "",
-            f"Task: {query}",
+            f"[TASK] {query}",
             ""
-        ]
+        ])
 
         if context:
-            prompt_parts.append(f"Context: {context}")
+            prompt_parts.append(f"[CONTEXT] {context}")
             prompt_parts.append("")
 
-        prompt_parts.append(file_context)
-        prompt_parts.append("")
-        prompt_parts.append("Important requirements:")
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 2: FILES (Show exact files BEFORE instructions)
+        # ═══════════════════════════════════════════════════════════════
+        prompt_parts.extend([
+            "="*80,
+            "AVAILABLE FILES (Use these EXACT names)".center(80),
+            "="*80,
+            file_context,
+            ""
+        ])
 
-        if file_context:
-            prompt_parts.extend([
-                "[!!!] CRITICAL: Use the EXACT filenames shown in the file list above",
-                "[!!!] DO NOT use generic names like 'file.json', 'data.csv', 'input.xlsx', 'output.txt', etc.",
-                "[!!!] COPY the actual filename from the list - including ALL special characters, numbers, Korean text",
-                "- Never add raw data to the code, always use the actual filenames to read the data",
-                "- Always use the real data. NEVER makeup data and ask user to input data."
-            ])
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 3: TOP 3 CRITICAL RULES (Only the most important)
+        # ═══════════════════════════════════════════════════════════════
+        prompt_parts.extend([
+            "="*80,
+            "[!!!] TOP 3 CRITICAL RULES [!!!]".center(80),
+            "="*80,
+            ""
+        ])
 
         prompt_parts.extend([
+            "[RULE 1] FILENAMES: Copy EXACT name from file list above",
+            "    [OK] DO: Use the exact name like 'sales_Q4_2024.json'",
+            "    [X]  DON'T: Use generic names like 'file.json' or 'data.csv'",
             "",
-            "[!!!] EXECUTION ENVIRONMENT (CRITICAL - READ CAREFULLY):",
-            "- Code will be executed via subprocess WITHOUT command-line arguments",
-            "- DO NOT use sys.argv - it will be empty (only script name)",
-            "- DO NOT use input() - this is non-interactive execution",
-            "- ALL filenames MUST be HARDCODED directly in the code",
-            "- Files are in the current working directory - use filenames directly",
-            "- If you create functions, call them with HARDCODED filenames in main code",
+            "[RULE 2] NO INPUT: Hardcode everything (no sys.argv, no input())",
+            "    [OK] DO: filename = 'sales_Q4_2024.json'  # Hardcoded",
+            "    [X]  DON'T: filename = sys.argv[1]  # No command-line args!",
             "",
-            "[X] FORBIDDEN PATTERNS:",
-            "  if __name__ == '__main__':",
-            "      import sys",
-            "      if len(sys.argv) > 1:",
-            "          main(sys.argv[1])  # [X] WRONG - no arguments available!",
+            "[RULE 3] USE TEMPLATES: Copy the code templates shown in file section",
+            "    [OK] DO: Copy the 'Complete Template' or 'Access Patterns'",
+            "    [X]  DON'T: Guess keys or make up field names",
             "",
-            "[OK] CORRECT PATTERN:",
-            "  if __name__ == '__main__':",
-            "      filename = 'data.json'  # Use actual filename from file list",
-            "      main(filename)  # [OK] CORRECT - hardcoded filename",
-            "",
-            "- Output results using print() statements",
-            "- Include error handling (try/except)",
-            "- Add a docstring explaining what the code does",
-            "- Keep code clean and readable"
+            "="*80,
+            ""
         ])
 
         if has_json_files:
             prompt_parts.extend([
+                "="*80,
+                "JSON FILE INSTRUCTIONS".center(80),
+                "="*80,
                 "",
-                "JSON FILE REQUIREMENTS (STRICT - FOLLOW EXACTLY):",
-                "1. File loading: with open('EXACT_FILENAME_FROM_LIST.json', 'r', encoding='utf-8') as f: data = json.load(f)",
-                "   [!!!] Replace 'EXACT_FILENAME_FROM_LIST.json' with the ACTUAL filename from the file list!",
-                "   [!!!] DO NOT use 'file.json', 'data.json', 'input.json' - use the REAL name!",
-                "2. Error handling: Wrap in try/except json.JSONDecodeError",
-                "3. Type validation: Check isinstance(data, dict) or isinstance(data, list) BEFORE accessing",
-                "4. Safe dict access: ALWAYS use data.get('key', default) NEVER data['key']",
-                "5. Key validation: ONLY use keys from \"[PATTERNS] Access Patterns\" section - NO guessing or making up keys",
-                "6. Nested access: Use chained .get(): data.get('parent', {}).get('child', default)",
-                "7. Array safety: Check length before indexing: if len(data) > 0: item = data[0]",
-                "8. Copy patterns: The \"[PATTERNS] Access Patterns\" are pre-validated - copy them exactly",
-                "9. Null handling: Check if value is not None before using",
-                "10. Debugging: Print data structure first: print(\"Type:\", type(data), \"Keys:\", list(data.keys()) if isinstance(data, dict) else len(data))"
+                "The file section above shows a COMPLETE TEMPLATE for JSON loading.",
+                "[>>>] COPY that entire template - it's ready to run!",
+                "",
+                "The template includes:",
+                "  [OK] Correct filename (already filled in)",
+                "  [OK] Error handling (try/except blocks)",
+                "  [OK] Type validation (isinstance checks)",
+                "  [OK] Access patterns (copy-paste ready)",
+                "",
+                "[!!!] DON'T write JSON loading from scratch - use the template!",
+                "",
+                "="*80,
+                ""
             ])
 
-        prompt_parts.append("\nGenerate ONLY the Python code, no explanations or markdown:")
+        prompt_parts.extend([
+            "="*80,
+            "YOUR RESPONSE".center(80),
+            "="*80,
+            "",
+            "Generate Python code that:",
+            "  1. Uses EXACT filenames from the file list",
+            "  2. Follows the template structure (if shown)",
+            "  3. Copies access patterns exactly (don't modify them)",
+            "  4. Answers the user's question clearly",
+            "",
+            "Output ONLY executable Python code (no markdown, no explanations):",
+            ""
+        ])
         return "\n".join(prompt_parts)
 
 

@@ -168,7 +168,9 @@ class PythonCoderTool:
                 file_metadata=file_metadata,
                 is_prestep=is_prestep,
                 has_json_files=has_json_files,
-                attempt_num=attempt + 1
+                attempt_num=attempt + 1,
+                session_id=session_id,
+                stage_prefix=stage_prefix
             )
 
             if not code:
@@ -261,10 +263,33 @@ class PythonCoderTool:
         query: str,
         file_context: str,
         validated_files: Dict[str, str],
-        attempt_num: int
+        attempt_num: int,
+        session_id: Optional[str] = None,
+        react_step: Optional[int] = None,
+        plan_step: Optional[int] = None,
+        stage_prefix: Optional[str] = None
     ) -> None:
         """
-        Save LLM input prompt to scratch directory for debugging/analysis.
+        Save LLM input prompt to scratch directory with hierarchical organization.
+
+        Directory structure:
+        /data/scratch/
+        ├── {session_id}/              # Session-specific directory
+        │   └── prompts/                # All prompts for this session
+        │       ├── python_coder/       # Python coder tool prompts
+        │       │   ├── attempt_1.txt
+        │       │   ├── attempt_2.txt
+        │       │   └── attempt_3.txt
+        │       ├── react/              # ReAct agent prompts
+        │       │   ├── step_1_thought_action.txt
+        │       │   ├── step_2_thought_action.txt
+        │       │   └── step_3_thought_action.txt
+        │       └── plan_execute/       # Plan-Execute prompts
+        │           ├── step_1_plan.txt
+        │           ├── step_2_execute.txt
+        │           └── step_3_verify.txt
+        └── global_prompts/             # Prompts without session_id (fallback)
+            └── {timestamp}_{tool}.txt
 
         Args:
             prompt: Full LLM prompt text
@@ -272,26 +297,64 @@ class PythonCoderTool:
             file_context: File context string
             validated_files: Dict of validated files
             attempt_num: Current attempt number
+            session_id: Optional session ID for organization
+            react_step: Optional ReAct iteration number
+            plan_step: Optional plan-execute step number
+            stage_prefix: Optional stage prefix (e.g., "plan", "execute", "verify")
         """
         try:
-            # Determine session ID from validated_files or use a temp ID
-            # For now, create a prompts directory in scratch
-            prompts_dir = Path(settings.python_code_execution_dir) / "prompts"
+            from datetime import datetime
+
+            # Determine directory structure
+            if session_id:
+                # Session-specific organization
+                session_dir = Path(settings.python_code_execution_dir) / session_id
+                prompts_base = session_dir / "prompts"
+            else:
+                # Global fallback for prompts without session
+                prompts_base = Path(settings.python_code_execution_dir) / "global_prompts"
+
+            # Create subdirectory based on context
+            if react_step is not None:
+                # ReAct agent prompts
+                prompts_dir = prompts_base / "react"
+                filename = f"step_{react_step:02d}_attempt_{attempt_num}.txt"
+            elif plan_step is not None and stage_prefix:
+                # Plan-Execute prompts
+                prompts_dir = prompts_base / "plan_execute"
+                filename = f"step_{plan_step:02d}_{stage_prefix}_attempt_{attempt_num}.txt"
+            elif stage_prefix:
+                # Stage-specific (e.g., verification, execution)
+                prompts_dir = prompts_base / "python_coder" / stage_prefix
+                filename = f"attempt_{attempt_num}.txt"
+            else:
+                # Default python coder prompts
+                prompts_dir = prompts_base / "python_coder"
+                filename = f"attempt_{attempt_num}.txt"
+
+            # Create directory structure
             prompts_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create timestamp-based filename
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            prompt_file = prompts_dir / f"prompt_attempt{attempt_num}_{timestamp}.txt"
+            # Build file path
+            prompt_file = prompts_dir / filename
 
-            # Build structured prompt file
+            # Build structured prompt file content
             content_lines = []
             content_lines.append("=" * 80)
             content_lines.append("LLM INPUT PROMPT - Code Generation")
             content_lines.append("=" * 80)
             content_lines.append(f"Timestamp: {datetime.now().isoformat()}")
+            content_lines.append(f"Session ID: {session_id or 'N/A'}")
             content_lines.append(f"Attempt: {attempt_num}")
-            content_lines.append(f"Query: {query}")
+
+            if react_step is not None:
+                content_lines.append(f"ReAct Step: {react_step}")
+            if plan_step is not None:
+                content_lines.append(f"Plan Step: {plan_step}")
+            if stage_prefix:
+                content_lines.append(f"Stage: {stage_prefix}")
+
+            content_lines.append(f"Query: {query[:200]}{'...' if len(query) > 200 else ''}")
             content_lines.append(f"Files: {len(validated_files)}")
             content_lines.append("=" * 80)
             content_lines.append("")
@@ -302,7 +365,7 @@ class PythonCoderTool:
             content_lines.append("=" * 80)
             content_lines.append("FILE CONTEXT:")
             content_lines.append("=" * 80)
-            content_lines.append(file_context)
+            content_lines.append(file_context if file_context else "(No file context)")
             content_lines.append("")
             content_lines.append("=" * 80)
             content_lines.append("END OF PROMPT")
@@ -310,7 +373,10 @@ class PythonCoderTool:
 
             # Write to file
             prompt_file.write_text('\n'.join(content_lines), encoding='utf-8')
-            logger.info(f"[PythonCoderTool] [SAVED] Saved LLM prompt to {prompt_file.name}")
+
+            # Log with relative path for readability
+            relative_path = prompt_file.relative_to(Path(settings.python_code_execution_dir))
+            logger.info(f"[PythonCoderTool] [SAVED] Prompt → {relative_path}")
 
         except Exception as e:
             logger.warning(f"[PythonCoderTool] Failed to save LLM prompt: {e}")
@@ -488,7 +554,9 @@ class PythonCoderTool:
         file_metadata: Dict[str, Any],
         is_prestep: bool,
         has_json_files: bool,
-        attempt_num: int
+        attempt_num: int,
+        session_id: Optional[str] = None,
+        stage_prefix: Optional[str] = None
     ) -> Tuple[str, bool, List[str]]:
         """
         OPTIMIZED: Generate code WITH self-verification in single LLM call.
@@ -516,7 +584,9 @@ class PythonCoderTool:
             query=query,
             file_context=file_context,
             validated_files=validated_files,
-            attempt_num=attempt_num
+            attempt_num=attempt_num,
+            session_id=session_id,
+            stage_prefix=stage_prefix
         )
 
         try:
