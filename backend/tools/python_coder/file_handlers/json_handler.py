@@ -118,16 +118,23 @@ class JSONFileHandler(BaseFileHandler):
                 'value': str(data)[:100]
             }
 
-    def _generate_access_patterns(self, data: Any, max_patterns: int = 15) -> List[str]:
+    def _generate_access_patterns(self, data: Any, max_patterns: int = 1000) -> List[str]:
         """
         Generate recommended access patterns for the JSON data.
 
-        IMPROVED: Now recursively explores nested structures up to 4-5 levels deep
-        to help LLM understand the full data hierarchy and avoid accessing
+        IMPROVED: Now recursively explores ALL nested structures up to 5 levels deep
+        to help LLM understand the COMPLETE data hierarchy and avoid accessing
         fields at wrong nesting levels.
 
         This is critical for complex JSON with nested arrays/objects (e.g.,
         departments[i].sales[j].revenue) where the LLM needs to see the full path.
+
+        Args:
+            data: JSON data to analyze
+            max_patterns: Maximum patterns to generate (default 1000, effectively unlimited)
+
+        Returns:
+            List of all access patterns found
         """
         patterns = []
 
@@ -142,7 +149,8 @@ class JSONFileHandler(BaseFileHandler):
 
             # Explore nested structures
             if isinstance(obj, dict):
-                for key, value in list(obj.items())[:5]:  # Explore first 5 keys
+                # Explore ALL keys (removed [:5] limit)
+                for key, value in obj.items():
                     new_path = f"{path}['{key}']" if path else f"data['{key}']"
                     explore_structure(value, new_path, depth + 1, max_depth)
 
@@ -157,11 +165,12 @@ class JSONFileHandler(BaseFileHandler):
 
         # Ensure we have at least top-level patterns
         if not patterns and isinstance(data, dict):
-            patterns = [f"data['{key}']" for key in list(data.keys())[:max_patterns]]
+            patterns = [f"data['{key}']" for key in data.keys()]
         elif not patterns and isinstance(data, list) and data:
             patterns = ["data[0]"]
 
-        return patterns[:max_patterns]
+        # Return ALL patterns (no truncation)
+        return patterns
 
     def _create_safe_preview(
         self,
