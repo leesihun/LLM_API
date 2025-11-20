@@ -146,11 +146,12 @@ Provide your final answer:"""
 
 def get_react_action_input_for_step_prompt(
     user_query: str,
-    plan_step_goal: str,
-    success_criteria: str,
-    plan_step_context: Optional[str],
-    previous_context: str,
-    tool_name: str
+    plan_step_goal: Optional[str] = None,
+    success_criteria: str = "",
+    plan_step_context: Optional[str] = None,
+    previous_context: str = "",
+    tool_name: str = "",
+    step_goal: Optional[str] = None  # Backward compatibility alias
 ) -> str:
     """
     Prompt for generating action input for a specific tool in plan execution.
@@ -158,12 +159,16 @@ def get_react_action_input_for_step_prompt(
 
     Args:
         user_query: Original user query
-        plan_step_goal: Current step goal
+        plan_step_goal: Current step goal (preferred parameter name)
         success_criteria: Success criteria for the step
         plan_step_context: Additional context for the step
         previous_context: Context from previous steps
         tool_name: Tool being used
+        step_goal: Alias for plan_step_goal (for backward compatibility)
     """
+    # Handle backward compatibility - use step_goal if plan_step_goal not provided
+    if plan_step_goal is None and step_goal is not None:
+        plan_step_goal = step_goal
     return f"""You are executing a specific step in a plan.
 
 IMPORTANT: Do NOT use Unicode emojis in your response. Use ASCII-safe markers like [OK], [X], [WARNING], [!!!] instead.
