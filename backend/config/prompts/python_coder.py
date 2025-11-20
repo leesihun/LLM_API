@@ -11,18 +11,24 @@ def get_python_code_generation_prompt(
     context: Optional[str],
     file_context: str,
     is_prestep: bool = False,
-    has_json_files: bool = False
+    has_json_files: bool = False,
+    conversation_history: Optional[List[dict]] = None,
+    plan_context: Optional[dict] = None,
+    react_context: Optional[dict] = None
 ) -> str:
     """
     Prompt for generating Python code.
     Used in: backend/tools/python_coder_tool.py (_generate_code)
 
     Args:
-        query: User's task
+        query: User's task (the ACTUAL question user asked)
         context: Optional additional context
         file_context: File information
         is_prestep: Whether this is pre-step (fast analysis mode)
         has_json_files: Whether JSON files are present
+        conversation_history: List of past conversation turns (dicts with 'role', 'content', 'timestamp')
+        plan_context: Plan-Execute context (dict with 'current_step', 'total_steps', 'plan', 'previous_results')
+        react_context: ReAct context (dict with 'iteration', 'history' containing failed attempts with code and errors)
     """
     if is_prestep:
         # Pre-step mode: fast analysis
@@ -107,13 +113,47 @@ def get_python_code_generation_prompt(
         prompt_parts = []
 
         # ═══════════════════════════════════════════════════════════════
-        # SECTION 1: PAST HISTORIES (if any)
+        # SECTION 1: PAST HISTORIES (conversation context)
         # ═══════════════════════════════════════════════════════════════
-        # Note: This will be populated by orchestrator/agent if there's conversation history
-        # For now, we add a placeholder that can be filled
+        if conversation_history and len(conversation_history) > 0:
+            prompt_parts.extend([
+                "="*80,
+                "PAST HISTORIES".center(80),
+                "="*80,
+                ""
+            ])
+
+            for idx, turn in enumerate(conversation_history, 1):
+                role = turn.get('role', 'unknown')
+                content = turn.get('content', '')
+                timestamp = turn.get('timestamp', '')
+
+                if role == 'user':
+                    prompt_parts.append(f"=== Turn {idx} (User) ===")
+                elif role == 'assistant':
+                    prompt_parts.append(f"=== Turn {idx} (AI) ===")
+                else:
+                    prompt_parts.append(f"=== Turn {idx} ({role}) ===")
+
+                if timestamp:
+                    prompt_parts.append(f"Time: {timestamp}")
+
+                # Truncate very long content
+                if len(content) > 500:
+                    prompt_parts.append(f"{content[:500]}...")
+                    prompt_parts.append(f"[Content truncated - {len(content)} chars total]")
+                else:
+                    prompt_parts.append(content)
+
+                prompt_parts.append("")
+
+            prompt_parts.extend([
+                "="*80,
+                ""
+            ])
 
         # ═══════════════════════════════════════════════════════════════
-        # SECTION 2: MY ORIGINAL INPUT PROMPT (User's query)
+        # SECTION 2: MY ORIGINAL INPUT PROMPT (User's actual question)
         # ═══════════════════════════════════════════════════════════════
         prompt_parts.extend([
             "="*80,
@@ -128,15 +168,128 @@ def get_python_code_generation_prompt(
             prompt_parts.append(f"[ADDITIONAL CONTEXT] {context}")
             prompt_parts.append("")
 
-        # ═══════════════════════════════════════════════════════════════
-        # SECTION 3: PLANS (if from plan-execute workflow)
-        # ═══════════════════════════════════════════════════════════════
-        # Note: This will be populated by plan-execute agent if applicable
+        prompt_parts.extend([
+            "="*80,
+            ""
+        ])
 
         # ═══════════════════════════════════════════════════════════════
-        # SECTION 4: REACTS (if from ReAct iterations)
+        # SECTION 3: PLANS (from plan-execute workflow)
         # ═══════════════════════════════════════════════════════════════
-        # Note: This will be populated by ReAct agent if applicable
+        if plan_context:
+            prompt_parts.extend([
+                "="*80,
+                "PLANS".center(80),
+                "="*80,
+                "",
+                f"[Plan-Execute Workflow - Step {plan_context.get('current_step', '?')} of {plan_context.get('total_steps', '?')}]",
+                ""
+            ])
+
+            if 'plan' in plan_context:
+                prompt_parts.append("Full Plan:")
+                for step in plan_context['plan']:
+                    step_num = step.get('step_number', '?')
+                    goal = step.get('goal', '')
+                    status = step.get('status', 'pending')
+
+                    status_marker = ""
+                    if status == 'completed':
+                        status_marker = " [OK] COMPLETED"
+                    elif status == 'current':
+                        status_marker = " <- CURRENT STEP"
+                    elif status == 'failed':
+                        status_marker = " [X] FAILED"
+
+                    prompt_parts.append(f"  Step {step_num}: {goal}{status_marker}")
+
+                    if 'success_criteria' in step:
+                        prompt_parts.append(f"    Success criteria: {step['success_criteria']}")
+                    if 'primary_tools' in step:
+                        prompt_parts.append(f"    Primary tools: {', '.join(step['primary_tools'])}")
+
+                prompt_parts.append("")
+
+            if 'previous_results' in plan_context and plan_context['previous_results']:
+                prompt_parts.append("Previous Steps Results:")
+                for result in plan_context['previous_results']:
+                    step_num = result.get('step_number', '?')
+                    summary = result.get('summary', '')
+                    prompt_parts.append(f"  Step {step_num} -> {summary}")
+                prompt_parts.append("")
+
+            prompt_parts.extend([
+                "="*80,
+                ""
+            ])
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 4: REACTS (from ReAct iterations with FAILED CODES)
+        # ═══════════════════════════════════════════════════════════════
+        if react_context and 'history' in react_context:
+            prompt_parts.extend([
+                "="*80,
+                "REACTS".center(80),
+                "="*80,
+                "",
+                "[ReAct Iteration History]",
+                ""
+            ])
+
+            current_iteration = react_context.get('iteration', 1)
+
+            for idx, iteration in enumerate(react_context['history'], 1):
+                prompt_parts.append(f"=== Iteration {idx} ===")
+
+                # Thought
+                if 'thought' in iteration:
+                    prompt_parts.append(f"Thought: {iteration['thought']}")
+
+                # Action
+                if 'action' in iteration:
+                    prompt_parts.append(f"Action: {iteration['action']}")
+
+                # Tool Input (if any)
+                if 'tool_input' in iteration:
+                    prompt_parts.append(f"Tool Input: {iteration['tool_input']}")
+
+                # Generated Code (if failed)
+                if 'code' in iteration:
+                    prompt_parts.append("")
+                    prompt_parts.append("Generated Code:")
+                    prompt_parts.append("```python")
+                    # Show first 30 lines of code
+                    code_lines = iteration['code'].split('\n')
+                    for line in code_lines[:30]:
+                        prompt_parts.append(line)
+                    if len(code_lines) > 30:
+                        prompt_parts.append(f"... [{len(code_lines) - 30} more lines]")
+                    prompt_parts.append("```")
+
+                # Observation (error/result)
+                if 'observation' in iteration:
+                    obs = iteration['observation']
+                    prompt_parts.append("")
+                    if iteration.get('status') == 'error':
+                        prompt_parts.append(f"Observation: [ERROR] {obs}")
+
+                        # Add error reason if available
+                        if 'error_reason' in iteration:
+                            prompt_parts.append(f"Error Reason: {iteration['error_reason']}")
+                    else:
+                        prompt_parts.append(f"Observation: {obs}")
+
+                prompt_parts.append("")
+
+            # Current iteration marker
+            prompt_parts.append(f"=== Iteration {current_iteration} (CURRENT) ===")
+            prompt_parts.append("Awaiting code generation...")
+            prompt_parts.append("")
+
+            prompt_parts.extend([
+                "="*80,
+                ""
+            ])
 
         # ═══════════════════════════════════════════════════════════════
         # SECTION 5: FINAL TASK FOR LLM AT THIS STAGE
@@ -493,7 +646,10 @@ def get_code_generation_with_self_verification_prompt(
     context: Optional[str],
     file_context: str,
     is_prestep: bool = False,
-    has_json_files: bool = False
+    has_json_files: bool = False,
+    conversation_history: Optional[List[dict]] = None,
+    plan_context: Optional[dict] = None,
+    react_context: Optional[dict] = None
 ) -> str:
     """
     OPTIMIZED: Combined code generation + self-verification prompt.
@@ -505,6 +661,9 @@ def get_code_generation_with_self_verification_prompt(
         file_context: File information
         is_prestep: Whether this is pre-step (fast analysis mode)
         has_json_files: Whether JSON files are present
+        conversation_history: List of past conversation turns
+        plan_context: Plan-Execute context
+        react_context: ReAct context with failed attempts
 
     Returns:
         Prompt that requests JSON response with code and self-check
@@ -515,7 +674,10 @@ def get_code_generation_with_self_verification_prompt(
         context=context,
         file_context=file_context,
         is_prestep=is_prestep,
-        has_json_files=has_json_files
+        has_json_files=has_json_files,
+        conversation_history=conversation_history,
+        plan_context=plan_context,
+        react_context=react_context
     )
 
     # Remove the last line "Generate ONLY the Python code, no explanations or markdown:"

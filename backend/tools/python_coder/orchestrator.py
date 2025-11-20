@@ -89,7 +89,10 @@ class PythonCoderTool:
         file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
         is_prestep: bool = False,
-        stage_prefix: Optional[str] = None
+        stage_prefix: Optional[str] = None,
+        conversation_history: Optional[List[dict]] = None,
+        plan_context: Optional[dict] = None,
+        react_context: Optional[dict] = None
     ) -> Dict[str, Any]:
         """
         OPTIMIZED: Main entry point for code generation and execution.
@@ -108,6 +111,9 @@ class PythonCoderTool:
             session_id: Optional session ID
             is_prestep: Whether this is called from ReAct pre-step
             stage_prefix: Optional stage prefix for code file naming
+            conversation_history: Past conversation turns
+            plan_context: Plan-Execute workflow context
+            react_context: ReAct iteration context with failed attempts
 
         Returns:
             Dict with execution results
@@ -170,7 +176,10 @@ class PythonCoderTool:
                 has_json_files=has_json_files,
                 attempt_num=attempt + 1,
                 session_id=session_id,
-                stage_prefix=stage_prefix
+                stage_prefix=stage_prefix,
+                conversation_history=conversation_history,
+                plan_context=plan_context,
+                react_context=react_context
             )
 
             if not code:
@@ -561,7 +570,10 @@ class PythonCoderTool:
         has_json_files: bool,
         attempt_num: int,
         session_id: Optional[str] = None,
-        stage_prefix: Optional[str] = None
+        stage_prefix: Optional[str] = None,
+        conversation_history: Optional[List[dict]] = None,
+        plan_context: Optional[dict] = None,
+        react_context: Optional[dict] = None
     ) -> Tuple[str, bool, List[str]]:
         """
         OPTIMIZED: Generate code WITH self-verification in single LLM call.
@@ -578,7 +590,10 @@ class PythonCoderTool:
             context=context,
             file_context=file_context,
             is_prestep=is_prestep,
-            has_json_files=has_json_files
+            has_json_files=has_json_files,
+            conversation_history=conversation_history,
+            plan_context=plan_context,
+            react_context=react_context
         )
 
         logger.info(f"[PythonCoderTool] Generating code with self-verification (attempt {attempt_num})...")

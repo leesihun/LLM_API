@@ -276,6 +276,99 @@ Implemented an automatic session memory system that maintains continuity across 
 
 ---
 
+### Version 1.4.0 (November 20, 2024)
+
+**Enhancement: Context-Aware Python Code Generation**
+
+Significantly improved Python code generation by integrating comprehensive context from different agent workflows and conversation history.
+
+**Key Changes:**
+
+1. **Enhanced Orchestrator Context Passing** (`backend/tools/python_coder/orchestrator.py`)
+   - Added `conversation_history`, `plan_context`, and `react_context` parameters to `execute_code_task()` method
+   - Modified `_generate_code_with_self_verification()` to accept and pass context to prompt generation
+   - Context now flows through the entire code generation pipeline
+
+2. **Improved Python Coder Prompts** (`backend/config/prompts/python_coder.py`)
+   - Updated `get_code_generation_with_self_verification_prompt()` to handle new context parameters
+   - Enhanced `get_python_code_generation_prompt()` with three new context sections:
+     - **PAST HISTORIES**: Shows previous conversation turns with timestamps
+     - **PLANS**: Displays Plan-Execute workflow context with step status and previous results
+     - **REACTS**: Shows ReAct iteration history including failed code attempts and errors
+   - Structured prompt now has 8 sections: HISTORIES → INPUT → PLANS → REACTS → TASK → METADATA → RULES → CHECKLISTS
+
+3. **ReAct Agent Integration** (`backend/tasks/react/tool_executor.py`)
+   - Added `_build_react_context()` method to extract failed code attempts and errors
+   - Added `_load_conversation_history()` method to load conversation from store
+   - Modified `_execute_python_coder()` to automatically gather and pass all contexts
+   - react_context structure includes iteration history with failed code, observations, and error reasons
+
+4. **Plan-Execute Agent Integration** (`backend/tasks/react/plan_executor.py`)
+   - Added `_build_plan_context()` method to create structured plan context
+   - Modified `execute_step()` to accept and track all plan steps and results
+   - plan_context includes current step, total steps, full plan with status, and previous results
+   - Automatic context injection when python_coder tool is invoked during plan execution
+
+5. **Conversation History Integration** (`backend/storage/conversation_store.py`)
+   - Leveraged existing `get_messages()` method for conversation history retrieval
+   - History automatically loaded when session_id is available
+   - Recent conversation context (last 10 messages) passed to code generation
+
+**Benefits:**
+- **Better Context Awareness**: Python coder now sees full conversation history, reducing repeated questions
+- **Learn from Failures**: ReAct context shows previous failed attempts, preventing the same mistakes
+- **Plan Alignment**: Plan context ensures generated code aligns with overall execution strategy
+- **Improved Code Quality**: LLM can generate more appropriate code with full context visibility
+- **Reduced Iterations**: Context-aware generation reduces need for multiple retry attempts
+
+**Example Context Flow:**
+
+Plan-Execute scenario:
+```
+User: "Analyze sales data and create visualizations"
+→ Plan Step 1: Load data (python_coder called)
+  → Context includes: conversation history, plan (step 1 of 3)
+→ Plan Step 2: Calculate metrics (python_coder called)
+  → Context includes: conversation history, plan (step 2 of 3), previous step result
+→ Plan Step 3: Create charts (python_coder called)
+  → Context includes: conversation history, plan (step 3 of 3), all previous results
+```
+
+ReAct scenario with retries:
+```
+User: "Calculate average from data.json"
+→ Iteration 1: python_coder generates code → fails (FileNotFoundError)
+→ Iteration 2: python_coder called again
+  → Context includes: conversation history, react_context with failed attempt #1
+→ Iteration 3: python_coder called again
+  → Context includes: conversation history, react_context with failed attempts #1 and #2
+```
+
+**Modified Files:**
+- `backend/tools/python_coder/orchestrator.py` - Context parameter additions
+- `backend/config/prompts/python_coder.py` - Prompt structure enhancement
+- `backend/tasks/react/tool_executor.py` - Context gathering and passing
+- `backend/tasks/react/plan_executor.py` - Plan context building
+
+**New Test File:**
+- `test_python_coder_prompt.py` - Comprehensive test for prompt generation with all context sections
+
+**Testing:**
+Run the test to verify prompt generation:
+```bash
+python test_python_coder_prompt.py
+```
+
+The test verifies:
+- All 8 prompt sections are present
+- Conversation history is properly formatted
+- Plan context shows step progression
+- ReAct context includes failed attempts
+- File metadata and access patterns are included
+- Rules and checklists are present
+
+---
+
 ### Version 1.1.0 (Previous)
 - Multi-agent architecture implementation
 - ReAct pattern for reasoning and acting
@@ -357,6 +450,6 @@ jupyter notebook API_examples.ipynb
 
 ---
 
-**Last Updated**: November 19, 2024
-**Version**: 1.3.0
+**Last Updated**: November 20, 2024
+**Version**: 1.4.0
 

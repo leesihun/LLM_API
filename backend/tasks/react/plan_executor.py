@@ -109,7 +109,9 @@ class PlanExecutor:
                 user_query=user_query,
                 accumulated_observations=accumulated_observations,
                 file_paths=file_paths,
-                session_id=session_id
+                session_id=session_id,
+                all_plan_steps=plan_steps,
+                step_results=step_results
             )
 
             step_results.append(step_result)
@@ -147,7 +149,9 @@ class PlanExecutor:
         user_query: str,
         accumulated_observations: List[str],
         file_paths: Optional[List[str]] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        all_plan_steps: Optional[List[PlanStep]] = None,
+        step_results: Optional[List[StepResult]] = None
     ) -> StepResult:
         """
         Execute a single plan step with single tool (no fallback).
@@ -161,6 +165,8 @@ class PlanExecutor:
             accumulated_observations: Context from previous steps
             file_paths: Optional file paths
             session_id: Optional session ID
+            all_plan_steps: Optional list of all plan steps for context
+            step_results: Optional list of completed step results
 
         Returns:
             StepResult with execution details
@@ -196,7 +202,9 @@ class PlanExecutor:
                 user_query=user_query,
                 context=context,
                 file_paths=file_paths,
-                session_id=session_id
+                session_id=session_id,
+                all_plan_steps=all_plan_steps,
+                step_results=step_results
             )
 
             logger.info(f"[PlanExecutor Step {plan_step.step_num}] {'SUCCESS' if success else 'FAILED'} with tool '{tool_name}'")
@@ -232,7 +240,9 @@ class PlanExecutor:
         user_query: str,
         context: str,
         file_paths: Optional[List[str]],
-        session_id: Optional[str]
+        session_id: Optional[str],
+        all_plan_steps: Optional[List[PlanStep]] = None,
+        step_results: Optional[List[StepResult]] = None
     ) -> Tuple[str, bool]:
         """
         Execute a specific tool to achieve the step goal.
@@ -244,6 +254,8 @@ class PlanExecutor:
             context: Context from previous steps
             file_paths: Optional file paths
             session_id: Optional session ID
+            all_plan_steps: Optional list of all plan steps for context
+            step_results: Optional list of completed step results
 
         Returns:
             Tuple of (observation, success)
@@ -254,6 +266,15 @@ class PlanExecutor:
             user_query=user_query,
             context=context
         )
+
+        # Build plan_context for python_coder
+        plan_context = None
+        if tool_name in ["python_code", "python_coder"] and all_plan_steps:
+            plan_context = self._build_plan_context(
+                current_step=plan_step,
+                all_plan_steps=all_plan_steps,
+                step_results=step_results or []
+            )
 
         # Map tool name to ToolName enum
         tool_mapping = {
@@ -274,7 +295,8 @@ class PlanExecutor:
             file_paths=file_paths,
             session_id=session_id,
             attempted_coder=False,
-            steps=None
+            steps=None,
+            plan_context=plan_context
         )
 
         # Trust tool execution result - no separate verification needed
@@ -282,6 +304,64 @@ class PlanExecutor:
         success = bool(observation and len(observation.strip()) > 0 and "error" not in observation.lower()[:100])
 
         return observation, success
+
+    def _build_plan_context(
+        self,
+        current_step: PlanStep,
+        all_plan_steps: List[PlanStep],
+        step_results: List[StepResult]
+    ) -> dict:
+        """
+        Build structured plan_context for python_coder prompt.
+
+        Args:
+            current_step: The current plan step being executed
+            all_plan_steps: List of all plan steps
+            step_results: List of completed step results
+
+        Returns:
+            Dict with plan context information
+        """
+        # Build plan structure with status
+        plan = []
+        for step in all_plan_steps:
+            step_dict = {
+                'step_number': step.step_num,
+                'goal': step.goal,
+                'success_criteria': step.success_criteria,
+                'primary_tools': step.primary_tools
+            }
+
+            # Determine status
+            if step.step_num < current_step.step_num:
+                # Check if completed successfully
+                result = next((r for r in step_results if r.step_num == step.step_num), None)
+                if result:
+                    step_dict['status'] = 'completed' if result.success else 'failed'
+                else:
+                    step_dict['status'] = 'completed'
+            elif step.step_num == current_step.step_num:
+                step_dict['status'] = 'current'
+            else:
+                step_dict['status'] = 'pending'
+
+            plan.append(step_dict)
+
+        # Build previous results summary
+        previous_results = []
+        for result in step_results:
+            previous_results.append({
+                'step_number': result.step_num,
+                'summary': result.observation[:200] if result.observation else "",
+                'success': result.success
+            })
+
+        return {
+            'current_step': current_step.step_num,
+            'total_steps': len(all_plan_steps),
+            'plan': plan,
+            'previous_results': previous_results
+        }
 
     def _build_action_input_from_plan(
         self,

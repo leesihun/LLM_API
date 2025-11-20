@@ -43,7 +43,8 @@ class ToolExecutor:
         file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
         attempted_coder: bool = False,
-        steps: Optional[List[Any]] = None
+        steps: Optional[List[Any]] = None,
+        plan_context: Optional[dict] = None
     ) -> Tuple[str, bool]:
         """
         Execute the selected action and return observation.
@@ -55,6 +56,7 @@ class ToolExecutor:
             session_id: Optional session ID for code execution
             attempted_coder: Whether python_coder has been attempted (for guard logic)
             steps: Optional list of ReActStep objects for context building
+            plan_context: Optional plan context from Plan-Execute agent
 
         Returns:
             Tuple of (observation, attempted_coder_updated)
@@ -73,7 +75,7 @@ class ToolExecutor:
 
             elif action == ToolName.PYTHON_CODER:
                 return await self._execute_python_coder(
-                    action_input, file_paths, session_id, steps
+                    action_input, file_paths, session_id, steps, plan_context
                 ), True
 
             elif action == ToolName.FILE_ANALYZER:
@@ -138,11 +140,18 @@ class ToolExecutor:
         query: str,
         file_paths: Optional[List[str]],
         session_id: Optional[str],
-        steps: Optional[List[Any]]
+        steps: Optional[List[Any]],
+        plan_context: Optional[dict] = None
     ) -> str:
         """Execute python_coder tool."""
         # Build context from execution history
         context = self._build_context_for_python_coder(steps, session_id)
+
+        # Build react_context with failed attempts
+        react_context = self._build_react_context(steps)
+
+        # Load conversation_history from conversation store
+        conversation_history = self._load_conversation_history(session_id)
 
         # Use ReAct step number for stage prefix
         current_step_num = len(steps) + 1 if steps else 1
@@ -153,7 +162,10 @@ class ToolExecutor:
             file_paths=file_paths,
             session_id=session_id,
             context=context,
-            stage_prefix=stage_prefix
+            stage_prefix=stage_prefix,
+            react_context=react_context,
+            plan_context=plan_context,
+            conversation_history=conversation_history
         )
 
         logger.info(f"Python Coder - Success: {result['success']}")
@@ -195,6 +207,114 @@ class ToolExecutor:
             return f"File analysis completed:\n{result.get('summary','')}"
         else:
             return f"File analysis failed: {result.get('error','Unknown error')}"
+
+    def _load_conversation_history(
+        self,
+        session_id: Optional[str]
+    ) -> Optional[List[dict]]:
+        """
+        Load conversation history from conversation store.
+
+        Args:
+            session_id: Session ID for conversation lookup
+
+        Returns:
+            List of conversation messages as dicts, or None if not available
+        """
+        if not session_id:
+            return None
+
+        try:
+            from backend.storage.conversation_store import conversation_store
+
+            # Load conversation messages
+            messages = conversation_store.get_messages(session_id, limit=10)  # Last 10 messages
+            if not messages:
+                return None
+
+            # Convert to dict format for prompt
+            history = []
+            for msg in messages:
+                history.append({
+                    'role': msg.role,
+                    'content': msg.content,
+                    'timestamp': msg.timestamp.isoformat() if msg.timestamp else ""
+                })
+
+            return history
+
+        except Exception as e:
+            logger.warning(f"[ToolExecutor] Failed to load conversation history: {e}")
+            return None
+
+    def _build_react_context(
+        self,
+        steps: Optional[List[Any]]
+    ) -> Optional[dict]:
+        """
+        Build structured react_context with failed attempts for python_coder prompt.
+
+        Args:
+            steps: List of ReActStep objects from execution history
+
+        Returns:
+            Dict with iteration history including failed code and errors, or None if no steps
+        """
+        if not steps:
+            return None
+
+        current_iteration = len(steps) + 1
+        history = []
+
+        # Extract failed python_coder attempts from steps
+        for step in steps:
+            step_info = {
+                'thought': step.thought,
+                'action': str(step.action),
+                'tool_input': step.action_input
+            }
+
+            # Check if this was a python_coder action
+            if step.action == ToolName.PYTHON_CODER:
+                # Try to extract code from session directory
+                from pathlib import Path
+                from backend.config.settings import settings
+
+                # Look for code files in session directory
+                # The code would be saved as script_step{N}.py
+                # We can try to read it or extract from observation
+
+                # For now, add observation and check for errors
+                step_info['observation'] = step.observation
+
+                if "failed" in step.observation.lower() or "error" in step.observation.lower():
+                    step_info['status'] = 'error'
+                    # Try to extract error message
+                    if "error:" in step.observation.lower():
+                        error_parts = step.observation.split("error:", 1)
+                        if len(error_parts) > 1:
+                            step_info['error_reason'] = error_parts[1].strip()[:500]
+                    else:
+                        step_info['error_reason'] = step.observation[:500]
+                else:
+                    step_info['status'] = 'success'
+                    step_info['observation'] = step.observation[:500]
+
+                history.append(step_info)
+            elif "error" in step.observation.lower() or "failed" in step.observation.lower():
+                # Include other failed attempts too
+                step_info['observation'] = step.observation[:500]
+                step_info['status'] = 'error'
+                history.append(step_info)
+
+        # Only return context if there are failed attempts
+        if not history:
+            return None
+
+        return {
+            'iteration': current_iteration,
+            'history': history
+        }
 
     def _build_context_for_python_coder(
         self,
