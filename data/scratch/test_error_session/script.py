@@ -1,1 +1,0 @@
-print('Test 3 - REPL recovered!')

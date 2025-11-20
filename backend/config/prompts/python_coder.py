@@ -102,96 +102,183 @@ def get_python_code_generation_prompt(
         return "\n".join(prompt_parts)
 
     else:
-        # Normal mode - RESTRUCTURED for maximum clarity
+        # Normal mode - NEW STRUCTURE
+        # Order: HISTORY → INPUT → PLANS → REACTS → TASK → METADATA → RULES → CHECKLISTS
         prompt_parts = []
 
         # ═══════════════════════════════════════════════════════════════
-        # SECTION 1: TASK (First thing LLM sees)
+        # SECTION 1: PAST HISTORIES (if any)
+        # ═══════════════════════════════════════════════════════════════
+        # Note: This will be populated by orchestrator/agent if there's conversation history
+        # For now, we add a placeholder that can be filled
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 2: MY ORIGINAL INPUT PROMPT (User's query)
         # ═══════════════════════════════════════════════════════════════
         prompt_parts.extend([
             "="*80,
-            "YOUR TASK".center(80),
+            "MY ORIGINAL INPUT PROMPT".center(80),
             "="*80,
             "",
-            f"[TASK] {query}",
+            f"{query}",
             ""
         ])
 
         if context:
-            prompt_parts.append(f"[CONTEXT] {context}")
+            prompt_parts.append(f"[ADDITIONAL CONTEXT] {context}")
             prompt_parts.append("")
 
         # ═══════════════════════════════════════════════════════════════
-        # SECTION 2: FILES (Show exact files BEFORE instructions)
+        # SECTION 3: PLANS (if from plan-execute workflow)
+        # ═══════════════════════════════════════════════════════════════
+        # Note: This will be populated by plan-execute agent if applicable
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 4: REACTS (if from ReAct iterations)
+        # ═══════════════════════════════════════════════════════════════
+        # Note: This will be populated by ReAct agent if applicable
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 5: FINAL TASK FOR LLM AT THIS STAGE
         # ═══════════════════════════════════════════════════════════════
         prompt_parts.extend([
             "="*80,
-            "AVAILABLE FILES (Use these EXACT names)".center(80),
+            "FINAL TASK FOR LLM AT THIS STAGE".center(80),
+            "="*80,
+            ""
+        ])
+
+        # Detect task type and provide specific guidance
+        query_lower = query.lower()
+        is_aggregation = any(word in query_lower for word in ['sum', 'total', 'count', 'average', 'mean', 'median', 'calculate'])
+        is_visualization = any(word in query_lower for word in ['plot', 'graph', 'chart', 'visualize', 'draw'])
+        is_analysis = any(word in query_lower for word in ['analyze', 'report', 'summary', 'summarize', 'insights'])
+
+        if is_visualization:
+            prompt_parts.extend([
+                "[TASK TYPE] Visualization/Plotting",
+                "",
+                "Workflow:",
+                "  1. Import matplotlib: import matplotlib.pyplot as plt",
+                "  2. Load file data (use access patterns from METADATA below)",
+                "  3. Extract x, y values",
+                "  4. Create plot",
+                "  5. Save: plt.savefig('output.png')",
+                ""
+            ])
+        elif is_aggregation:
+            prompt_parts.extend([
+                "[TASK TYPE] Calculation/Aggregation",
+                "",
+                "Workflow:",
+                "  1. Load file data (use access patterns from METADATA below)",
+                "  2. Extract relevant field",
+                "  3. Calculate result",
+                "  4. Print result with label",
+                ""
+            ])
+        elif is_analysis:
+            prompt_parts.extend([
+                "[TASK TYPE] Analysis/Reporting",
+                "",
+                "Workflow:",
+                "  1. Load file data once",
+                "  2. Calculate multiple metrics",
+                "  3. Print results clearly",
+                ""
+            ])
+        else:
+            prompt_parts.extend([
+                "[TASK TYPE] General",
+                "",
+                "Generate Python code to complete the task above.",
+                ""
+            ])
+
+        prompt_parts.extend([
+            "="*80,
+            ""
+        ])
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 6: META DATA (AVAILABLE FILES)
+        # ═══════════════════════════════════════════════════════════════
+        prompt_parts.extend([
+            "="*80,
+            "META DATA (AVAILABLE FILES)".center(80),
             "="*80,
             file_context,
             ""
         ])
 
         # ═══════════════════════════════════════════════════════════════
-        # SECTION 3: TOP 3 CRITICAL RULES (Only the most important)
+        # SECTION 7: RULES
         # ═══════════════════════════════════════════════════════════════
         prompt_parts.extend([
             "="*80,
-            "[!!!] TOP 3 CRITICAL RULES [!!!]".center(80),
+            "RULES".center(80),
             "="*80,
-            ""
-        ])
-
-        prompt_parts.extend([
-            "[RULE 1] FILENAMES: Copy EXACT name from file list above",
-            "    [OK] DO: Use the exact name like 'sales_Q4_2024.json'",
-            "    [X]  DON'T: Use generic names like 'file.json' or 'data.csv'",
             "",
-            "[RULE 2] NO INPUT: Hardcode everything (no sys.argv, no input())",
-            "    [OK] DO: filename = 'sales_Q4_2024.json'  # Hardcoded",
-            "    [X]  DON'T: filename = sys.argv[1]  # No command-line args!",
+            "[RULE 1] EXACT FILENAMES",
+            "   - Copy EXACT filename from META DATA section above",
+            "   - [X] NO generic names: 'data.json', 'file.json', 'input.csv'",
+            "   - [OK] Example: filename = 'sales_report_Q4_2024.json'",
             "",
-            "[RULE 3] USE TEMPLATES: Copy the code templates shown in file section",
-            "    [OK] DO: Copy the 'Complete Template' or 'Access Patterns'",
-            "    [X]  DON'T: Guess keys or make up field names",
+            "[RULE 2] NO COMMAND-LINE ARGS / USER INPUT",
+            "   - Code runs via subprocess WITHOUT arguments",
+            "   - [X] NO sys.argv, NO input(), NO argparse",
+            "   - [OK] All filenames must be HARDCODED",
             "",
-            "="*80,
+            "[RULE 3] USE ACCESS PATTERNS",
+            "   - Copy access patterns from META DATA section",
+            "   - [X] DON'T guess keys or field names",
+            "   - [OK] Use .get() for safe dict access",
             ""
         ])
 
         if has_json_files:
             prompt_parts.extend([
-                "="*80,
-                "JSON FILE INSTRUCTIONS".center(80),
-                "="*80,
-                "",
-                "The file section above shows a COMPLETE TEMPLATE for JSON loading.",
-                "[>>>] COPY that entire template - it's ready to run!",
-                "",
-                "The template includes:",
-                "  [OK] Correct filename (already filled in)",
-                "  [OK] Error handling (try/except blocks)",
-                "  [OK] Type validation (isinstance checks)",
-                "  [OK] Access patterns (copy-paste ready)",
-                "",
-                "[!!!] DON'T write JSON loading from scratch - use the template!",
-                "",
-                "="*80,
+                "[RULE 4] JSON SAFETY",
+                "   - Use .get() for dict access: data.get('key', default)",
+                "   - Check type: isinstance(data, dict) or isinstance(data, list)",
+                "   - Add error handling: try/except json.JSONDecodeError",
                 ""
             ])
 
         prompt_parts.extend([
             "="*80,
-            "YOUR RESPONSE".center(80),
+            ""
+        ])
+
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 8: CHECKLISTS
+        # ═══════════════════════════════════════════════════════════════
+        prompt_parts.extend([
+            "="*80,
+            "CHECKLISTS".center(80),
             "="*80,
             "",
-            "Generate Python code that:",
-            "  1. Uses EXACT filenames from the file list",
-            "  2. Follows the template structure (if shown)",
-            "  3. Copies access patterns exactly (don't modify them)",
-            "  4. Answers the user's question clearly",
+            "[1] Task Completion",
+            "    ? Does code answer the original prompt?",
+            "    ? Does code produce the expected output?",
             "",
-            "Output ONLY executable Python code (no markdown, no explanations):",
+            "[2] Filename Validation",
+            "    ? Are ALL filenames from META DATA section (exact match)?",
+            "    ? NO generic names (data.json, file.csv, input.xlsx)?",
+            "    ? NO sys.argv, input(), or argparse?",
+            "",
+            "[3] Safety & Error Handling",
+            "    ? try/except for file operations?",
+            "    ? .get() for dict access (JSON)?",
+            "    ? Type checks with isinstance()?",
+            "",
+            "[4] Access Patterns",
+            "    ? Using access patterns from META DATA section?",
+            "    ? NOT guessing keys or field names?",
+            "",
+            "="*80,
+            "",
+            "Generate ONLY executable Python code (no markdown, no explanations):",
             ""
         ])
         return "\n".join(prompt_parts)
@@ -438,27 +525,53 @@ def get_code_generation_with_self_verification_prompt(
     # Add self-verification instructions
     verification_instructions = f"""
 
-[CHECK] SELF-VERIFICATION CHECKLIST (Check your own code before responding):
-1. Does the code directly answer the user's question?
-2. Are ALL filenames HARDCODED (no sys.argv, no input())?
-3. Are filenames EXACT matches from the file list (not generic names)?
-{f"4. Does JSON handling follow safety patterns (.get(), isinstance(), etc.)?" if has_json_files else ""}
-{f"5. Is error handling present for file operations and JSON parsing?" if has_json_files else "4. Is error handling present for file operations?"}
+[CHECK] SELF-VERIFICATION CHECKLIST - Step-by-Step Validation:
+
+[STEP 1] Task Validation
+   ? Question: Does my code directly answer "{query}"?
+   >> Check: Code produces the requested output (not just partial answer)
+   X Reject if: Code does something different or only partially addresses the question
+
+[STEP 2] Filename Validation
+   ? Question: Are ALL filenames HARDCODED and EXACT?
+   >> Search for: Filenames from file list above (exact string match)
+   X Reject if: ANY of these appear:
+      - Generic names: 'data.json', 'file.json', 'input.csv', 'data.csv'
+      - sys.argv (ANY use, including sys.argv[1], len(sys.argv))
+      - input() function (user input)
+      - argparse module
+
+[STEP 3] Safety Validation{" (JSON)" if has_json_files else ""}
+   ? Question: Does the code use safe patterns?{'''
+   >> Check JSON access uses:
+      - .get() for dict access (NOT data['key'])
+      - isinstance() to check data type
+      - try/except for json.JSONDecodeError
+   X Reject if: Direct dict access data['key'] without .get()''' if has_json_files else '''
+   >> Check file operations use:
+      - try/except for FileNotFoundError
+      - Error handling for file operations'''}
+
+[STEP 4] Template Validation{" (JSON)" if has_json_files else ""}
+   ? Question: Did I copy the template or write from scratch?{'''
+   >> Look for: Complete template structure from file section
+   X Reject if: Manually wrote JSON loading instead of using template''' if has_json_files else '''
+   >> Look for: Proper file loading with error handling'''}
 
 [RESPONSE FORMAT] REQUIRED RESPONSE FORMAT (JSON):
 {{
   "code": "your python code here (as a string)",
   "self_check_passed": true or false,
-  "issues": ["list of issues found, if any - empty array if no issues"]
+  "issues": ["list of issues found during validation steps above - empty array if all steps passed"]
 }}
 
 IMPORTANT:
-- Set "self_check_passed": true ONLY if ALL checklist items pass
-- If any issues found, set "self_check_passed": false and list them in "issues"
-- The code should be executable Python (no markdown, no explanations)
+- Set "self_check_passed": true ONLY if ALL 4 validation steps pass
+- If ANY step fails, set "self_check_passed": false and list specific issues
 - Be strict with filename checking - this is the #1 cause of failures
+- The code should be executable Python (no markdown, no explanations)
 
-Generate code and self-verify. Respond with ONLY the JSON object:"""
+Generate code and self-verify using the 4-step checklist. Respond with ONLY the JSON object:"""
 
     return generation_prompt_clean + verification_instructions
 

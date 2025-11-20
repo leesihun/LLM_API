@@ -285,47 +285,8 @@ class FileContextBuilder:
             if metadata.get('total_tables', 0) > 0:
                 lines.append("      # Extract tables: tables = doc.tables")
 
-        # JSON access example - COMPLETE TEMPLATE
+        # JSON access example - NO TEMPLATE, only note
         elif file_type == 'json':
-            lines.append("")
-            lines.append("   " + "="*70)
-            lines.append("   [>>>] COMPLETE TEMPLATE: Copy this entire block")
-            lines.append("   " + "="*70)
-            lines.append("")
-            lines.append("   import json")
-            lines.append("")
-            lines.append(f"   # Load JSON file (EXACT filename - don't change!)")
-            lines.append(f"   filename = '{original_filename}'")
-            lines.append("   try:")
-            lines.append("       with open(filename, 'r', encoding='utf-8') as f:")
-            lines.append("           data = json.load(f)")
-            lines.append("       ")
-            lines.append("       # Verify data type (always do this!)")
-            lines.append("       print(f'Loaded: {type(data).__name__}')")
-            lines.append("       if isinstance(data, dict):")
-            lines.append("           print(f'Keys: {list(data.keys())}')")
-            lines.append("       elif isinstance(data, list):")
-            lines.append("           print(f'Items: {len(data)}')")
-            lines.append("       ")
-            lines.append("       # Now use the access patterns shown above")
-
-            # Add specific access example if patterns available
-            if 'access_patterns' in metadata and metadata['access_patterns']:
-                first_pattern = metadata['access_patterns'][0]
-                lines.append("       # Example (copy from patterns above):")
-                lines.append(f"       value1 = {first_pattern}")
-                lines.append("       print(f'Value: {value1}')")
-
-            lines.append("       ")
-            lines.append("   except json.JSONDecodeError as e:")
-            lines.append("       print(f'JSON Error: {e}')")
-            lines.append("       exit(1)")
-            lines.append("   except KeyError as e:")
-            lines.append("       print(f'Key not found: {e}')")
-            lines.append("       exit(1)")
-            lines.append("")
-            lines.append("   " + "-"*70)
-
             # Add error handling note if JSON had issues
             if 'error' in metadata:
                 lines.append("")
