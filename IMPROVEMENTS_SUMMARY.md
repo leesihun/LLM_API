@@ -401,6 +401,62 @@ This pattern is now **recommended for all multi-step workflows** in the LLM API 
 
 ---
 
-**Version:** 2.0.1
+**Version:** 2.1.0 (Notepad Integration)
 **Last Updated:** January 2025
 **Status:** Production Ready ✅
+
+---
+
+## 🆕 Latest Update: Notepad Integration (v2.1.0)
+
+### PhaseManager + SessionNotepad Integration
+
+**Enhancement:** PhaseManager now automatically saves file parsing information to the session notepad for persistent memory across API calls.
+
+**New Features:**
+1. **Automatic notepad recording** - Phase results saved to `notepad.json`
+2. **File tracking** - Tracks which files were processed in each phase
+3. **Persistent memory** - Findings survive across conversation context
+4. **LLM injection** - Notepad context automatically available to LLM
+
+**Usage:**
+```python
+from backend.utils.phase_manager import PhaseManager
+
+# Initialize with session_id for notepad integration
+manager = PhaseManager(session_id="session_abc123")
+
+# Record phase with file tracking
+manager.record_phase_result(
+    phase_name="Data Analysis",
+    findings="Analyzed 2 CSV files with 10,000 rows...",
+    artifacts=["stats.npy"],
+    files_processed=["sales.csv", "regions.csv"],  # NEW: Track files
+    save_to_notepad=True  # NEW: Auto-save to notepad (default)
+)
+
+# Get file parsing summary
+file_summary = manager.get_file_parsing_summary()
+# Returns:
+# {
+#   "total_files_processed": 2,
+#   "files_by_phase": {"Data Analysis": ["sales.csv", "regions.csv"]},
+#   "all_files": ["regions.csv", "sales.csv"]
+# }
+
+# Get notepad context for LLM
+context = manager.get_notepad_context()
+# Returns formatted string with all phase entries
+```
+
+**Benefits:**
+- **Persistent across API calls** - Phase info survives session lifetime
+- **Clear audit trail** - Know exactly which files were processed when
+- **Reduced redundancy** - LLM sees file processing history in notepad
+- **Better debugging** - Inspect notepad.json to see what AI "remembers"
+
+**Documentation:** See [PHASE_MANAGER_NOTEPAD_EXAMPLE.md](PHASE_MANAGER_NOTEPAD_EXAMPLE.md) for complete examples
+
+**Files Modified:**
+- `backend/utils/phase_manager.py` - Added notepad integration
+- `PHASE_MANAGER_NOTEPAD_EXAMPLE.md` - Complete usage documentation (NEW)

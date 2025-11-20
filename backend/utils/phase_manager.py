@@ -1,12 +1,14 @@
 """
 Phase Manager Utility
 Manages multi-step workflows with explicit context handoffs between phases
+Integrates with SessionNotepad for persistent file parsing information
 """
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from backend.utils.logging_utils import get_logger
+from backend.tools.notepad import SessionNotepad
 
 logger = get_logger(__name__)
 
@@ -18,6 +20,7 @@ class PhaseResult:
     findings: str
     artifacts: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    files_processed: List[str] = field(default_factory=list)  # Files parsed in this phase
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -60,9 +63,25 @@ class PhaseManager:
         summary = manager.get_workflow_summary()
     """
 
-    def __init__(self):
+    def __init__(self, session_id: Optional[str] = None):
+        """
+        Initialize PhaseManager with optional session notepad integration.
+
+        Args:
+            session_id: Optional session ID for notepad integration
+        """
         self.phases: List[PhaseResult] = []
         self._current_phase: Optional[str] = None
+        self.session_id = session_id
+        self.notepad: Optional[SessionNotepad] = None
+
+        # Load notepad if session_id provided
+        if session_id:
+            try:
+                self.notepad = SessionNotepad.load(session_id)
+                logger.info(f"[PhaseManager] Loaded notepad for session {session_id}")
+            except Exception as e:
+                logger.warning(f"[PhaseManager] Failed to load notepad: {e}")
 
     def create_initial_phase_prompt(
         self,
@@ -177,25 +196,34 @@ class PhaseManager:
         phase_name: str,
         findings: str,
         artifacts: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        files_processed: Optional[List[str]] = None,
+        save_to_notepad: bool = True
     ):
         """
-        Record the result of a completed phase
+        Record the result of a completed phase and optionally save to notepad
 
         Args:
             phase_name: Name of the completed phase
             findings: Summary of findings (will be used in handoff prompts)
             artifacts: List of generated files/artifacts
             metadata: Additional metadata to store
+            files_processed: List of files that were parsed/analyzed in this phase
+            save_to_notepad: Whether to save phase info to session notepad (default: True)
         """
         result = PhaseResult(
             phase_name=phase_name,
             findings=findings,
             artifacts=artifacts or [],
-            metadata=metadata or {}
+            metadata=metadata or {},
+            files_processed=files_processed or []
         )
         self.phases.append(result)
-        logger.info(f"[PhaseManager] Recorded phase result: {phase_name} ({len(artifacts or [])} artifacts)")
+        logger.info(f"[PhaseManager] Recorded phase result: {phase_name} ({len(artifacts or [])} artifacts, {len(files_processed or [])} files)")
+
+        # Save to notepad if enabled and notepad available
+        if save_to_notepad and self.notepad:
+            self._save_phase_to_notepad(result)
 
     def get_phase_result(self, phase_name: str) -> Optional[PhaseResult]:
         """Get result for a specific phase"""
@@ -237,3 +265,88 @@ class PhaseManager:
         self.phases = []
         self._current_phase = None
         logger.info("[PhaseManager] Reset - cleared all phase history")
+
+    def _save_phase_to_notepad(self, phase_result: PhaseResult):
+        """
+        Save phase result to session notepad for persistent memory.
+
+        Args:
+            phase_result: PhaseResult to save
+        """
+        try:
+            # Build description from findings
+            description = f"{phase_result.findings[:200]}..."  if len(phase_result.findings) > 200 else phase_result.findings
+
+            # Format key outputs including file parsing info
+            key_outputs_parts = []
+
+            if phase_result.files_processed:
+                key_outputs_parts.append(f"Files analyzed: {', '.join(phase_result.files_processed)}")
+
+            if phase_result.artifacts:
+                key_outputs_parts.append(f"Artifacts: {', '.join(phase_result.artifacts)}")
+
+            if phase_result.metadata:
+                # Add relevant metadata
+                for key, value in phase_result.metadata.items():
+                    if isinstance(value, (str, int, float)):
+                        key_outputs_parts.append(f"{key}: {value}")
+
+            key_outputs = "; ".join(key_outputs_parts) if key_outputs_parts else None
+
+            # Add entry to notepad
+            entry_id = self.notepad.add_entry(
+                task=f"phase_{phase_result.phase_name.lower().replace(' ', '_')}",
+                description=description,
+                code_file=None,  # Phases don't typically have code files
+                variables_saved=None,  # Variables handled separately by python_coder
+                key_outputs=key_outputs
+            )
+
+            # Save notepad to disk
+            self.notepad.save()
+
+            logger.info(f"[PhaseManager] Saved phase '{phase_result.phase_name}' to notepad (entry #{entry_id})")
+
+        except Exception as e:
+            logger.error(f"[PhaseManager] Failed to save phase to notepad: {e}")
+
+    def get_file_parsing_summary(self) -> Dict[str, Any]:
+        """
+        Get summary of all files processed across all phases.
+
+        Returns:
+            Dictionary with file parsing information:
+            - total_files_processed: Count of unique files
+            - files_by_phase: Dict mapping phase names to files processed
+            - all_files: List of all unique file paths
+        """
+        all_files = set()
+        files_by_phase = {}
+
+        for phase in self.phases:
+            if phase.files_processed:
+                files_by_phase[phase.phase_name] = phase.files_processed
+                all_files.update(phase.files_processed)
+
+        return {
+            "total_files_processed": len(all_files),
+            "files_by_phase": files_by_phase,
+            "all_files": sorted(list(all_files))
+        }
+
+    def get_notepad_context(self) -> str:
+        """
+        Get formatted notepad context for LLM injection.
+
+        Returns:
+            Formatted string with all notepad entries including phase info
+        """
+        if not self.notepad:
+            return ""
+
+        try:
+            return self.notepad.get_full_context()
+        except Exception as e:
+            logger.error(f"[PhaseManager] Failed to get notepad context: {e}")
+            return ""
