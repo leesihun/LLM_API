@@ -1,0 +1,56 @@
+{
+  "timestamp": "2025-11-20T13:23:07.152257",
+  "session_id": "test_session_file_context",
+  "validated_files": {
+    "data/uploads/sample_data.csv": "sample_data.csv",
+    "data/uploads/analysis_report.json": "analysis_report.json"
+  },
+  "file_metadata": {
+    "data/uploads/sample_data.csv": {
+      "type": "csv",
+      "size_mb": 0.5,
+      "columns": [
+        "id",
+        "name",
+        "value",
+        "date"
+      ],
+      "rows": 1000,
+      "preview": [
+        {
+          "id": 1,
+          "name": "Alice",
+          "value": 100,
+          "date": "2025-01-01"
+        },
+        {
+          "id": 2,
+          "name": "Bob",
+          "value": 200,
+          "date": "2025-01-02"
+        }
+      ]
+    },
+    "data/uploads/analysis_report.json": {
+      "type": "json",
+      "size_mb": 0.1,
+      "structure": {
+        "type": "dict",
+        "num_keys": 5,
+        "keys": [
+          "summary",
+          "metrics",
+          "timestamps",
+          "users",
+          "results"
+        ]
+      }
+    }
+  },
+  "file_context_text": "\n[!!!] CRITICAL - EXACT FILENAMES REQUIRED [!!!]\nALL files are in the current working directory.\n\nAvailable files (USE THESE EXACT NAMES):\n\n1. \"sample_data.csv\" - CSV (0.5MB)\n   Columns: id, name, value, date\n   Example: df = pd.read_csv('sample_data.csv')\n\n2. \"analysis_report.json\" - JSON (0.1MB)\n   Structure: dict (5 keys)\n   Top-level keys: summary, metrics, timestamps, users, results\n",
+  "file_count": 2,
+  "file_list": [
+    "sample_data.csv",
+    "analysis_report.json"
+  ]
+}

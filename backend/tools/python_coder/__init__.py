@@ -10,6 +10,7 @@ Public API exports:
 - CodeExecutor: Low-level code execution (backward compatibility)
 - PythonExecutor: Alias for CodeExecutor (backward compatibility)
 - SUPPORTED_FILE_TYPES: List of supported file extensions
+- FileContextStorage: File context persistence for multi-phase workflows
 """
 
 from .orchestrator import (
@@ -20,6 +21,7 @@ from .orchestrator import (
 )
 
 from .executor import CodeExecutor
+from .file_context_storage import FileContextStorage
 
 __all__ = [
     # Main API
@@ -28,6 +30,7 @@ __all__ = [
 
     # Components (if needed for advanced usage)
     'CodeExecutor',
+    'FileContextStorage',
 
     # Backward compatibility
     'PythonExecutor',

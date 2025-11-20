@@ -57,7 +57,8 @@ class FileContextBuilder:
         # Build context for each file
         for idx, (original_path, original_filename) in enumerate(validated_files.items(), 1):
             metadata = file_metadata.get(original_path, {})
-            file_type = metadata.get('type', 'unknown')
+            # Support both 'type' and 'file_type' field names
+            file_type = metadata.get('type') or metadata.get('file_type', 'unknown')
 
             # File header
             lines.append(f"\n{idx}. \"{original_filename}\" - {file_type.upper()} ({metadata.get('size_mb', 0)}MB)")
@@ -164,7 +165,8 @@ class FileContextBuilder:
         # Show smart access patterns (most important!)
         if 'access_patterns' in metadata and metadata['access_patterns']:
             lines.append("   [PATTERNS] Access Patterns (COPY THESE EXACTLY):")
-            for pattern in metadata['access_patterns'][:6]:  # Show first 6 patterns
+            # Show ALL patterns to reveal complete nested structure
+            for pattern in metadata['access_patterns']:
                 lines.append(f"      {pattern}")
 
         # Show safe preview (truncated to avoid context overflow)

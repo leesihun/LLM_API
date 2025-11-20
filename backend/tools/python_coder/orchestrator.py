@@ -255,6 +255,66 @@ class PythonCoderTool:
             file_metadata=file_metadata
         )
 
+    def _save_llm_prompt(
+        self,
+        prompt: str,
+        query: str,
+        file_context: str,
+        validated_files: Dict[str, str],
+        attempt_num: int
+    ) -> None:
+        """
+        Save LLM input prompt to scratch directory for debugging/analysis.
+
+        Args:
+            prompt: Full LLM prompt text
+            query: User's original query
+            file_context: File context string
+            validated_files: Dict of validated files
+            attempt_num: Current attempt number
+        """
+        try:
+            # Determine session ID from validated_files or use a temp ID
+            # For now, create a prompts directory in scratch
+            prompts_dir = Path(settings.python_code_execution_dir) / "prompts"
+            prompts_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create timestamp-based filename
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            prompt_file = prompts_dir / f"prompt_attempt{attempt_num}_{timestamp}.txt"
+
+            # Build structured prompt file
+            content_lines = []
+            content_lines.append("=" * 80)
+            content_lines.append("LLM INPUT PROMPT - Code Generation")
+            content_lines.append("=" * 80)
+            content_lines.append(f"Timestamp: {datetime.now().isoformat()}")
+            content_lines.append(f"Attempt: {attempt_num}")
+            content_lines.append(f"Query: {query}")
+            content_lines.append(f"Files: {len(validated_files)}")
+            content_lines.append("=" * 80)
+            content_lines.append("")
+            content_lines.append("FULL PROMPT:")
+            content_lines.append("-" * 80)
+            content_lines.append(prompt)
+            content_lines.append("")
+            content_lines.append("=" * 80)
+            content_lines.append("FILE CONTEXT:")
+            content_lines.append("=" * 80)
+            content_lines.append(file_context)
+            content_lines.append("")
+            content_lines.append("=" * 80)
+            content_lines.append("END OF PROMPT")
+            content_lines.append("=" * 80)
+
+            # Write to file
+            prompt_file.write_text('\n'.join(content_lines), encoding='utf-8')
+            logger.info(f"[PythonCoderTool] [SAVED] Saved LLM prompt to {prompt_file.name}")
+
+        except Exception as e:
+            logger.warning(f"[PythonCoderTool] Failed to save LLM prompt: {e}")
+
     def _save_stage_code(
         self,
         code: str,
@@ -449,6 +509,15 @@ class PythonCoderTool:
         )
 
         logger.info(f"[PythonCoderTool] Generating code with self-verification (attempt {attempt_num})...")
+
+        # Save prompt to scratch directory for debugging/tracking
+        self._save_llm_prompt(
+            prompt=prompt,
+            query=query,
+            file_context=file_context,
+            validated_files=validated_files,
+            attempt_num=attempt_num
+        )
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
