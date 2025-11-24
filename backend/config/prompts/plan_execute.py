@@ -27,7 +27,7 @@ def get_execution_plan_prompt(
         "Perform local file analysis FIRST. "
     ) if has_files else ""
 
-    return f"""You are an AI planning expert. Analyze this user query and create a MINIMAL, focused execution plan.
+    return f"""You are an AI planning expert. Analyze this user query and create a DETAILED, focused execution plan.
 
 {file_first_note}
 
