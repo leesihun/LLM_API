@@ -167,6 +167,12 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.7.1 (November 24, 2025)
+
+**Bugfix: Async file upload handling**
+
+- `backend/api/routes/chat.py` - made `_handle_file_uploads()` async and now awaits `UploadFile.read()` directly, eliminating the `asyncio.run()` call that crashed under FastAPI’s running event loop when saving uploaded files.
+
 ### Version 1.7.0 (November 24, 2025)
 
 **Refactor: File analyzer clarity & metadata**

@@ -82,7 +82,7 @@ def _cleanup_files(file_paths: Optional[List[str]]):
                 logger.warning(f"[Chat] Failed to cleanup temp file {temp_path}: {e}")
 
 
-def _handle_file_uploads(
+async def _handle_file_uploads(
     files: Optional[List[UploadFile]],
     session_id: Optional[str],
     user_id: str
@@ -130,9 +130,8 @@ def _handle_file_uploads(
                 temp_filename = f"temp_{temp_id}_{file.filename}"
                 temp_path = uploads_path / temp_filename
 
-                # Read file content synchronously (FastAPI UploadFile requires this)
-                import asyncio
-                content = asyncio.run(file.read())
+                # Read file content (UploadFile.read is async)
+                content = await file.read()
                 
                 with open(temp_path, "wb") as f:
                     f.write(content)
@@ -270,7 +269,7 @@ async def chat_completions(
         session_id = conversation_store.create_session(user_id)
 
     # ====== PHASE 1: FILE HANDLING ======
-    file_paths, new_files_uploaded = _handle_file_uploads(files, session_id, user_id)
+    file_paths, new_files_uploaded = await _handle_file_uploads(files, session_id, user_id)
 
     # ====== PHASE 2: CLASSIFICATION ======
     user_message = parsed_messages[-1].content if parsed_messages else ""
