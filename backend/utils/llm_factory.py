@@ -55,6 +55,7 @@ class LLMInterceptor:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         model_name = model or getattr(self.llm, 'model', 'unknown')
 
+
         # Format prompt - handle both strings and message objects
         if isinstance(prompt, str):
             formatted_prompt = prompt
