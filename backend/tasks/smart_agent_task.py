@@ -64,8 +64,8 @@ class SmartAgentTask:
         """
         # Validate agent type - AUTO should not reach here
         if agent_type == AgentType.AUTO:
-            logger.warning("[Smart Agent] AUTO agent type received - should be classified in chat.py. Defaulting to REACT.")
-            agent_type = AgentType.REACT
+            logger.warning("[Smart Agent] AUTO agent type received - should be classified in chat.py. Defaulting to PLAN_EXECUTE.")
+            agent_type = AgentType.PLAN_EXECUTE
 
         logger.info(f"[Smart Agent] Using agent: {agent_type}")
 

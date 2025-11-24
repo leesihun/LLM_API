@@ -25,7 +25,7 @@ Usage:
     analyzer = FileAnalyzer()
     results = analyzer.analyze(["/path/to/file.csv"])
 
-Version: 1.0.0
+Version: 1.1.0
 Created: 2025-01-13
 """
 
@@ -58,4 +58,4 @@ __all__ = [
     'ImageHandler',
 ]
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'

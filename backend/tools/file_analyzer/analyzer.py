@@ -5,14 +5,15 @@ Main file analyzer class that routes to appropriate format-specific handlers.
 
 Uses strategy pattern for extensible file format support.
 
-Version: 1.0.0
+Version: 1.1.0
 Created: 2025-01-13
 """
 
 import os
 import uuid
-from typing import Dict, Any, List
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from backend.utils.logging_utils import get_logger
 from .base_handler import BaseFileHandler
@@ -29,6 +30,42 @@ from .handlers import (
 )
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class FileAnalysisPayload:
+    """Normalized per-file analysis payload."""
+
+    file: str
+    full_path: str
+    extension: str
+    size_bytes: Optional[int]
+    size_human: str
+    success: bool = True
+    format: str = "Unknown"
+    warnings: List[str] = field(default_factory=list)
+    error: Optional[str] = None
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "file": self.file,
+            "full_path": self.full_path,
+            "extension": self.extension,
+            "size_bytes": self.size_bytes,
+            "size_human": self.size_human,
+            "success": self.success,
+            "format": self.format,
+        }
+
+        if self.warnings:
+            payload["warnings"] = self.warnings
+
+        if self.error:
+            payload["error"] = self.error
+
+        payload.update(self.details)
+        return payload
 
 
 class FileAnalyzer:
@@ -87,33 +124,43 @@ class FileAnalyzer:
             - summary: Human-readable summary
         """
         try:
-            if not file_paths:
+            normalized_paths = self._normalize_inputs(file_paths)
+            if not normalized_paths:
                 return {
                     "success": False,
                     "error": "No files provided for analysis"
                 }
 
-            results = []
-            for file_path in file_paths:
+            analysis_id = uuid.uuid4().hex
+            results: List[Dict[str, Any]] = []
+            missing_files = 0
+
+            for file_path in normalized_paths:
                 if not os.path.exists(file_path):
-                    results.append({
-                        "file": file_path,
-                        "success": False,
-                        "error": f"File not found: {file_path}"
-                    })
+                    missing_files += 1
+                    results.append(self._build_missing_file_result(file_path))
                     continue
 
                 file_result = self._analyze_single_file(file_path)
                 results.append(file_result)
 
-            # Generate summary
             summary = SummaryGenerator.generate_summary(results, user_query)
+            successful = sum(1 for result in results if result.get("success", False))
+            overall_success = successful > 0
 
             return {
-                "success": True,
-                "files_analyzed": len(file_paths),
+                "success": overall_success,
+                "files_analyzed": len(normalized_paths),
                 "results": results,
-                "summary": summary
+                "summary": summary,
+                "metadata": {
+                    "analysis_id": analysis_id,
+                    "successful_files": successful,
+                    "failed_files": len(results) - successful,
+                    "missing_files": missing_files,
+                    "use_llm_for_complex": self.use_llm_for_complex,
+                    "user_query_provided": bool(user_query.strip()),
+                },
             }
 
         except Exception as e:
@@ -135,35 +182,79 @@ class FileAnalyzer:
         """
         try:
             path = Path(file_path)
+            size_bytes = os.path.getsize(file_path)
+            payload = FileAnalysisPayload(
+                file=path.name,
+                full_path=str(path.absolute()),
+                extension=path.suffix.lstrip('.').lower(),
+                size_bytes=size_bytes,
+                size_human=self._human_readable_size(size_bytes),
+            )
 
-            # Basic file info
-            file_info = {
-                "file": str(path.name),
-                "full_path": str(path.absolute()),
-                "extension": path.suffix.lstrip('.').lower(),
-                "size_bytes": os.path.getsize(file_path),
-                "size_human": self._human_readable_size(os.path.getsize(file_path)),
-                "success": True
-            }
-
-            # Find appropriate handler and analyze
             handler = self._find_handler(file_path)
             if handler:
-                detailed_info = handler.analyze(file_path)
-                file_info.update(detailed_info)
+                detailed_info = self._execute_handler(handler, file_path)
+                payload.details.update(detailed_info)
+                payload.format = detailed_info.get("format", payload.format)
             else:
-                file_info["format"] = "Unknown/Unsupported"
-                file_info["note"] = f"Format '{file_info['extension']}' not specifically supported"
+                payload.format = "Unknown/Unsupported"
+                payload.warnings.append(
+                    f"No handler registered for '.{payload.extension}' files"
+                )
 
-            return file_info
+            return payload.to_dict()
 
         except Exception as e:
             logger.error(f"Single file analysis error for {file_path}: {e}", exc_info=True)
-            return {
-                "file": file_path,
-                "success": False,
-                "error": str(e)
-            }
+            return self._build_failure_payload(file_path, str(e))
+
+    def _normalize_inputs(self, file_paths: List[str]) -> List[str]:
+        """Normalize input paths (strip None/empty entries)."""
+        if not file_paths:
+            return []
+
+        normalized = []
+        for path in file_paths:
+            if not path:
+                continue
+            normalized.append(str(path))
+        return normalized
+
+    def _build_missing_file_result(self, file_path: str) -> Dict[str, Any]:
+        """Return a consistent payload for missing files."""
+        path = Path(file_path)
+        return {
+            "file": path.name or str(path),
+            "full_path": str(path.absolute()),
+            "extension": path.suffix.lstrip('.').lower(),
+            "size_bytes": None,
+            "size_human": "Unknown",
+            "success": False,
+            "format": "Unknown/Unsupported",
+            "error": f"File not found: {file_path}",
+        }
+
+    def _execute_handler(self, handler: BaseFileHandler, file_path: str) -> Dict[str, Any]:
+        """Run the handler and normalize its response."""
+        details = handler.analyze(file_path) or {}
+        if "format" not in details:
+            handler_name = handler.__class__.__name__.replace("Handler", "").strip()
+            details["format"] = handler_name or "Unknown"
+        return details
+
+    def _build_failure_payload(self, file_path: str, error_message: str) -> Dict[str, Any]:
+        """Return payload for unexpected handler errors."""
+        path = Path(file_path)
+        return {
+            "file": path.name or file_path,
+            "full_path": str(path.absolute()),
+            "extension": path.suffix.lstrip('.').lower(),
+            "size_bytes": None,
+            "size_human": "Unknown",
+            "success": False,
+            "format": "Unknown",
+            "error": error_message,
+        }
 
     def _find_handler(self, file_path: str) -> BaseFileHandler:
         """

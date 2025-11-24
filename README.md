@@ -167,6 +167,15 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.7.0 (November 24, 2025)
+
+**Refactor: File analyzer clarity & metadata**
+
+- `backend/tools/file_analyzer/analyzer.py` - rewrote the orchestration layer around a `FileAnalysisPayload` helper, added normalized input validation, richer error/warning reporting, per-run metadata, and clearer handler execution utilities so multi-file analyses are easier to reason about and debug.
+- `backend/tools/file_analyzer/__init__.py` - bumped the module version to `1.1.0` to reflect the refactor.
+
+Users now receive structured warnings for unsupported formats or missing files, plus an `analysis_id` and success counters in the returned payload.
+
 ### Version 1.6.5 (November 24, 2024)
 
 **Enhancement: Multi-line info logging**
