@@ -16,7 +16,6 @@ Public API exports:
 from .orchestrator import (
     PythonCoderTool,
     python_coder_tool,
-    PythonExecutor,  # Backward compatibility
     SUPPORTED_FILE_TYPES,
 )
 
@@ -36,8 +35,6 @@ __all__ = [
     'CodeVerifier',
     'FileContextStorage',
 
-    # Backward compatibility
-    'PythonExecutor',
     'SUPPORTED_FILE_TYPES',
 ]
 

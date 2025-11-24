@@ -116,7 +116,6 @@ class PlanExecuteTask:
                     step_num=step_data.get("step_num", len(plan_steps) + 1),
                     goal=step_data.get("goal", ""),
                     primary_tools=step_data.get("primary_tools", []),
-                    fallback_tools=step_data.get("fallback_tools", []),
                     success_criteria=step_data.get("success_criteria", ""),
                     context=step_data.get("context")
                 )
@@ -126,26 +125,13 @@ class PlanExecuteTask:
             for step in plan_steps:
                 logger.info(f"  Step {step.step_num}: {step.goal}")
                 logger.info(f"    Primary tools: {step.primary_tools}")
-                logger.info(f"    Fallback tools: {step.fallback_tools}")
 
             return plan_steps
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             logger.error(f"[Plan-Execute: Planning] Failed to parse plan JSON: {e}")
             logger.error(f"[Plan-Execute: Planning] Raw response: {plan_text}")
-            
-            # Fallback: Create a simple single-step plan
-            logger.warning("[Plan-Execute: Planning] Creating fallback single-step plan")
-            fallback_tools = ["python_coder", "python_code"] if has_files else ["web_search"]
-            fallback_step = PlanStep(
-                step_num=1,
-                goal=f"Answer the query: {query[:100]}",
-                primary_tools=fallback_tools,
-                fallback_tools=["rag_retrieval"],
-                success_criteria="Query answered with relevant information",
-                context="Fallback plan due to parsing failure"
-            )
-            return [fallback_step]
+            raise
 
     async def execute(
         self,
@@ -256,7 +242,6 @@ class PlanExecuteTask:
                 "step_num": step.step_num,
                 "goal": step.goal,
                 "primary_tools": step.primary_tools,
-                "fallback_tools": step.fallback_tools,
                 "success_criteria": step.success_criteria,
                 "context": step.context
             }

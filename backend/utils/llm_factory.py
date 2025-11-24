@@ -79,9 +79,9 @@ class LLMFactory:
 
         # Add timeout if specified (convert to seconds)
         if timeout is not None:
-            config["timeout"] = timeout / 1000
+            config["timeout"] = timeout
         elif settings.ollama_timeout:
-            config["timeout"] = settings.ollama_timeout / 1000
+            config["timeout"] = settings.ollama_timeout
 
         # Merge with additional kwargs
         config.update(kwargs)
@@ -143,11 +143,11 @@ class LLMFactory:
         """
         Create an LLM optimized for code generation tasks.
 
-        Uses standard configuration but allows customization for
-        code generation specific needs.
+        Uses settings.ollama_coder_model by default, which can be configured
+        to use a specialized coding model (e.g., deepseek-coder, codellama).
 
         Args:
-            model: Model name (defaults to settings.ollama_model)
+            model: Model name (defaults to settings.ollama_coder_model)
             temperature: Sampling temperature (defaults to settings.ollama_temperature)
             num_ctx: Context window size (defaults to settings.ollama_num_ctx)
             **kwargs: Additional parameters to pass to ChatOllama
@@ -159,10 +159,12 @@ class LLMFactory:
             >>> coder = LLMFactory.create_coder_llm()
             >>> code = coder.invoke("Generate Python code to read a CSV file")
         """
-        logger.debug("[LLMFactory] Creating coder LLM")
+        coder_model = model or settings.ollama_coder_model
+        
+        logger.debug(f"[LLMFactory] Creating coder LLM with model={coder_model}")
 
         return cls.create_llm(
-            model=model,
+            model=coder_model,
             temperature=temperature,
             num_ctx=num_ctx,
             **kwargs

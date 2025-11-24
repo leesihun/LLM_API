@@ -31,23 +31,6 @@ class ThoughtActionGenerator:
     - Fuzzy matching: _apply_fuzzy_action_matching()
     """
 
-    # Fuzzy action mapping for common LLM variations
-    FUZZY_ACTION_MAPPING = {
-        "web": ToolName.WEB_SEARCH,
-        "search": ToolName.WEB_SEARCH,
-        "rag": ToolName.RAG_RETRIEVAL,
-        "retrieval": ToolName.RAG_RETRIEVAL,
-        "retrieve": ToolName.RAG_RETRIEVAL,
-        "document": ToolName.RAG_RETRIEVAL,
-        "python": ToolName.PYTHON_CODER,
-        "code": ToolName.PYTHON_CODER,
-        "coder": ToolName.PYTHON_CODER,
-        "generate": ToolName.PYTHON_CODER,
-        "done": ToolName.FINISH,
-        "answer": ToolName.FINISH,
-        "complete": ToolName.FINISH,
-    }
-
     def __init__(self, llm, file_paths: Optional[List[str]] = None):
         """
         Initialize thought-action generator.

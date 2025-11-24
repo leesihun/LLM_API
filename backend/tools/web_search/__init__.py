@@ -27,7 +27,7 @@ from .answer_generator import AnswerGenerator
 __all__ = [
     # Main tool
     'WebSearchTool',
-    'web_search_tool',  # Global instance for backward compatibility
+    'web_search_tool',
 
     # Component modules (for advanced usage)
     'QueryRefiner',

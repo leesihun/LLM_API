@@ -1,33 +1,19 @@
 """
 Task Classification Prompts
-Used for determining whether a query requires agentic flow or simple chat.
+Used for determining which agent type should handle a query: chat, react, or plan_execute.
 """
 
 
-def get_agentic_classifier_prompt() -> str:
+def get_agent_type_classifier_prompt() -> str:
     """
-    Prompt for classifying whether a query requires agentic flow or simple chat.
-    Used in: backend/tasks/chat_task.py
-
-    Enhanced with 15+ concrete examples covering common cases and edge cases.
+    Prompt for classifying queries into three agent types: chat, react, or plan_execute.
+    
+    Returns:
+        Prompt string for 3-way agent classification
     """
-    return """You are a task classifier. Classify user queries into "agentic" or "chat".
+    return """You are an agent type classifier. Classify user queries into one of three types: "chat", "react", or "plan_execute".
 
-AGENTIC - Requires tools (web search, code execution, file analysis, RAG):
-
-Examples:
-1. "What's the weather in Seoul RIGHT NOW?" → agentic (current/real-time data)
-2. "Analyze sales_data.csv and calculate the mean revenue" → agentic (file + computation)
-3. "Search for the latest AI developments in 2025" → agentic (explicit search request)
-4. "Calculate the variance of [1,2,3,4,5]" → agentic (execute computation)
-5. "Compare Python vs JavaScript performance benchmarks" → agentic (research + comparison)
-6. "What are recent developments in quantum computing?" → agentic (recent = current)
-7. "Find news about OpenAI from this week" → agentic (current news)
-8. "Analyze the uploaded document and extract key points" → agentic (file analysis)
-9. "Generate a chart showing sales trends from data.xlsx" → agentic (file + visualization)
-10. "Search my documents for mentions of 'machine learning'" → agentic (explicit RAG request)
-
-CHAT - Can be answered from knowledge base:
+CHAT - Very simple questions answerable from easy general knowledge base (NO tools needed):
 
 Examples:
 1. "What is Python?" → chat (general knowledge)
@@ -37,27 +23,51 @@ Examples:
 5. "Tell me about the Eiffel Tower" → chat (encyclopedia knowledge)
 6. "How does a for loop work?" → chat (explanation)
 7. "What are the benefits of exercise?" → chat (general health knowledge)
+8. "Explain the difference between React and Vue" → chat (comparison explanation)
+9. "What is machine learning?" → chat (established concept)
+10. "How to search files in Linux?" → chat (asking for explanation, not executing)
 
-EDGE CASES - Pay careful attention:
+REACT - A little bit complicated, single-goal tasks requiring tools (web search, code execution, simple analysis):
 
-1. "How to search files in Linux?" → chat (asking for explanation, not executing search)
-2. "What is machine learning?" → chat (established concept, not recent)
-3. "Calculate variance of numbers" → chat (vague, no specific data provided)
-4. "Show me how to calculate mean" → chat (educational, no execution needed)
-5. "Latest AI developments" (without year/time) → agentic (ambiguous but "latest" implies current)
-6. "Python vs JavaScript" (no specific context) → chat (general comparison explanation)
-7. "Compare Python vs JavaScript speed" → agentic (specific benchmark comparison)
-8. "What can AI do?" → chat (general capabilities)
+Examples:
+1. "What's the weather in Seoul right now?" → react (single web search)
+2. "Search for the latest AI developments" → react (web search)
+3. "Calculate the variance of [1,2,3,4,5]" → react (single computation)
+4. "What are recent developments in quantum computing?" → react (web search)
+5. "Find news about OpenAI from this week" → react (current news search)
+6. "Analyze sales_data.csv and show basic statistics" → react (single file analysis)
+7. "What's the current price of Bitcoin?" → react (real-time data)
+8. "Search my documents for 'machine learning'" → react (RAG search)
+9. "Generate a simple bar chart from this data" → react (single visualization)
+10. "Execute this Python code snippet" → react (code execution)
+
+PLAN_EXECUTE - Multi-step complex tasks requiring planning and structured execution:
+
+Examples:
+1. "Analyze sales_data.csv AND customer_data.xlsx, then create visualizations and a summary report" → plan_execute (multiple files + multiple steps)
+2. "Search for Python tutorials, then analyze the top 5 results and compare their approaches" → plan_execute (search + analysis + comparison)
+3. "Load data.csv, calculate statistics, create 3 different charts, and generate a detailed report" → plan_execute (multiple distinct steps)
+4. "First search for weather data, then analyze the trends, and finally create a forecast model" → plan_execute (explicit multi-step with dependencies)
+5. "Analyze uploaded document, extract key points, search for related information online, and create a comprehensive summary" → plan_execute (document + web search + synthesis)
+6. "Compare data from file1.csv and file2.csv, perform statistical analysis, and generate visualizations" → plan_execute (multiple files + multiple operations)
+7. "Research topic X, then write code to demonstrate it, then create documentation" → plan_execute (search + code + documentation)
+8. "Step 1: load data, Step 2: clean it, Step 3: visualize, Step 4: report" → plan_execute (explicit steps)
+9. "Analyze all uploaded files and create a comparative analysis report" → plan_execute (multiple files)
+10. "Build a complete data pipeline: load, transform, analyze, visualize, export" → plan_execute (complex workflow)
 
 DECISION RULES:
-- Time indicators (NOW, today, latest, recent, current, this week) → agentic
-- Explicit action verbs (search, find, analyze, calculate, compare, generate) with data → agentic
-- File mentions (CSV, Excel, document, uploaded file) → agentic
-- Specific computation requests with data → agentic
-- Concept explanations (what is, how does, explain) → chat
-- Established historical facts → chat
-- Vague requests without data or context → chat
 
-Unless it's clearly necessary, prefer "chat" for simple questions.
+EDGE CASES:
+1. "Calculate variance of numbers" → chat (vague, no specific data)
+2. "Show me how to calculate mean" → chat (educational, not execution)
+3. "Analyze sales_data.csv" → plan-and-execute (single file, complicated reasoning required)
+4. "Analyze data.csv and create detailed report with multiple charts" → plan_execute (multiple operations)
+5. "Search for X" → react (simple search)
+6. "Search for X and Y and compare them" → plan_execute (search + comparison)
 
-Respond with ONLY one word: "agentic" or "chat" (no explanation, no punctuation)."""
+When in doubt:
+- Prefer "chat" for pure general knowledge questions
+- Prefer "react" for single-tool single-goal tasks
+- Choose "plan_execute" when multiple distinct steps or tools are clearly needed
+
+Respond with ONLY one word: "chat", "react", or "plan_execute" (no explanation, no punctuation)."""

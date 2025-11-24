@@ -116,18 +116,24 @@ def get_self_verification_section(query: str, has_json_files: bool = False) -> s
     Self-verification checklist for combined generation+verification.
 
     Args:
-        query: User's question
+        query: User's question (only used for reference, not embedded verbatim)
         has_json_files: Whether JSON files are present
 
     Returns:
         Self-verification instructions
     """
+    # Extract a concise task reference (first 150 chars or first sentence)
+    task_ref = query.split('\n')[0][:150]  # First line, max 150 chars
+    if len(task_ref) < len(query):
+        task_ref += "..."
+
     return f"""
 
 [CHECK] SELF-VERIFICATION CHECKLIST - Step-by-Step Validation:
 
 [STEP 1] Task Validation
-   ? Question: Does my code directly answer "{query}"?
+   ? Question: Does my code directly answer the task described in the prompt above?
+   >> Task Reference: {task_ref}
    >> Check: Code produces the requested output (not just partial answer)
    X Reject if: Code does something different or only partially addresses the question
 

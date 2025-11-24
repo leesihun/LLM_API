@@ -2,7 +2,12 @@
 ReAct Plan Executor Module
 
 Handles guided plan execution where the ReAct agent executes
-a structured plan step-by-step with tool fallback.
+a structured plan step-by-step.
+
+Features:
+- Dynamic plan adaptation (re-planning when steps fail or observations reveal new requirements)
+- Preserves completed work when adapting plans
+- Multi-trigger re-planning detection
 
 Extracted from React.py for improved modularity.
 """
@@ -11,6 +16,7 @@ from typing import List, Tuple, Optional
 from langchain_core.messages import HumanMessage
 
 from .models import ToolName
+from .plan_adapter import PlanAdapter
 from backend.config.prompts import PromptRegistry
 from backend.models.schemas import PlanStep, StepResult, ChatMessage
 from backend.utils.logging_utils import get_logger
@@ -48,7 +54,7 @@ class PlanExecutor:
         llm
     ):
         """
-        Initialize plan executor.
+        Initialize plan executor with dynamic plan adaptation.
 
         Args:
             tool_executor: ToolExecutor instance
@@ -62,6 +68,7 @@ class PlanExecutor:
         self.verifier = verifier
         self.answer_generator = answer_generator
         self.llm = llm
+        self.plan_adapter = PlanAdapter(llm)  # New: Dynamic plan adaptation
 
     async def execute_plan(
         self,
@@ -131,6 +138,46 @@ class PlanExecutor:
             logger.info(f"\n[PlanExecutor] Step {plan_step.step_num} {'✓ SUCCESS' if step_result.success else '✗ FAILED'}")
             logger.info(f"Tool used: {step_result.tool_used}")
             logger.info(f"Attempts: {step_result.attempts}\n")
+
+            # Check if re-planning is needed (skip if this is the last step)
+            remaining_steps = plan_steps[step_idx + 1:] if step_idx + 1 < len(plan_steps) else []
+            if remaining_steps:
+                needs_replan, reason = await self.plan_adapter.should_replan(
+                    current_step_result=step_result,
+                    remaining_steps=remaining_steps,
+                    original_query=user_query
+                )
+
+                if needs_replan:
+                    logger.warning(f"\n{'='*100}")
+                    logger.warning(f"RE-PLANNING TRIGGERED: {reason}")
+                    logger.warning(f"{'='*100}\n")
+
+                    # Generate adapted plan
+                    adapted_plan = await self.plan_adapter.adapt_plan(
+                        original_plan=plan_steps,
+                        completed_steps=step_results,
+                        current_step_result=step_result,
+                        remaining_steps=remaining_steps,
+                        original_query=user_query
+                    )
+
+                    logger.info(f"\n[PlanExecutor] Adapted plan generated: {len(adapted_plan)} new steps")
+                    for i, step in enumerate(adapted_plan, 1):
+                        logger.info(f"  {i}. {step.goal}")
+
+                    # Replace remaining steps with adapted plan
+                    # Renumber adapted plan steps to continue from current step number
+                    next_step_num = plan_step.step_num + 1
+                    for i, step in enumerate(adapted_plan):
+                        step.step_num = next_step_num + i
+
+                    # Update plan_steps to include completed + adapted
+                    plan_steps = plan_steps[:step_idx + 1] + adapted_plan
+
+                    logger.info(f"[PlanExecutor] Updated plan: {len(plan_steps)} total steps\n")
+                else:
+                    logger.info(f"[PlanExecutor] Plan execution on track - continuing as planned\n")
 
         # Generate final answer
         logger.info("\n" + "=" * 100)
@@ -454,7 +501,5 @@ class PlanExecutor:
         """
         if step.primary_tools:
             return step.primary_tools[0]
-        elif step.fallback_tools:
-            return step.fallback_tools[0]
         else:
-            return "finish"
+            raise ValueError(f"No primary tool specified for step {step.step_num}")

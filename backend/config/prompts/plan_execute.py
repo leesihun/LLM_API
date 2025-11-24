@@ -50,7 +50,6 @@ CRITICAL: You MUST respond with a JSON array of steps. Each step must have this 
   "step_num": 1,
   "goal": "Clear, detailed description of what to accomplish",
   "primary_tools": ["tool_name"],
-  "fallback_tools": [],
   "success_criteria": "How to verify success",
   "context": "Additional context or specific instructions for this step"
 }}
@@ -85,7 +84,6 @@ Example response format:
     "step_num": 1,
     "goal": "Load and explore the uploaded JSON file structure, extract column names, data types, and preview first few rows",
     "primary_tools": ["python_coder"],
-    "fallback_tools": [],
     "success_criteria": "Successfully loaded data with structure information (columns, types, shape) and preview displayed",
     "context": "Use json.load() to read JSON. Show df.head(), df.info(), df.describe(). Handle nested JSON structures if present."
   }},
@@ -93,7 +91,6 @@ Example response format:
     "step_num": 2,
     "goal": "Calculate mean and median of all numeric columns. If user-requested column names don't match, find semantically similar columns.",
     "primary_tools": ["python_coder"],
-    "fallback_tools": [],
     "success_criteria": "Mean and median values calculated and displayed for all numeric columns with clear labels",
     "context": "Use numpy statistical functions"
   }}

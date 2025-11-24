@@ -129,14 +129,18 @@ Key settings in `backend/config/settings.py`:
 ```python
 # Ollama Configuration
 ollama_host: str = 'http://127.0.0.1:11434'
-ollama_model: str = 'gemma3:12b'
-ollama_num_ctx: int = 4096
+ollama_model: str = 'qwen3:8b'  # General purpose model
+ollama_num_ctx: int = 16384
+
+# Agentic Flow - Model Selection
+agentic_classifier_model: str = 'qwen3:8b'  # Task classification
+ollama_coder_model: str = 'qwen3:8b'  # Code generation (can use specialized model like 'deepseek-coder:6.7b')
 
 # Python Code Execution
 python_code_enabled: bool = True
-python_code_timeout: int = 300
+python_code_timeout: int = 3000
 python_code_max_memory: int = 5120
-python_code_max_iterations: int = 3
+python_code_max_iterations: int = 5
 
 # Security
 secret_key: str = 'your-secret-key-here'
@@ -162,6 +166,48 @@ The system can generate and execute Python code safely:
 - Static code analysis before execution
 
 ## Version History
+
+### Version 1.6.0 (November 24, 2024)
+
+**Simplification: Session Notepad Removal**
+
+Removed the automatic session notepad feature to simplify the architecture and reduce overhead.
+
+**Rationale:**
+- The session notepad added redundancy with existing conversation history and variable storage
+- Extra LLM call after every execution added latency and cost without sufficient benefit
+- Simpler architecture is easier to maintain and reason about
+- Variable persistence remains intact and provides sufficient session continuity
+
+**Changes:**
+1. **Deleted Files:**
+   - `backend/tools/notepad.py` - Removed SessionNotepad class
+
+2. **Modified Files:**
+   - `backend/tasks/react/agent.py` - Removed notepad loading and generation hooks
+   - `backend/tasks/react/context_manager.py` - Simplified to only inject variable context
+   - `backend/config/prompts/__init__.py` - Removed notepad prompt imports and registrations
+   - `backend/config/prompts/react_agent.py` - Removed notepad entry generation prompt
+   - `backend/config/prompts/context_formatting.py` - Removed notepad context formatter
+
+3. **What Remains:**
+   - ✅ Variable persistence (DataFrames, arrays, etc.) - still works
+   - ✅ Conversation history - still tracked
+   - ✅ Session management - still functional
+   - ✅ Variable metadata injection - agent still sees available variables
+
+**Benefits:**
+- Reduced execution overhead (no post-execution LLM call)
+- Simpler codebase with less coupling
+- Lower latency and cost per execution
+- Cleaner separation of concerns
+
+**Migration Guide:**
+- No action needed - variable persistence works automatically
+- Variables are still saved and loaded across executions within the same session
+- Conversation history provides sufficient context for most use cases
+
+---
 
 ### Version 1.2.0 (2024-10-31)
 
@@ -218,36 +264,29 @@ The system can generate and execute Python code safely:
 
 ### Version 1.3.0 (November 19, 2024)
 
-**Feature: Session Notepad & Variable Persistence**
+**Feature: Variable Persistence System** *(Note: Session Notepad portion removed in v1.6.0)*
 
-Implemented an automatic session memory system that maintains continuity across ReAct agent executions within the same session.
+Implemented variable persistence system for maintaining data continuity across executions within the same session.
 
 **New Components:**
-- `backend/tools/notepad.py` - SessionNotepad class for persistent memory storage
 - `backend/tools/python_coder/variable_storage.py` - Type-specific variable serialization
 
 **Key Features:**
-1. **Automatic Notepad Generation**: After each ReAct execution, the LLM analyzes what was accomplished and creates a structured notepad entry
-2. **Variable Persistence**: Variables from successful code executions are automatically saved with type-specific serialization:
+1. **Variable Persistence**: Variables from successful code executions are automatically saved with type-specific serialization:
    - DataFrames → Parquet format
    - NumPy arrays → .npy files
    - Simple types → JSON
    - Matplotlib figures → PNG images
-3. **Context Auto-Injection**: All notepad entries and variable metadata are automatically injected into subsequent executions within the same session
-4. **Namespace Capture**: Enhanced REPL mode now captures execution namespace and returns variable metadata
+2. **Context Auto-Injection**: Variable metadata is automatically injected into subsequent executions within the same session
+3. **Namespace Capture**: Enhanced REPL mode captures execution namespace and returns variable metadata
 
 **Modified Files:**
 - `backend/tools/python_coder/executor.py` - Added namespace capture in REPL bootstrap
 - `backend/tools/python_coder/orchestrator.py` - Added namespace to success/final results
-- `backend/tasks/react/agent.py` - Added post-execution hook and notepad loading
-- `backend/tasks/react/context_manager.py` - Added notepad context injection
-- `backend/config/prompts/react_agent.py` - Added notepad entry generation prompt
 
 **Storage Structure:**
 ```
 ./data/scratch/{session_id}/
-├── notepad.json                 # Session memory entries
-├── {task}_{timestamp}.py        # Saved code files with descriptive names
 └── variables/                   # Persisted variables
     ├── variables_metadata.json  # Variable catalog with load instructions
     ├── df_*.parquet            # DataFrames
@@ -256,23 +295,124 @@ Implemented an automatic session memory system that maintains continuity across 
 ```
 
 **Benefits:**
-- Seamless session continuity - agent remembers previous work
+- Seamless session continuity - variables persist across executions
 - Efficient data reuse - no need to recompute variables
 - Explicit variable loading - agent sees what's available and writes code to load when needed
 - Safe serialization - no pickle, uses native formats
-- Task-based organization - code and variables organized by descriptive task names
 
 **Example Flow:**
 1. User: "Analyze the warpage data"
    - Agent executes code, creates `df_warpage` and `stats_summary`
-   - System automatically saves code as `data_analysis_20241119.py`
    - Variables saved: `df_warpage.parquet`, `stats_summary.json`
-   - Notepad entry created with task summary
 
 2. User: "Create a heatmap visualization"
-   - System injects notepad context showing available code and variables
+   - System injects variable context showing available variables
    - Agent sees `df_warpage` is available and writes code to load it
    - New visualization code builds on previous work
+
+---
+
+### Version 1.5.0 (November 24, 2024)
+
+**Major Refactor: 3-Way Agent Classification & Code Simplification**
+
+Completely redesigned the agent routing system to use direct LLM-powered 3-way classification, removed streaming support, and significantly simplified the codebase for better maintainability.
+
+**Key Changes:**
+
+1. **3-Way LLM Agent Classification**
+   - Replaced 2-stage classification (agentic vs chat → react vs plan_execute)
+   - New single-stage LLM classification directly returns: "chat", "react", or "plan_execute"
+   - More accurate classification with comprehensive examples for each agent type
+   - Eliminated keyword-based heuristics in favor of intelligent LLM decision-making
+
+2. **Simplified chat.py** (`backend/api/routes/chat.py`)
+   - Reduced from 510 lines to ~400 lines (22% reduction)
+   - Removed all streaming-related code (StreamingResponse, SSE chunks, stream parameter)
+   - Extracted file handling to `_handle_file_uploads()` helper function
+   - Restructured endpoint into 4 clear phases:
+     - Phase 1: File Handling
+     - Phase 2: Classification (LLM-powered)
+     - Phase 3: Execution (route to appropriate agent)
+     - Phase 4: Storage & Cleanup
+   - Much easier to read, understand, and maintain
+
+3. **Updated Task Classification** (`backend/config/prompts/task_classification.py`)
+   - New `get_agent_type_classifier_prompt()` function for 3-way classification
+   - Comprehensive examples for each agent type:
+     - **chat**: Pure knowledge questions (10+ examples)
+     - **react**: Single-goal tool tasks (10+ examples)
+     - **plan_execute**: Multi-step complex workflows (10+ examples)
+   - Clear decision rules and edge case handling
+   - Backward-compatible with deprecated `get_agentic_classifier_prompt()`
+
+4. **Simplified Smart Agent** (`backend/tasks/smart_agent_task.py`)
+   - Removed `_select_agent()` heuristic method (50+ lines removed)
+   - Agent now simply routes to specified agent type
+   - Classification happens in chat.py before calling smart_agent_task
+   - Cleaner separation of concerns
+
+**Agent Type Definitions:**
+
+- **chat**: Simple questions answerable from LLM knowledge base (no tools)
+  - Example: "What is Python?", "Explain machine learning"
+  
+- **react**: Single-goal tasks requiring tool usage (web search, code execution, file analysis)
+  - Example: "Search for current weather", "Analyze this CSV file"
+  
+- **plan_execute**: Multi-step complex tasks requiring planning and structured execution
+  - Example: "Analyze 3 files, create visualizations, and generate a report"
+
+**Benefits:**
+
+- **Clearer Logic**: Single LLM decision instead of fragmented 2-stage classification
+- **Better Accuracy**: LLM understands nuanced differences between agent types
+- **Simpler Codebase**: Removed ~160 lines of complex logic and streaming code
+- **Easier Maintenance**: Clear separation of concerns, well-defined phases
+- **Better Logging**: Comprehensive logging at each phase for debugging
+
+**Breaking Changes:**
+
+- `stream` parameter removed from `/v1/chat/completions` endpoint
+- Streaming responses no longer supported
+- `AgentType.AUTO` deprecated in smart_agent_task (classification moved to chat.py)
+- `determine_task_type()` renamed to `determine_agent_type()` and returns 3 values
+
+**Modified Files:**
+
+- `backend/api/routes/chat.py` - Major refactor (510 → 400 lines)
+- `backend/config/prompts/task_classification.py` - 3-way classification prompt
+- `backend/tasks/smart_agent_task.py` - Removed heuristic selection
+- `backend/config/settings.py` - Added `ollama_coder_model` setting
+- `backend/utils/llm_factory.py` - Coder LLM now uses configurable model
+
+**Migration Guide:**
+
+If you have custom code calling these endpoints:
+
+```python
+# Before (streaming - NO LONGER SUPPORTED)
+response = requests.post("/v1/chat/completions", data={
+    "stream": "true",  # ❌ Parameter removed
+    ...
+})
+
+# After (non-streaming only)
+response = requests.post("/v1/chat/completions", data={
+    "model": "qwen3:8b",
+    "messages": json.dumps([...]),
+    "agent_type": "auto",  # or "chat", "react", "plan_execute"
+    ...
+})
+```
+
+**Testing:**
+
+Tested with various query types to ensure correct agent routing:
+- Simple questions → chat
+- Single tool tasks → react  
+- Multi-step complex tasks → plan_execute
+- Explicit agent_type parameter correctly overrides classification
 
 ---
 
@@ -450,6 +590,6 @@ jupyter notebook API_examples.ipynb
 
 ---
 
-**Last Updated**: November 20, 2024
-**Version**: 1.4.0
+**Last Updated**: November 24, 2024
+**Version**: 1.5.0
 

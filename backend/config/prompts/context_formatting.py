@@ -104,55 +104,6 @@ Step {step_num}:
     return "\n".join(context_parts)
 
 
-def get_notepad_context_summary_prompt(
-    notepad_entries: List[Dict[str, Any]],
-    variable_metadata: Optional[Dict[str, Any]] = None
-) -> str:
-    """
-    Format notepad entries for context injection.
-
-    Args:
-        notepad_entries: List of notepad entry dictionaries
-        variable_metadata: Optional metadata about saved variables
-
-    Returns:
-        Formatted notepad context string
-
-    Example:
-        >>> entries = [{"task": "data_analysis", "description": "...", ...}]
-        >>> prompt = get_notepad_context_summary_prompt(entries)
-    """
-    if not notepad_entries:
-        return ""
-
-    context_parts = ["=== Session Memory (Notepad) ==="]
-    context_parts.append("Previous work in this session:\n")
-
-    for idx, entry in enumerate(notepad_entries, 1):
-        task = entry.get('task', 'unknown')
-        description = entry.get('description', 'No description')
-        key_outputs = entry.get('key_outputs', '')
-
-        context_parts.append(f"{idx}. [{task}] {description}")
-        if key_outputs:
-            context_parts.append(f"   Outputs: {key_outputs}")
-
-        # Add code summary if available
-        code_summary = entry.get('code_summary', '')
-        if code_summary:
-            context_parts.append(f"   Code: {code_summary}")
-
-    # Add variable metadata if available
-    if variable_metadata:
-        context_parts.append("\n=== Available Variables ===")
-        for var_name, var_info in variable_metadata.items():
-            var_type = var_info.get('type', 'unknown')
-            context_parts.append(f"- {var_name}: {var_type}")
-
-    context_parts.append("")
-    return "\n".join(context_parts)
-
-
 def get_pruned_context_prompt(
     early_steps_summary: str,
     recent_steps: List[Dict[str, Any]],

@@ -216,7 +216,6 @@ class PlanStep(BaseModel):
     step_num: int
     goal: str
     primary_tools: List[str] = Field(default_factory=list)
-    fallback_tools: List[str] = Field(default_factory=list)
     success_criteria: str
     context: Optional[str] = None
 

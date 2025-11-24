@@ -17,7 +17,7 @@ import functools
 from .registry import PromptRegistry, PromptRegistryMeta
 
 # Import all prompt functions
-from .task_classification import get_agentic_classifier_prompt
+from .task_classification import get_agent_type_classifier_prompt
 from .react_agent import (
     get_react_thought_and_action_prompt,
     get_react_final_answer_prompt,
@@ -26,8 +26,7 @@ from .react_agent import (
     get_react_step_verification_prompt,
     get_react_final_answer_from_steps_prompt,
     get_react_thought_prompt,
-    get_react_action_selection_prompt,
-    get_notepad_entry_generation_prompt  # Previously missing
+    get_react_action_selection_prompt
 )
 from .python_coder import (
     get_python_code_generation_prompt,
@@ -67,7 +66,6 @@ from .phase_manager import (
 from .context_formatting import (
     get_file_context_summary_prompt,
     get_step_history_summary_prompt,
-    get_notepad_context_summary_prompt,
     get_pruned_context_prompt,
     get_plan_step_context_prompt,
     get_code_history_context_prompt
@@ -86,7 +84,7 @@ def _register_all_prompts():
     """Register all prompt functions in the PromptRegistry."""
 
     # Task Classification
-    PromptRegistry.register('agentic_classifier', get_agentic_classifier_prompt)
+    PromptRegistry.register('agent_type_classifier', get_agent_type_classifier_prompt)
 
     # ReAct Agent
     PromptRegistry.register('react_thought_and_action', get_react_thought_and_action_prompt)
@@ -97,7 +95,6 @@ def _register_all_prompts():
     PromptRegistry.register('react_final_answer_from_steps', get_react_final_answer_from_steps_prompt)
     PromptRegistry.register('react_thought', get_react_thought_prompt)
     PromptRegistry.register('react_action_selection', get_react_action_selection_prompt)
-    PromptRegistry.register('react_notepad_entry_generation', get_notepad_entry_generation_prompt)  # NEW
 
     # Python Coder
     PromptRegistry.register('python_code_generation', get_python_code_generation_prompt)
@@ -139,7 +136,6 @@ def _register_all_prompts():
     # Context Formatting prompts
     PromptRegistry.register('context_file_summary', get_file_context_summary_prompt)
     PromptRegistry.register('context_step_history', get_step_history_summary_prompt)
-    PromptRegistry.register('context_notepad_summary', get_notepad_context_summary_prompt)
     PromptRegistry.register('context_pruned', get_pruned_context_prompt)
     PromptRegistry.register('context_plan_step', get_plan_step_context_prompt)
     PromptRegistry.register('context_code_history', get_code_history_context_prompt)
@@ -160,7 +156,7 @@ __all__ = [
     'validate_prompt_registry',
 
     # Task Classification
-    'get_agentic_classifier_prompt',
+    'get_agent_type_classifier_prompt',
 
     # ReAct Agent
     'get_react_thought_and_action_prompt',
@@ -171,7 +167,6 @@ __all__ = [
     'get_react_final_answer_from_steps_prompt',
     'get_react_thought_prompt',
     'get_react_action_selection_prompt',
-    'get_notepad_entry_generation_prompt',  # NEW
 
     # Python Coder
     'get_python_code_generation_prompt',
@@ -213,7 +208,6 @@ __all__ = [
     # Context Formatting
     'get_file_context_summary_prompt',
     'get_step_history_summary_prompt',
-    'get_notepad_context_summary_prompt',
     'get_pruned_context_prompt',
     'get_plan_step_context_prompt',
     'get_code_history_context_prompt',

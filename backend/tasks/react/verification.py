@@ -6,12 +6,14 @@ for ReAct agent execution. Extracted from React.py for improved modularity.
 
 Key Features:
 - Auto-finish detection: Triggers early exit when observation contains complete answer
+- Enhanced auto-finish with LLM-based adequacy checking (confidence scoring)
 - Step verification: Validates if a plan step achieved its goal
 - Completion checking: Determines if multi-step execution is complete
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from langchain_core.messages import HumanMessage
+import json
 
 from .models import ReActStep
 from backend.models.schemas import PlanStep
@@ -86,6 +88,113 @@ class StepVerifier:
             return True
 
         return False
+
+    async def should_auto_finish_enhanced(
+        self,
+        observation: str,
+        user_query: str,
+        iteration: int,
+        steps_context: str
+    ) -> Tuple[bool, float, str]:
+        """
+        Enhanced auto-finish with LLM-based adequacy check and confidence scoring.
+
+        This method improves upon the heuristic-based should_auto_finish() by:
+        1. Quick heuristic checks first (avoid LLM call if obvious)
+        2. LLM adequacy assessment for borderline cases
+        3. Confidence scoring to prevent premature exits
+        4. Clear reasoning for auto-finish decisions
+
+        Args:
+            observation: Latest observation from tool execution
+            user_query: Original user query
+            iteration: Current iteration number
+            steps_context: Formatted context from previous steps
+
+        Returns:
+            Tuple of (should_finish, confidence_score, reason)
+        """
+        # Quick heuristic checks first (avoid LLM call)
+        if len(observation) < 50:
+            return False, 0.0, "Observation too short (< 50 chars)"
+
+        if iteration < 2:
+            return False, 0.0, "Too early (need at least 2 iterations)"
+
+        observation_lower = observation.lower()
+
+        # Check for obvious errors
+        error_keywords = ['error', 'failed', 'exception', 'traceback']
+        if any(keyword in observation_lower for keyword in error_keywords):
+            # But allow if there's also success indicators
+            if 'success' not in observation_lower:
+                return False, 0.0, "Observation contains error keywords"
+
+        # Strong heuristics can skip LLM check
+        strong_answer_keywords = [
+            'the answer is',
+            'therefore the result is',
+            'in conclusion',
+            'final result is'
+        ]
+        if any(keyword in observation_lower for keyword in strong_answer_keywords):
+            return True, 0.95, "Strong answer keywords detected"
+
+        # LLM adequacy check for borderline cases
+        try:
+            prompt = f"""Assess if this observation adequately answers the user's query.
+
+User Query:
+{user_query}
+
+Latest Observation:
+{observation[:1000]}
+
+Previous Steps Context:
+{steps_context[-500:] if len(steps_context) > 500 else steps_context}
+
+Question: Does the observation contain enough information to FULLY and ACCURATELY answer the user's query?
+
+Respond with JSON only:
+{{
+  "adequate": true or false,
+  "confidence": 0.0 to 1.0 (how confident are you in this assessment),
+  "reason": "brief explanation",
+  "missing_info": "what's still needed if inadequate, otherwise empty string"
+}}
+"""
+
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content.strip()
+
+            # Parse JSON response
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+
+            result = json.loads(response_text.strip())
+
+            adequate = result.get("adequate", False)
+            confidence = float(result.get("confidence", 0.0))
+            reason = result.get("reason", "No reason provided")
+            missing_info = result.get("missing_info", "")
+
+            # Require high confidence (>= 0.8) to auto-finish
+            should_finish = adequate and confidence >= 0.8
+
+            if should_finish:
+                logger.info(f"[AUTO-FINISH ENHANCED] Confidence: {confidence:.2f} - {reason}")
+            else:
+                logger.info(f"[CONTINUE] Confidence: {confidence:.2f} - {reason}")
+                if missing_info:
+                    logger.info(f"[CONTINUE] Missing: {missing_info}")
+
+            return should_finish, confidence, reason
+
+        except Exception as e:
+            logger.error(f"[AUTO-FINISH ENHANCED] LLM check failed: {e}")
+            raise
 
     async def verify_step_success(
         self,

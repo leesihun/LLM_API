@@ -55,7 +55,7 @@ class ReActAgent:
         handles initialization, coordination, and public API.
     """
 
-    def __init__(self, max_iterations: int = 6):
+    def __init__(self, max_iterations: int = 3):
         """
         Initialize ReAct agent with specialized modules.
 
@@ -131,11 +131,7 @@ class ReActAgent:
         self.steps = []
         iteration = 0
         final_answer = ""
-
-        # Load notepad and variables for context injection
-        if self.session_id:
-            await self._load_notepad_and_variables()
-
+        
         # Pre-step: Analyze files if attached
         if self.file_paths:
             await self._analyze_files_pre_step(user_query)
@@ -172,11 +168,6 @@ class ReActAgent:
                 logger.subsection("Final Answer Generation")
                 final_answer = await self.answer_generator.generate_final_answer(user_query, self.steps)
 
-                # Fallback if insufficient
-                if not final_answer or len(final_answer.strip()) < 10:
-                    logger.warning("Generated answer insufficient, using fallback")
-                    final_answer = self.answer_generator.extract_from_steps(user_query, self.steps)
-
                 step.observation = "Task completed"
                 self.steps.append(step)
                 logger.multiline(final_answer, title="Final Answer", max_lines=50)
@@ -198,9 +189,17 @@ class ReActAgent:
             # Store step
             self.steps.append(step)
 
-            # Check for early exit
-            if self.verifier.should_auto_finish(observation, iteration):
-                logger.info("AUTO-FINISH TRIGGERED - Generating final answer")
+            # Check for early exit with enhanced auto-finish
+            context = self.context_manager.build_tool_context(self.steps)
+            should_finish, confidence, reason = await self.verifier.should_auto_finish_enhanced(
+                observation=observation,
+                user_query=user_query,
+                iteration=iteration,
+                steps_context=context
+            )
+
+            if should_finish:
+                logger.info(f"AUTO-FINISH ENHANCED (confidence: {confidence:.2f}) - {reason}")
                 final_answer = await self.answer_generator.generate_final_answer(user_query, self.steps)
                 break
 
@@ -208,11 +207,6 @@ class ReActAgent:
         if not final_answer:
             logger.warning("Max iterations reached - generating final answer")
             final_answer = await self.answer_generator.generate_final_answer(user_query, self.steps)
-
-        # Final validation
-        if not final_answer or not final_answer.strip():
-            logger.error("Empty final answer - using fallback")
-            final_answer = self.answer_generator.extract_from_steps(user_query, self.steps)
 
         # Log completion
         logger.header("EXECUTION COMPLETED", "heavy")
@@ -227,10 +221,6 @@ class ReActAgent:
 
         # Build metadata
         metadata = self._build_metadata()
-
-        # Generate and save notepad entry (post-execution hook)
-        if self.session_id:
-            await self._generate_and_save_notepad_entry(user_query, final_answer)
 
         return final_answer, metadata
 
@@ -265,9 +255,9 @@ class ReActAgent:
         # Extract user query
         user_query = messages[-1].content
 
-        # Load notepad and variables for context injection
+        # Load variables for context injection
         if self.session_id:
-            await self._load_notepad_and_variables()
+            await self._load_variables()
 
         # Delegate to plan executor
         final_answer, step_results = await self.plan_executor.execute_plan(
@@ -278,36 +268,7 @@ class ReActAgent:
             max_iterations_per_step=max_iterations_per_step
         )
 
-        # Generate and save notepad entry (post-execution hook)
-        if self.session_id:
-            await self._generate_and_save_notepad_entry(user_query, final_answer)
-
         return final_answer, step_results
-
-    async def _load_notepad_and_variables(self):
-        """
-        Load session notepad and variables for context injection.
-        """
-        try:
-            from backend.tools.notepad import SessionNotepad
-            from backend.tools.python_coder.variable_storage import VariableStorage
-            
-            # Load notepad
-            notepad = SessionNotepad.load(self.session_id)
-            
-            # Load variable metadata
-            var_metadata = VariableStorage.get_metadata(self.session_id)
-            
-            # Set in context manager
-            self.context_manager.set_notepad(notepad, var_metadata)
-            
-            if notepad.get_entries_count() > 0:
-                logger.info(f"[ReActAgent] Loaded notepad with {notepad.get_entries_count()} entries")
-            if var_metadata:
-                logger.info(f"[ReActAgent] Loaded {len(var_metadata)} saved variables")
-            
-        except Exception as e:
-            logger.warning(f"[ReActAgent] Failed to load notepad/variables: {e}")
 
     async def _analyze_files_pre_step(self, user_query: str) -> None:
         """
@@ -377,129 +338,14 @@ class ReActAgent:
             trace.append(str(step))
 
         return "\n".join(trace)
-    
-    async def _generate_and_save_notepad_entry(self, user_query: str, final_answer: str):
-        """
-        Generate and save notepad entry after execution completes.
-
-        This method analyzes the execution steps, extracts code and variables,
-        and creates a structured notepad entry for future reference.
-
-        Args:
-            user_query: Original user query
-            final_answer: Final answer generated by the agent
-        """
-        try:
-            from backend.config.prompts.react_agent import get_notepad_entry_generation_prompt
-            from backend.tools.notepad import SessionNotepad
-            from backend.tools.python_coder.variable_storage import VariableStorage
-            from langchain_core.messages import HumanMessage
-            import json
-
-            logger.info("[ReActAgent] Generating notepad entry...")
-
-            # Build steps summary
-            steps_summary = []
-            python_coder_result = None
-
-            for step in self.steps:
-                step_info = f"Step {step.step_num}: {step.action}"
-                if step.observation:
-                    obs_preview = step.observation[:200]
-                    step_info += f" - {obs_preview}..."
-                steps_summary.append(step_info)
-
-                # Check if python_coder was used
-                if step.action == ToolName.PYTHON_CODER and "success" in step.observation.lower():
-                    # Try to extract code and namespace from observation
-                    # The observation might contain result info
-                    python_coder_result = step
-
-            steps_text = "\n".join(steps_summary)
-
-            # Generate notepad entry using LLM
-            prompt = get_notepad_entry_generation_prompt(
-                user_query=user_query,
-                steps_summary=steps_text,
-                final_answer=final_answer
-            )
-
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-            response_text = response.content.strip()
-
-            # Parse JSON response
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0]
-
-            entry_data = json.loads(response_text.strip())
-
-            task = entry_data.get("task", "general_task")
-            description = entry_data.get("description", "Task completed")
-            code_summary = entry_data.get("code_summary", "")
-            variables_list = entry_data.get("variables", [])
-            key_outputs = entry_data.get("key_outputs", "")
-
-            logger.info(f"[ReActAgent] Entry generated: [{task}] {description}")
-
-            # Load notepad
-            notepad = SessionNotepad.load(self.session_id)
-
-            # If python_coder was used, save code and variables
-            code_file = None
-            if python_coder_result and code_summary:
-                # Try to find the code in the step or in tool_executor results
-                # For now, we'll save based on the session's script.py if it exists
-                from pathlib import Path
-                from backend.config.settings import settings
-
-                session_dir = Path(settings.python_code_execution_dir) / self.session_id
-                script_path = session_dir / "script.py"
-
-                if script_path.exists():
-                    code_content = script_path.read_text(encoding='utf-8')
-                    code_file = notepad.save_code_file(code_content, task)
-                    logger.info(f"[ReActAgent] Saved code as: {code_file}")
-
-                    # Save variables if they exist
-                    # Try to load namespace from the last execution
-                    # The tool_executor should have stored this somewhere
-                    # For now we'll use the variables list from LLM
-                    # In a real scenario, the python_coder would pass namespace info
-
-                    # Check if there's a namespace in memory from recent execution
-                    # This would need to be passed through the observation or stored
-                    # For simplicity, we'll skip actual variable saving for now
-                    # and rely on the next execution to capture them properly
-
-                    logger.info(f"[ReActAgent] Variables mentioned: {variables_list}")
-
-            # Add entry to notepad
-            entry_id = notepad.add_entry(
-                task=task,
-                description=description,
-                code_file=code_file,
-                variables_saved=variables_list,
-                key_outputs=key_outputs
-            )
-
-            # Save notepad
-            notepad.save()
-
-            logger.success(f"[ReActAgent] Notepad entry #{entry_id} saved successfully")
-
-        except Exception as e:
-            logger.error(f"[ReActAgent] Failed to generate notepad entry: {e}")
-            # Don't fail the entire execution if notepad generation fails
 
 
 class ReActAgentFactory:
     """
     Factory for creating ReActAgent instances.
 
-    This factory pattern ensures each request gets a fresh agent instance
-    with proper notepad loading, avoiding singleton issues and state leakage.
+    This factory pattern ensures each request gets a fresh agent instance,
+    avoiding singleton issues and state leakage.
 
     Usage:
         agent = ReActAgentFactory.create(max_iterations=6)
@@ -520,6 +366,6 @@ class ReActAgentFactory:
         return ReActAgent(max_iterations=max_iterations)
 
 
-# Legacy singleton for backward compatibility
-# DEPRECATED: Use ReActAgentFactory.create() instead
-react_agent = ReActAgent(max_iterations=6)
+# Global react_agent instance for backward compatibility
+# Note: Using factory pattern (ReActAgentFactory.create()) is recommended
+react_agent = ReActAgentFactory.create()

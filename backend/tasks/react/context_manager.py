@@ -36,18 +36,15 @@ class ContextManager:
             session_id: Optional session ID for code history retrieval
         """
         self.session_id = session_id
-        self.notepad = None
         self.variable_metadata = None
 
-    def set_notepad(self, notepad, variable_metadata: Optional[dict] = None):
+    def set_variables(self, variable_metadata: dict):
         """
-        Set notepad and variable metadata for context injection.
+        Set variable metadata for context injection.
 
         Args:
-            notepad: SessionNotepad instance
-            variable_metadata: Optional variable metadata dictionary
+            variable_metadata: Variable metadata dictionary
         """
-        self.notepad = notepad
         self.variable_metadata = variable_metadata
 
     def build_tool_context(self, steps: List[ReActStep]) -> str:
@@ -67,10 +64,10 @@ class ContextManager:
         """
         context_parts = []
 
-        # Inject notepad context at the top
-        notepad_context = self._build_notepad_context()
-        if notepad_context:
-            context_parts.append(notepad_context)
+        # Inject variable context at the top
+        variable_context = self._build_variable_context()
+        if variable_context:
+            context_parts.append(variable_context)
             context_parts.append("")  # Blank line separator
 
         # Build step history context
@@ -302,22 +299,55 @@ Step {step.step_num}:
             # If python_coder_tool is unavailable or errors, return None
             return None
 
-    def _build_notepad_context(self) -> str:
+    def _build_variable_context(self) -> str:
         """
-        Build notepad context string for injection into agent context.
+        Build variable context string for injection into agent context.
 
         Returns:
-            Formatted notepad context string with all entries and variables
+            Formatted variable context string
         """
-        if not self.notepad:
+        if not self.variable_metadata:
             return ""
 
         try:
-            # Use the notepad's get_full_context method
-            return self.notepad.get_full_context(self.variable_metadata)
+            lines = []
+            lines.append("=== Available Saved Variables ===")
+            lines.append("You can load these variables from previous executions:")
+            lines.append("")
+            
+            for idx, (var_name, meta) in enumerate(self.variable_metadata.items(), 1):
+                var_type = meta.get("type", "unknown")
+                load_code = meta.get("load_code", "")
+                
+                lines.append(f"{idx}. {var_name} ({var_type})")
+                
+                # Add type-specific details
+                if var_type == "pandas.DataFrame":
+                    shape = meta.get("shape", [])
+                    columns = meta.get("columns", [])
+                    lines.append(f"   Shape: {shape}, Columns: {', '.join(columns[:5])}")
+                elif var_type == "numpy.ndarray":
+                    shape = meta.get("shape", [])
+                    dtype = meta.get("dtype", "")
+                    lines.append(f"   Shape: {shape}, dtype: {dtype}")
+                elif var_type == "dict":
+                    keys = meta.get("keys", [])
+                    lines.append(f"   Keys: {', '.join(str(k) for k in keys)}")
+                elif var_type == "list":
+                    length = meta.get("length", 0)
+                    lines.append(f"   Length: {length}")
+                
+                # Add load code
+                if load_code:
+                    lines.append(f"   Load with: {load_code}")
+                
+                lines.append("")  # Blank line between variables
+            
+            return "\n".join(lines)
+            
         except Exception as e:
             logger = get_logger(__name__)
-            logger.warning(f"[ContextManager] Failed to build notepad context: {e}")
+            logger.warning(f"[ContextManager] Failed to build variable context: {e}")
             return ""
 
     def format_phase_handoff(

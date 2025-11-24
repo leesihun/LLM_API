@@ -25,6 +25,7 @@ from .code_generator import CodeGenerator
 from .code_verifier import CodeVerifier
 from .code_fixer import CodeFixer
 from .auto_fixer import AutoFixer
+from .code_patcher import CodePatcher
 from .context_builder import FileContextBuilder
 from .file_handlers import FileHandlerFactory
 from .utils import get_original_filename
@@ -73,6 +74,7 @@ class PythonCoderTool:
         self.code_verifier = CodeVerifier(self.llm, self.executor)
         self.code_fixer = CodeFixer(self.llm)
         self.auto_fixer = AutoFixer()
+        self.code_patcher = CodePatcher(self.llm)  # New: Incremental code building
         self.file_handler_factory = FileHandlerFactory()
         self.context_builder = FileContextBuilder()
 
@@ -92,7 +94,9 @@ class PythonCoderTool:
         stage_prefix: Optional[str] = None,
         conversation_history: Optional[List[dict]] = None,
         plan_context: Optional[dict] = None,
-        react_context: Optional[dict] = None
+        react_context: Optional[dict] = None,
+        react_step: Optional[int] = None,  # NEW: explicit react step number
+        plan_step: Optional[int] = None   # NEW: explicit plan step number
     ) -> Dict[str, Any]:
         """
         OPTIMIZED: Main entry point for code generation and execution.
@@ -110,10 +114,12 @@ class PythonCoderTool:
             file_paths: Optional list of input file paths
             session_id: Optional session ID
             is_prestep: Whether this is called from ReAct pre-step
-            stage_prefix: Optional stage prefix for code file naming
+            stage_prefix: Optional stage prefix for code file naming (legacy, prefer react_step/plan_step)
             conversation_history: Past conversation turns
             plan_context: Plan-Execute workflow context
             react_context: ReAct iteration context with failed attempts
+            react_step: ReAct iteration/step number (for prompt organization)
+            plan_step: Plan-Execute step number (for prompt organization)
 
         Returns:
             Dict with execution results
@@ -179,7 +185,9 @@ class PythonCoderTool:
                 stage_prefix=stage_prefix,
                 conversation_history=conversation_history,
                 plan_context=plan_context,
-                react_context=react_context
+                react_context=react_context,
+                react_step=react_step,  # NEW: pass through to save
+                plan_step=plan_step     # NEW: pass through to save
             )
 
             if not code:
@@ -218,9 +226,35 @@ class PythonCoderTool:
             if not execution_result["success"]:
                 logger.error(f"[PythonCoderTool] [X] Execution failed: {execution_result.get('error', 'Unknown')[:100]}")
                 if attempt < self.max_retry_attempts - 1:
-                    logger.info("[PythonCoderTool] Will retry with error feedback...")
-                    context = self._build_retry_context(context, execution_result.get("error"), issues)
-                    continue
+                    # Use INCREMENTAL PATCHING for attempts 2+ (preserve working sections)
+                    if attempt > 0 and code:
+                        logger.info("[PythonCoderTool] Using INCREMENTAL patching (preserving working sections)...")
+
+                        # Analyze error to identify failed section
+                        error_analysis = self.code_patcher.analyze_execution_error(
+                            code=code,
+                            error_message=execution_result.get("error", ""),
+                            execution_output=execution_result.get("output", "")
+                        )
+
+                        # Generate patched code (only fixes failed section)
+                        code = await self.code_patcher.patch_code(
+                            original_code=code,
+                            error_analysis=error_analysis,
+                            query=query,
+                            file_context=file_context,
+                            attempt_num=attempt + 2  # Next attempt number
+                        )
+
+                        logger.info(f"[PythonCoderTool] Patched {error_analysis['error_location']} section")
+
+                        # Skip LLM code generation - go directly to execution with patched code
+                        continue
+                    else:
+                        # First attempt - use traditional retry with error feedback
+                        logger.info("[PythonCoderTool] First attempt failed - will retry with full regeneration...")
+                        context = self._build_retry_context(context, execution_result.get("error"), issues)
+                        continue
                 else:
                     logger.error(f"[PythonCoderTool] Max attempts ({self.max_retry_attempts}) reached")
                     break
@@ -573,7 +607,9 @@ class PythonCoderTool:
         stage_prefix: Optional[str] = None,
         conversation_history: Optional[List[dict]] = None,
         plan_context: Optional[dict] = None,
-        react_context: Optional[dict] = None
+        react_context: Optional[dict] = None,
+        react_step: Optional[int] = None,  # NEW
+        plan_step: Optional[int] = None    # NEW
     ) -> Tuple[str, bool, List[str]]:
         """
         OPTIMIZED: Generate code WITH self-verification in single LLM call.
@@ -610,7 +646,9 @@ class PythonCoderTool:
             validated_files=validated_files,
             attempt_num=attempt_num,
             session_id=session_id,
-            stage_prefix=stage_prefix
+            stage_prefix=stage_prefix,
+            react_step=react_step,  # NEW: proper hierarchy
+            plan_step=plan_step     # NEW: proper hierarchy
         )
 
         try:
@@ -639,17 +677,7 @@ class PythonCoderTool:
 
         except Exception as e:
             logger.error(f"[PythonCoderTool] Failed to generate code with self-verification: {e}")
-            # Fallback: try old method
-            logger.warning("[PythonCoderTool] Falling back to old generation method...")
-            code = await self.code_generator.generate_code(
-                query=query,
-                context=context,
-                validated_files=validated_files,
-                file_metadata=file_metadata,
-                file_context=file_context,
-                is_prestep=is_prestep
-            )
-            return code, False, []
+            raise
 
     async def _check_output_adequacy(
         self,
@@ -694,9 +722,8 @@ class PythonCoderTool:
             return is_adequate, reason, suggestion
 
         except Exception as e:
-            logger.warning(f"[PythonCoderTool] Failed to check output adequacy: {e}")
-            # Default to adequate if check fails
-            return True, "Adequacy check failed, assuming adequate", ""
+            logger.error(f"[PythonCoderTool] Failed to check output adequacy: {e}")
+            raise
 
     def _build_retry_context(
         self,
@@ -781,8 +808,5 @@ python_coder_tool = PythonCoderTool()
 
 
 # ============================================================================
-# Backward Compatibility Exports
+# Exports
 # ============================================================================
-
-# For backward compatibility with existing imports
-PythonExecutor = CodeExecutor

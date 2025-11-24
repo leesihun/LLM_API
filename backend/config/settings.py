@@ -111,20 +111,31 @@ class Settings(BaseSettings):
 
 
 
-    # AGENTIC FLOW
+    # ============================================================================
+    # AGENTIC FLOW - Model Selection
+    # ============================================================================
 
-    # Agentic flow model
+    # Task classifier model - used for determining agent type (chat/react/plan_execute)
     agentic_classifier_model: str = 'qwen3:8b'
-    #'gemma3:12b' # 'gpt-oss:120b''gpt-oss:120b'
+    #'gemma3:12b' # 'gpt-oss:120b'
+    
+    # Code generation model - used for Python code generation tasks
+    # Can be same as ollama_model or a specialized coding model
+    ollama_coder_model: str = 'qwen3:8b'
+    #'gemma3:12b' # 'deepseek-coder:6.7b' # Use specialized coder model if available
 
-    # NOTE: Agentic classifier prompt is now centralized in config/prompts/task_classification.py
-    # Use: from backend.config.prompts import get_agentic_classifier_prompt
-    # This property provides backward compatibility
+    # NOTE: Agent type classifier prompt is now centralized in config/prompts/task_classification.py
+    # Use: from backend.config.prompts import get_agent_type_classifier_prompt
+    # This property provides backward compatibility (deprecated - use get_agent_type_classifier_prompt)
     @property
     def agentic_classifier_prompt(self) -> str:
-        """Get agentic classifier prompt from centralized prompts module."""
-        from backend.config.prompts import get_agentic_classifier_prompt
-        return get_agentic_classifier_prompt()
+        """
+        Get agent type classifier prompt from centralized prompts module.
+        DEPRECATED: This returns the 3-way classifier (chat/react/plan_execute).
+        Use get_agent_type_classifier_prompt() directly for clarity.
+        """
+        from backend.config.prompts import get_agent_type_classifier_prompt
+        return get_agent_type_classifier_prompt()
 
     # Available tools
     available_tools: list[str] = ['web_search', 'rag', 'python_coder', 'chat']

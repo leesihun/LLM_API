@@ -27,7 +27,7 @@ from backend.tools.rag_retriever.models import (
     RAGRetrievalResponse
 )
 
-# Backward compatibility: Legacy code imports 'rag_retriever'
+# Backward compatibility alias
 rag_retriever = rag_retriever_tool
 
 __all__ = [

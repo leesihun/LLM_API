@@ -8,7 +8,7 @@ Uses llm_factory for LLM instances and tool_metadata models from Phase 2.
 from typing import List, Optional, Tuple, Any
 
 from backend.tools.web_search import web_search_tool
-from backend.tools.rag_retriever import rag_retriever
+from backend.tools.rag_retriever import rag_retriever_tool
 from backend.tools.python_coder import python_coder_tool
 from backend.tools.file_analyzer import file_analyzer
 from backend.utils.logging_utils import get_logger
@@ -118,8 +118,8 @@ class ToolExecutor:
         Returns:
             Formatted observation with retrieved documents
         """
-        results = await rag_retriever.retrieve(query, top_k=5)
-        observation = rag_retriever.format_results(results)
+        results = await rag_retriever_tool.retrieve(query, top_k=5)
+        observation = rag_retriever_tool.format_results(results)
         final_observation = observation if observation else "No relevant documents found."
 
         logger.info(f"RAG Retrieval: {len(results)} documents")
@@ -144,9 +144,14 @@ class ToolExecutor:
         # Load conversation_history from conversation store
         conversation_history = self._load_conversation_history(session_id)
 
-        # Use ReAct step number for stage prefix
+        # Use ReAct step number for hierarchical prompt organization
         current_step_num = len(steps) + 1 if steps else 1
         stage_prefix = f"step{current_step_num}"
+
+        # Extract plan_step if available from plan_context
+        plan_step_num = None
+        if plan_context and 'current_step' in plan_context:
+            plan_step_num = plan_context['current_step']
 
         result = await python_coder_tool.execute_code_task(
             query=query,
@@ -156,7 +161,9 @@ class ToolExecutor:
             stage_prefix=stage_prefix,
             react_context=react_context,
             plan_context=plan_context,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            react_step=current_step_num,  # NEW: explicit react step
+            plan_step=plan_step_num        # NEW: explicit plan step if available
         )
 
         logger.info(f"Python Coder - Success: {result['success']}")

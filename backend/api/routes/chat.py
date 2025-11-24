@@ -4,8 +4,7 @@ Handles chat completions, conversation management, and OpenAI-compatible endpoin
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
-from typing import Dict, Any, List, Optional, AsyncIterator
+from typing import Dict, Any, List, Optional
 import time
 import uuid
 from pathlib import Path
@@ -43,7 +42,7 @@ def _save_conversation(
     user_message: str,
     response_text: str,
     file_paths: Optional[List[str]],
-    task_type: str,
+    agent_type: str,
     agent_metadata: Optional[Dict[str, Any]]
 ):
     """Save conversation to history"""
@@ -51,25 +50,26 @@ def _save_conversation(
         # Save user message
         conversation_store.add_message(session_id, "user", user_message, metadata={
             "file_paths": file_paths if file_paths else None,
-            "task_type": task_type
+            "agent_type": agent_type
         })
 
         # Save assistant message with agent metadata if available
         assistant_metadata = {
-            "task_type": task_type
+            "agent_type": agent_type
         }
         if agent_metadata:
             assistant_metadata["agent_metadata"] = agent_metadata
 
         conversation_store.add_message(session_id, "assistant", response_text, metadata=assistant_metadata)
 
-        logger.info(f"[Chat] Saved conversation to session {session_id} (task_type: {task_type})")
+        logger.info(f"[Chat] Saved conversation to session {session_id} (agent_type: {agent_type})")
         if agent_metadata:
             logger.info(f"[Chat] Agent metadata included: {list(agent_metadata.keys())}")
     except Exception as save_error:
         logger.error(f"[Chat] Failed to save conversation: {save_error}")
         logger.error(f"[Chat] Traceback:\n{traceback.format_exc()}")
         # Don't fail the request if conversation saving fails
+
 
 def _cleanup_files(file_paths: Optional[List[str]]):
     """Cleanup temporary files"""
@@ -81,107 +81,28 @@ def _cleanup_files(file_paths: Optional[List[str]]):
             except Exception as e:
                 logger.warning(f"[Chat] Failed to cleanup temp file {temp_path}: {e}")
 
-async def determine_task_type(query: str) -> str:
-    """Determine task type using LLM analysis, fallback to keyword matching"""
-    try:
-        logger.info(f"[Task Classifier] Determining task type for query: {query[:]}")
-        from backend.utils.llm_factory import LLMFactory
-        classifier_llm = LLMFactory.create_classifier_llm()
-        messages = [
-            SystemMessage(content=settings.agentic_classifier_prompt),
-            HumanMessage(content=f"Query: {query}")
-        ]
-        try:
-            response = await asyncio.wait_for(classifier_llm.ainvoke(messages), timeout=100)
-            classification = response.content.strip().lower()
-            if classification in ["agentic", "chat"]:
-                logger.info(f"Task classified as '{classification.upper()}': {query[:100]}")
-                return classification
-            else:
-                logger.warning(f"Invalid classifier response: '{classification}', using fallback")
-        except asyncio.TimeoutError:
-            logger.warning("[Task Classifier] LLM classification timed out, falling back to keywords")
-        except Exception as llm_error:
-            logger.warning(f"[Task Classifier] LLM classification error: {str(llm_error)}, falling back to keywords")
-    except Exception as e:
-        logger.error(f"[Task Classifier] Failed to initialize classifier: {str(e)}, falling back to keywords")
 
-    # Fallback: Keyword-based classification
-    logger.info("[Task Classifier] Using keyword-based fallback classification")
-    agentic_keywords = ["search", "find", "look up", "research", "compare", "analyze",
-                       "investigate", "current", "latest", "news", "document", "file",
-                       "pdf", "code", "python", "calculate", "data"]
-    if any(keyword in query.lower() for keyword in agentic_keywords):
-        logger.info(f"[Task Classifier] Fallback classified as 'agentic': {query[:]}")
-        return "agentic"
-    logger.info(f"[Task Classifier] Fallback classified as 'chat': {query[:]}")
-    return "chat"
-
-# OpenAI-Compatible Endpoints
-
-@openai_router.get("/models", response_model=ModelsResponse)
-async def list_models(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """List available models (OpenAI compatible)"""
-    models = [
-        ModelInfo(
-            id=settings.ollama_model,
-            created=int(time.time()),
-            owned_by="ollama"
-        )
-    ]
-
-    return ModelsResponse(
-        object="list",
-        data=models
-    )
-
-
-@openai_router.post("/chat/completions")
-async def chat_completions(
-    model: str = Form(...),
-    messages: str = Form(...),  # JSON string
-    session_id: Optional[str] = Form(None),
-    agent_type: str = Form("auto"),
-    stream: str = Form("false"),  # Form fields come as strings
-    files: Optional[List[UploadFile]] = File(None),
-    current_user: Dict[str, Any] = Depends(get_current_user)
-):
+def _handle_file_uploads(
+    files: Optional[List[UploadFile]],
+    session_id: Optional[str],
+    user_id: str
+) -> tuple[List[str], bool]:
     """
-    OpenAI-compatible chat completions endpoint with multipart/form-data support
-    Automatically routes to appropriate task based on query analysis
-    Supports direct file uploads via multipart form
-    Supports streaming with Server-Sent Events (SSE)
-
-    Parameters:
-        - model: Model name (form field)
-        - messages: JSON string of message array (form field)
-        - session_id: Optional session ID (form field)
-        - agent_type: "auto", "react", or "plan_execute" (form field)
-        - stream: "true" or "false" - enable streaming (form field)
-        - files: Optional file uploads (multipart files)
+    Handle file uploads and retrieve old files from session history
+    
+    Args:
+        files: List of uploaded files (can be None)
+        session_id: Current session ID (can be None)
+        user_id: User identifier for storage path
+    
+    Returns:
+        Tuple of (file_paths, new_files_uploaded)
+        - file_paths: List of file paths to use (new or old)
+        - new_files_uploaded: Boolean indicating if new files were uploaded
     """
-    user_id = current_user["username"]
-
-    # Parse stream parameter (form fields come as strings)
-    is_streaming = stream.lower() == "true"
-
-    # Parse messages JSON
-    try:
-        messages_list = json.loads(messages)
-        parsed_messages = [ChatMessage(**msg) for msg in messages_list]
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid messages JSON: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid message format: {str(e)}")
-
-    # Create new session if none provided
-    if not session_id:
-        session_id = conversation_store.create_session(user_id)
-
-    # Handle file uploads - save to temp location
     file_paths = []
     old_file_paths = []
-    new_files_uploaded = False  # Track if we uploaded new files
+    new_files_uploaded = False
 
     # If continuing session, retrieve old files from conversation history
     if session_id:
@@ -209,8 +130,11 @@ async def chat_completions(
                 temp_filename = f"temp_{temp_id}_{file.filename}"
                 temp_path = uploads_path / temp_filename
 
+                # Read file content synchronously (FastAPI UploadFile requires this)
+                import asyncio
+                content = asyncio.run(file.read())
+                
                 with open(temp_path, "wb") as f:
-                    content = await file.read()
                     f.write(content)
 
                 file_paths.append(str(temp_path))
@@ -218,7 +142,6 @@ async def chat_completions(
 
             except Exception as e:
                 logger.error(f"[Chat] Error saving file {file.filename}: {e}")
-                # Continue with other files
                 continue
 
         if file_paths:
@@ -236,170 +159,189 @@ async def chat_completions(
         file_paths = old_file_paths
         logger.info(f"[Chat] No new files uploaded; using {len(file_paths)} files from session history")
 
-    # Determine task type based on query
+    return file_paths, new_files_uploaded
+
+
+async def determine_agent_type(query: str, has_files: bool = False) -> str:
+    """
+    Determine agent type using LLM 3-way classification
+    
+    Args:
+        query: User query to classify
+        has_files: Whether files are attached (forces agentic workflow)
+    
+    Returns:
+        One of: "chat", "react", or "plan_execute"
+    """
+    # If files are attached, force agentic workflow (at minimum react)
+    if has_files:
+        logger.info("[Agent Classifier] Files attached; forcing agentic workflow (minimum: react)")
+        # For files, we still want to determine if it's react or plan_execute
+        # So we continue with classification but won't return "chat"
+    
+    try:
+        logger.info(f"[Agent Classifier] Classifying query: {query[:100]}...")
+        from backend.utils.llm_factory import LLMFactory
+        from backend.config.prompts.task_classification import get_agent_type_classifier_prompt
+        
+        classifier_llm = LLMFactory.create_classifier_llm()
+        messages = [
+            SystemMessage(content=get_agent_type_classifier_prompt()),
+            HumanMessage(content=f"Query: {query}")
+        ]
+        
+        try:
+            response = await asyncio.wait_for(classifier_llm.ainvoke(messages), timeout=10)
+            classification = response.content.strip().lower()
+            
+            # Validate classification
+            if classification in ["chat", "react", "plan_execute"]:
+                # If files attached, don't allow "chat" classification
+                if has_files and classification == "chat":
+                    logger.info("[Agent Classifier] Files attached, upgrading 'chat' to 'plan_execute'")
+                    classification = "plan_execute"
+                
+                logger.info(f"[Agent Classifier] Classified as '{classification}': {query[:]}")
+                return classification
+            else:
+                logger.warning(f"[Agent Classifier] Invalid response: '{classification}', using fallback")
+        
+        except asyncio.TimeoutError:
+            logger.warning("[Agent Classifier] LLM classification timed out, using fallback")
+        except Exception as llm_error:
+            logger.warning(f"[Agent Classifier] LLM error: {str(llm_error)}, using fallback")
+    
+    except Exception as e:
+        logger.error(f"[Agent Classifier] Failed to initialize classifier: {str(e)}, using fallback")
+    
+# OpenAI-Compatible Endpoints
+
+@openai_router.get("/models", response_model=ModelsResponse)
+async def list_models(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """List available models (OpenAI compatible)"""
+    models = [
+        ModelInfo(
+            id=settings.ollama_model,
+            created=int(time.time()),
+            owned_by="ollama"
+        )
+    ]
+
+    return ModelsResponse(
+        object="list",
+        data=models
+    )
+
+
+@openai_router.post("/chat/completions")
+async def chat_completions(
+    model: str = Form(...),
+    messages: str = Form(...),  # JSON string
+    session_id: Optional[str] = Form(None),
+    agent_type: str = Form("auto"),
+    files: Optional[List[UploadFile]] = File(None),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    OpenAI-compatible chat completions endpoint with multipart/form-data support
+    Automatically routes to appropriate agent based on query analysis
+    Supports direct file uploads via multipart form
+
+    Parameters:
+        - model: Model name (form field)
+        - messages: JSON string of message array (form field)
+        - session_id: Optional session ID (form field)
+        - agent_type: "auto", "react", "plan_execute", or "chat" (form field)
+        - files: Optional file uploads (multipart files)
+    """
+    user_id = current_user["username"]
+
+    # Parse messages JSON
+    try:
+        messages_list = json.loads(messages)
+        parsed_messages = [ChatMessage(**msg) for msg in messages_list]
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid messages JSON: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid message format: {str(e)}")
+
+    # Create new session if none provided
+    if not session_id:
+        session_id = conversation_store.create_session(user_id)
+
+    # ====== PHASE 1: FILE HANDLING ======
+    file_paths, new_files_uploaded = _handle_file_uploads(files, session_id, user_id)
+
+    # ====== PHASE 2: CLASSIFICATION ======
     user_message = parsed_messages[-1].content if parsed_messages else ""
-    task_type = await determine_task_type(user_message)
 
-    # If files are attached, force agentic workflow to ensure file handling
-    if file_paths:
-        logger.info("[Chat] Files attached; forcing agentic workflow")
-        task_type = "agentic"
+    # Save LLM input: parsed_messages into a file
+    with open(f"data/scratch/{user_id}/llm_input_messages_{session_id}.json", "w") as f:
+        json.dump(parsed_messages, f, indent=4)
 
-    # Execute appropriate task
+    # Determine agent type (chat/react/plan_execute)
+    if agent_type == "auto":
+        # Use LLM to classify
+        classified_agent_type = await determine_agent_type(user_message, has_files=bool(file_paths))
+    else:
+        # Use explicitly specified agent type
+        classified_agent_type = agent_type.lower()
+        logger.info(f"[Agent Selection] Using explicitly specified agent type: {classified_agent_type}")
+    
+    # Validate agent type
+    if classified_agent_type not in ["chat", "react", "plan_execute"]:
+        logger.warning(f"[Agent Selection] Invalid agent type '{classified_agent_type}', defaulting to 'chat'")
+        #classified_agent_type = "chat"
+        # Raise an error
+        raise ValueError(f"Invalid agent type: {classified_agent_type}")
+
+    # ====== PHASE 3: EXECUTION ======
     try:
         agent_metadata = None
 
-        # Handle streaming vs non-streaming
-        if is_streaming:
-            # Streaming is only supported for simple chat (not agentic workflows)
-            if task_type == "agentic":
-                logger.warning("[Chat] Streaming requested but task is agentic - falling back to non-streaming")
-                # Agentic workflows don't support streaming yet
-                selected_agent_type = AgentType(agent_type) if agent_type else AgentType.AUTO
-                response_text, agent_metadata = await smart_agent_task.execute(
-                    messages=parsed_messages,
-                    session_id=session_id,
-                    user_id=user_id,
-                    agent_type=selected_agent_type,
-                    file_paths=file_paths if file_paths else None
-                )
-
-                # Save to conversation history
-                _save_conversation(session_id, user_message, response_text, file_paths, task_type, agent_metadata)
-
-                # Cleanup temp files (only clean up newly uploaded files, not reused old files)
-                if new_files_uploaded:
-                    _cleanup_files(file_paths)
-
-                # Return standard response
-                return ChatCompletionResponse(
-                    id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
-                    created=int(time.time()),
-                    model=model,
-                    choices=[
-                        {
-                            "index": 0,
-                            "message": {
-                                "role": "assistant",
-                                "content": response_text
-                            },
-                            "finish_reason": "stop"
-                        }
-                    ],
-                    usage={
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    },
-                    x_session_id=session_id,
-                    x_agent_metadata=agent_metadata
-                )
-            else:
-                # Stream simple chat
-                logger.info("[Chat] Streaming simple chat response")
-
-                async def stream_generator() -> AsyncIterator[str]:
-                    """Generate SSE stream for chat completion"""
-                    completion_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
-                    created_at = int(time.time())
-
-                    # Accumulate full response for saving to history
-                    full_response = []
-
-                    try:
-                        async for token in chat_task.execute_streaming(
-                            messages=parsed_messages,
-                            session_id=session_id,
-                            use_memory=(session_id is not None)
-                        ):
-                            full_response.append(token)
-
-                            # Send SSE chunk in OpenAI format
-                            chunk_data = {
-                                "id": completion_id,
-                                "object": "chat.completion.chunk",
-                                "created": created_at,
-                                "model": model,
-                                "choices": [
-                                    {
-                                        "index": 0,
-                                        "delta": {"content": token},
-                                        "finish_reason": None
-                                    }
-                                ]
-                            }
-                            yield f"data: {json.dumps(chunk_data)}\n\n"
-
-                        # Send final chunk
-                        final_chunk = {
-                            "id": completion_id,
-                            "object": "chat.completion.chunk",
-                            "created": created_at,
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {},
-                                    "finish_reason": "stop"
-                                }
-                            ],
-                            "x_session_id": session_id
-                        }
-                        yield f"data: {json.dumps(final_chunk)}\n\n"
-                        yield "data: [DONE]\n\n"
-
-                        # Save complete conversation to history
-                        complete_response = "".join(full_response)
-                        _save_conversation(session_id, user_message, complete_response, file_paths, task_type, None)
-
-                        # Cleanup temp files (only clean up newly uploaded files, not reused old files)
-                        if new_files_uploaded:
-                            _cleanup_files(file_paths)
-
-                    except Exception as e:
-                        logger.error(f"[Chat] Streaming error: {e}")
-                        error_chunk = {
-                            "error": {
-                                "message": str(e),
-                                "type": "streaming_error"
-                            }
-                        }
-                        yield f"data: {json.dumps(error_chunk)}\n\n"
-
-                return StreamingResponse(
-                    stream_generator(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "X-Accel-Buffering": "no"  # Disable nginx buffering
-                    }
-                )
-
-        # Non-streaming path
-        if task_type == "agentic":
-            # Use smart agent (auto-selects ReAct or Plan-and-Execute)
-            logger.info(f"[Task Classifier] Using agentic worflow for query: {user_message[:]}")
-            selected_agent_type = AgentType(agent_type) if agent_type else AgentType.AUTO
-            response_text, agent_metadata = await smart_agent_task.execute(
-                messages=parsed_messages,
-                session_id=session_id,
-                user_id=user_id,
-                agent_type=selected_agent_type,
-                file_paths=file_paths if file_paths else None
-            )
-        else:
-            # Use simple chat
+        if classified_agent_type == "chat":
+            # Use simple chat (no tools)
+            logger.info(f"[Agent Execution] Using simple chat for query: {user_message[:]}")
             response_text = await chat_task.execute(
                 messages=parsed_messages,
                 session_id=session_id,
                 use_memory=(session_id is not None)
             )
+        elif classified_agent_type == "react":
+            # Use ReAct agent
+            logger.info(f"[Agent Execution] Using ReAct agent for query: {user_message[:]}")
+            response_text, agent_metadata = await smart_agent_task.execute(
+                messages=parsed_messages,
+                session_id=session_id,
+                user_id=user_id,
+                agent_type=AgentType.REACT,
+                file_paths=file_paths if file_paths else None
+            )
+        elif classified_agent_type == "plan_execute":
+            # Use Plan-and-Execute agent
+            logger.info(f"[Agent Execution] Using Plan-and-Execute agent for query: {user_message[:]}")
+            response_text, agent_metadata = await smart_agent_task.execute(
+                messages=parsed_messages,
+                session_id=session_id,
+                user_id=user_id,
+                agent_type=AgentType.PLAN_EXECUTE,
+                file_paths=file_paths if file_paths else None
+            )
+        else:
+            raise ValueError(f"Unknown agent type: {classified_agent_type}")
 
+        # ====== PHASE 4: STORAGE & CLEANUP ======
         # Save to conversation history
-        _save_conversation(session_id, user_message, response_text, file_paths, task_type, agent_metadata)
+        _save_conversation(
+            session_id, 
+            user_message, 
+            response_text, 
+            file_paths, 
+            classified_agent_type, 
+            agent_metadata
+        )
 
-        # Cleanup temp files after execution (only clean up newly uploaded files, not reused old files)
+        # Cleanup temp files (only clean up newly uploaded files)
         if new_files_uploaded:
             _cleanup_files(file_paths)
 
@@ -441,6 +383,7 @@ async def chat_completions(
             detail=f"Error generating response: {str(e)}"
         )
 
+
 # Chat Management Endpoints
 
 @chat_router.get("/sessions", response_model=SessionListResponse)
@@ -477,7 +420,7 @@ async def get_session_artifacts(session_id: str, current_user: Dict[str, Any] = 
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Check session scratch directory for generated files
-    session_dir = Path(settings.scratch_dir) / session_id
+    session_dir = Path(settings.python_code_execution_dir) / session_id
     artifacts = []
 
     if session_dir.exists():
