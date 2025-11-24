@@ -96,12 +96,17 @@ class PlanExecuteTask:
 
         response = await llm.ainvoke([HumanMessage(content=planning_prompt)])
         plan_text = response.content.strip()
+        plan_text = response.content.strip()
 
         logger.info(f"[Plan-Execute: Planning] Raw LLM response:\n{plan_text[:500]}...")
 
         # Parse JSON plan
         try:
-            plan_data = self._parse_plan_text(plan_text)
+            plan_data = self._parse_plan_text(
+                plan_text=plan_text,
+                fallback_goal=query,
+                has_files=has_files
+            )
 
             # Convert to PlanStep objects
             plan_steps = []
@@ -339,7 +344,12 @@ class PlanExecuteTask:
         # So we don't need to duplicate it here
         pass
 
-    def _parse_plan_text(self, plan_text: str) -> List[Dict[str, Any]]:
+    def _parse_plan_text(
+        self,
+        plan_text: str,
+        fallback_goal: str,
+        has_files: bool
+    ) -> List[Dict[str, Any]]:
         """
         Extract and parse a JSON array of plan steps from an LLM response.
 
@@ -377,7 +387,18 @@ class PlanExecuteTask:
                 except (ValueError, SyntaxError):
                     continue
 
-        raise ValueError("Unable to parse execution plan as JSON array")
+        logger.warning("[Plan-Execute: Planning] Unable to parse plan JSON; falling back to default plan")
+        default_tool = "python_coder" if has_files else "web_search"
+        default_plan = [
+            {
+                "step_num": 1,
+                "goal": fallback_goal,
+                "primary_tools": [default_tool],
+                "success_criteria": "Generate a complete answer that satisfies the user request",
+                "context": "Auto-generated fallback plan due to plan parsing failure"
+            }
+        ]
+        return default_plan
 
     def _extract_code_fence(self, text: str) -> Optional[str]:
         """Return the first fenced code block content if present."""

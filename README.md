@@ -173,6 +173,12 @@ The system can generate and execute Python code safely:
 
 - `backend/tasks/Plan_execute.py` - added `_parse_plan_text()` plus helpers that strip markdown fences, pull out JSON blocks, and fall back to `ast.literal_eval`, eliminating `JSONDecodeError: Expecting ':' at line 24 column 7` when the planner LLM emits narration or slightly malformed arrays.
 
+### Version 1.7.3 (November 24, 2025)
+
+**Bugfix: Default plan fallback**
+
+- `backend/tasks/Plan_execute.py` - `_parse_plan_text()` now emits a single-step fallback plan (web_search or python_coder) instead of raising when the LLM output can’t be parsed, preventing “Unable to parse execution plan as JSON array” from aborting Plan-and-Execute runs.
+
 ### Version 1.7.1 (November 24, 2025)
 
 **Bugfix: Async file upload handling**
