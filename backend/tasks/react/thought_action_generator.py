@@ -6,7 +6,6 @@ Uses PromptRegistry for all prompts and llm_factory for LLM instances.
 
 Key Features:
 - Combined thought-action generation (1 LLM call instead of 2)
-- Fuzzy matching for action names to handle LLM variations
 - Robust parsing with multiple fallback strategies
 """
 
@@ -28,8 +27,9 @@ class ThoughtActionGenerator:
     Architecture:
     - Main method: generate() - Single call for thought + action
     - Parser methods: _parse_thought_and_action()
-    - Fuzzy matching: _apply_fuzzy_action_matching()
     """
+
+    VALID_ACTIONS = {tool.value for tool in ToolName}
 
     def __init__(self, llm, file_paths: Optional[List[str]] = None):
         """
@@ -87,8 +87,7 @@ class ThoughtActionGenerator:
         Parsing strategy:
         1. Try structured format: THOUGHT: ... ACTION: ... ACTION INPUT: ...
         2. Fallback to old format: Action: ... Action Input: ...
-        3. Apply fuzzy matching for action names
-        4. Provide defaults for missing fields
+        3. Provide defaults for missing fields
 
         Args:
             response: LLM response containing thought and action
@@ -132,42 +131,15 @@ class ThoughtActionGenerator:
             if input_match:
                 action_input = input_match.group(1).strip()
 
-        # Strategy 3: Validate and apply fuzzy matching for action
-        action = self._apply_fuzzy_action_matching(action)
-
-        # Strategy 4: Provide defaults
+        # Strategy 3: Provide defaults
         if not thought:
             thought = "Proceeding with action execution."
+        if not action or action not in self.VALID_ACTIONS:
+            action = ToolName.FINISH
         if not action_input:
             action_input = "No specific input provided."
 
         return thought, action, action_input
-
-    def _apply_fuzzy_action_matching(self, action: str) -> str:
-        """
-        Apply fuzzy matching to handle action name variations.
-
-        Args:
-            action: Raw action string from LLM
-
-        Returns:
-            Valid ToolName value (or FINISH as fallback)
-        """
-        if not action:
-            return ToolName.FINISH
-
-        # Check if action is already valid
-        valid_actions = [e.value for e in ToolName]
-        if action in valid_actions:
-            return action
-
-        # Apply fuzzy matching
-        matched_action = self.FUZZY_ACTION_MAPPING.get(action)
-        if matched_action:
-            return matched_action
-
-        # Default to finish if no match found
-        return ToolName.FINISH
 
     def _build_file_guidance(self) -> str:
         """
@@ -273,8 +245,9 @@ class ThoughtActionGenerator:
             if input_match:
                 action_input = input_match.group(1).strip()
 
-        # Apply fuzzy matching
-        action = self._apply_fuzzy_action_matching(action)
+        # Validate action
+        if not action or action not in self.VALID_ACTIONS:
+            action = ToolName.FINISH
 
         # Handle FINISH with insufficient input
         if action == ToolName.FINISH and (not action_input or len(action_input.strip()) < 1):

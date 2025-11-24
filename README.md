@@ -167,6 +167,12 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.6.2 (November 24, 2024)
+
+**Change: Removed ReAct fuzzy action matching**
+
+- `backend/tasks/react/thought_action_generator.py` - deleted fuzzy action mapping logic and now default to `finish` whenever the LLM emits an unknown action label.
+
 ### Version 1.6.1 (November 24, 2024)
 
 **Bugfix: Chat Message Serialization**

@@ -276,6 +276,7 @@ async def chat_completions(
     user_message = parsed_messages[-1].content if parsed_messages else ""
 
     # Save LLM input: parsed_messages into a file
+    
     # First create the file
     Path(f"data/scratch/{user_id}").mkdir(parents=True, exist_ok=True)
     serialized_messages = [message.model_dump() for message in parsed_messages]
@@ -294,9 +295,9 @@ async def chat_completions(
     # Validate agent type
     if classified_agent_type not in ["chat", "react", "plan_execute"]:
         logger.warning(f"[Agent Selection] Invalid agent type '{classified_agent_type}', defaulting to 'chat'")
-        #classified_agent_type = "chat"
-        # Raise an error
-        raise ValueError(f"Invalid agent type: {classified_agent_type}")
+        classified_agent_type = "chat"
+        # # Raise an error
+        # raise ValueError(f"Invalid agent type: {classified_agent_type}")
 
     # ====== PHASE 3: EXECUTION ======
     try:
