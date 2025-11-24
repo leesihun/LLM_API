@@ -50,10 +50,29 @@ class LLMInterceptor:
             header += f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n\n"
             self.log_file.write_text(header, encoding='utf-8')
 
-    def _log_prompt(self, prompt: str, model: str = None):
+    def _log_prompt(self, prompt, model: str = None):
         """Save prompt to log file with timestamp and separation."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         model_name = model or getattr(self.llm, 'model', 'unknown')
+
+        # Format prompt - handle both strings and message objects
+        if isinstance(prompt, str):
+            formatted_prompt = prompt
+        elif isinstance(prompt, list):
+            # Handle list of messages (LangChain format)
+            formatted_parts = []
+            for msg in prompt:
+                if hasattr(msg, 'type') and hasattr(msg, 'content'):
+                    # LangChain message object
+                    formatted_parts.append(f"[{msg.type.upper()}]")
+                    formatted_parts.append(msg.content)
+                    formatted_parts.append("")  # Blank line between messages
+                else:
+                    formatted_parts.append(str(msg))
+            formatted_prompt = "\n".join(formatted_parts)
+        else:
+            # Fallback to string representation
+            formatted_prompt = str(prompt)
 
         log_entry = f"""
 {'='*80}
@@ -62,7 +81,7 @@ MODEL: {model_name}
 USER: {self.user_id}
 {'='*80}
 
-{prompt}
+{formatted_prompt}
 
 
 {'='*80}
@@ -76,7 +95,7 @@ END OF PROMPT
         with open(self.log_file, 'a', encoding='utf-8') as f:
             f.write(log_entry)
 
-        logger.debug(f"[LLMInterceptor] Logged prompt for user '{self.user_id}' to {self.log_file} (length: {len(prompt)} chars)")
+        logger.debug(f"[LLMInterceptor] Logged prompt for user '{self.user_id}' to {self.log_file} (length: {len(formatted_prompt)} chars)")
 
     async def ainvoke(self, prompt, **kwargs):
         """Async invoke with prompt logging."""
