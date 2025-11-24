@@ -276,6 +276,8 @@ async def chat_completions(
     user_message = parsed_messages[-1].content if parsed_messages else ""
 
     # Save LLM input: parsed_messages into a file
+    # First create the file
+    Path(f"data/scratch/{user_id}").mkdir(parents=True, exist_ok=True)
     with open(f"data/scratch/{user_id}/llm_input_messages_{session_id}.json", "w") as f:
         json.dump(parsed_messages, f, indent=4)
 
