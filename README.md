@@ -167,6 +167,12 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.6.1 (November 24, 2024)
+
+**Bugfix: Chat Message Serialization**
+
+- `backend/api/routes/chat.py` - serialize `ChatMessage` instances with `model_dump()` before writing them to `data/scratch/{user}/llm_input_messages_{session}.json`, preventing `TypeError: Object of type ChatMessage is not JSON serializable` when persisting request payloads.
+
 ### Version 1.6.0 (November 24, 2024)
 
 **Simplification: Session Notepad Removal**
