@@ -167,6 +167,12 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.7.2 (November 24, 2025)
+
+**Bugfix: Resilient plan JSON parsing**
+
+- `backend/tasks/Plan_execute.py` - added `_parse_plan_text()` plus helpers that strip markdown fences, pull out JSON blocks, and fall back to `ast.literal_eval`, eliminating `JSONDecodeError: Expecting ':' at line 24 column 7` when the planner LLM emits narration or slightly malformed arrays.
+
 ### Version 1.7.1 (November 24, 2025)
 
 **Bugfix: Async file upload handling**

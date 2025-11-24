@@ -28,6 +28,7 @@ This hybrid approach combines:
 - Transparency through detailed logging
 """
 
+import ast
 import json
 import re
 from typing import List, Optional, Dict, Any
@@ -100,15 +101,8 @@ class PlanExecuteTask:
 
         # Parse JSON plan
         try:
-            # Extract JSON if wrapped in markdown or other text
-            json_match = re.search(r'\[\s*\{.*\}\s*\]', plan_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-            else:
-                json_str = plan_text
+            plan_data = self._parse_plan_text(plan_text)
 
-            plan_data = json.loads(json_str)
-            
             # Convert to PlanStep objects
             plan_steps = []
             for step_data in plan_data:
@@ -344,6 +338,63 @@ class PlanExecuteTask:
         # The ReAct agent's execute_with_plan method already handles notepad generation
         # So we don't need to duplicate it here
         pass
+
+    def _parse_plan_text(self, plan_text: str) -> List[Dict[str, Any]]:
+        """
+        Extract and parse a JSON array of plan steps from an LLM response.
+
+        Tries multiple extraction strategies to tolerate extra narration or markdown
+        fences before falling back to literal evaluation, raising ValueError if all
+        attempts fail.
+        """
+        candidates: List[str] = []
+        stripped = plan_text.strip()
+
+        fenced = self._extract_code_fence(stripped)
+        if fenced:
+            candidates.append(fenced)
+
+        json_block = self._extract_json_block(stripped)
+        if json_block:
+            candidates.append(json_block)
+
+        candidates.append(stripped)
+
+        for candidate in candidates:
+            cleaned = candidate.strip()
+            if not cleaned:
+                continue
+
+            try:
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                try:
+                    parsed_literal = ast.literal_eval(cleaned)
+                    if isinstance(parsed_literal, list):
+                        return parsed_literal
+                except (ValueError, SyntaxError):
+                    continue
+
+        raise ValueError("Unable to parse execution plan as JSON array")
+
+    def _extract_code_fence(self, text: str) -> Optional[str]:
+        """Return the first fenced code block content if present."""
+        if "```json" in text:
+            after = text.split("```json", 1)[1]
+            return after.split("```", 1)[0].strip()
+        if "```" in text:
+            after = text.split("```", 1)[1]
+            return after.split("```", 1)[0].strip()
+        return None
+
+    def _extract_json_block(self, text: str) -> Optional[str]:
+        """Extract the first JSON-looking array block."""
+        match = re.search(r'\[\s*\{.*?\}\s*\]', text, re.DOTALL)
+        if match:
+            return match.group(0)
+        return None
 
 
 # Global agentic task instance
