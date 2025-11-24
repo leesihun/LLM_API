@@ -38,8 +38,7 @@ from .verification import (
 # Import fixing functions
 from .fixing import (
     get_modification_prompt,
-    get_execution_fix_prompt,
-    get_smart_fix_prompt
+    get_execution_fix_prompt
 )
 
 
@@ -283,5 +282,4 @@ __all__ = [
     # Fixing functions
     'get_modification_prompt',
     'get_execution_fix_prompt',
-    'get_smart_fix_prompt',
 ]

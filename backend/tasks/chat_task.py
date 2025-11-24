@@ -43,31 +43,6 @@ class ChatTask:
 
         return response.content
 
-    async def execute_streaming(
-        self,
-        messages: List[ChatMessage],
-        session_id: Optional[str] = None,
-        use_memory: bool = True
-    ) -> AsyncIterator[str]:
-        """
-        Execute a simple chat interaction with streaming
-
-        Args:
-            messages: List of chat messages (current conversation)
-            session_id: Optional session ID for conversation history
-            use_memory: Whether to use conversation memory
-
-        Yields:
-            AI response tokens as they're generated
-        """
-        # Build conversation context
-        conversation = self._build_conversation(messages, session_id, use_memory)
-
-        # Stream response
-        async for chunk in self.llm.astream(conversation):
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-
     def _build_conversation(
         self,
         messages: List[ChatMessage],
@@ -79,7 +54,7 @@ class ChatTask:
 
         # Add conversation history if using memory and session exists
         if use_memory and session_id:
-            history = conversation_store.get_messages(session_id, limit=10)
+            history = conversation_store.get_messages(session_id, limit=1000)
 
             for msg in history:
                 if msg.role == "user":
@@ -93,8 +68,6 @@ class ChatTask:
                 conversation.append(HumanMessage(content=msg.content))
             elif msg.role == "assistant":
                 conversation.append(AIMessage(content=msg.content))
-            elif msg.role == "system":
-                conversation.insert(0, SystemMessage(content=msg.content))
 
         return conversation
 

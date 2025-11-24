@@ -48,7 +48,7 @@ class User(BaseModel):
 
 class ChatMessage(BaseModel):
     """Single chat message"""
-    role: Literal["system", "user", "assistant"]
+    role: Literal["user", "assistant"]
     content: str
 
 

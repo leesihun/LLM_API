@@ -3,8 +3,6 @@ ReAct Agent Prompts
 Prompts for the ReAct (Reasoning + Acting) agent workflow.
 """
 
-from typing import Optional
-
 
 def get_react_thought_and_action_prompt(
     query: str,
@@ -86,85 +84,6 @@ Your final answer MUST:
 4. Include specific details, numbers, facts from the observations
 
 Based on all the information you've gathered through your actions and observations, provide a clear, complete, and accurate final answer:"""
-
-
-def get_react_final_answer_for_finish_step_prompt(
-    user_query: str,
-    plan_step_goal: str,
-    context: str
-) -> str:
-    """
-    Prompt for generating final answer when FINISH tool is selected in plan execution.
-    Used in: backend/tasks/React.py (_generate_final_answer_for_finish_step)
-
-    Args:
-        user_query: Original user query
-        plan_step_goal: Goal of the finish step
-        context: Context from all previous steps
-
-    Simplified version: Removed ASCII markers.
-    """
-    return f"""You are completing a multi-step task. Generate a final, comprehensive answer based on all the work done so far.
-
-Original User Query: {user_query}
-
-Final Step Goal: {plan_step_goal}
-
-All Previous Steps and Their Results:
-{context}
-
-Based on all the steps executed and their results above, provide a clear, complete, and accurate final answer to the user's query.
-Your answer should:
-1. Directly address the user's original question
-2. Synthesize information from all previous steps
-3. Include specific details, numbers, and facts from the observations
-4. Be well-organized and easy to understand
-
-Provide your final answer:"""
-
-
-def get_react_action_input_for_step_prompt(
-    user_query: str,
-    plan_step_goal: Optional[str] = None,
-    success_criteria: str = "",
-    plan_step_context: Optional[str] = None,
-    previous_context: str = "",
-    tool_name: str = "",
-    step_goal: Optional[str] = None  # Backward compatibility alias
-) -> str:
-    """
-    Prompt for generating action input for a specific tool in plan execution.
-    Used in: backend/tasks/React.py (_generate_action_input_for_step)
-
-    Args:
-        user_query: Original user query
-        plan_step_goal: Current step goal (preferred parameter name)
-        success_criteria: Success criteria for the step
-        plan_step_context: Additional context for the step
-        previous_context: Context from previous steps
-        tool_name: Tool being used
-        step_goal: Alias for plan_step_goal (for backward compatibility)
-
-    Simplified version: Removed ASCII markers.
-    """
-    # Handle backward compatibility - use step_goal if plan_step_goal not provided
-    if plan_step_goal is None and step_goal is not None:
-        plan_step_goal = step_goal
-    return f"""You are executing a specific step in a plan.
-
-Original User Query: {user_query}
-
-Current Step Goal: {plan_step_goal}
-Success Criteria: {success_criteria}
-Additional Context: {plan_step_context or 'None'}
-
-Previous Steps Context:
-{previous_context}
-
-Tool to use: {tool_name}
-
-Generate the appropriate input for this tool to achieve the step goal.
-Provide ONLY the tool input, no explanations:"""
 
 
 def get_react_step_verification_prompt(

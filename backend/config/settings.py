@@ -21,14 +21,8 @@ class Settings(BaseSettings):
     # Server Configuration
     # ============================================================================
 
-    # Host binding - use localhost in production, 0.0.0.0 for development
     server_host: str = '0.0.0.0'
-
-    # Port - standard HTTP port, change if needed
     server_port: int = 1007
-
-    # SECRET KEY - CRITICAL: Generate a secure 32+ character key for production
-    # Use: python -c "import secrets; print(secrets.token_urlsafe(32))"
     secret_key: str = 'dev-secret-key-change-in-production-please'
 
     # ============================================================================
@@ -37,19 +31,11 @@ class Settings(BaseSettings):
 
     # Ollama service endpoint
     ollama_host: str = 'http://127.0.0.1:11434'
-
-    # Model selection - gpt-oss:20b
     ollama_model: str = 'qwen3:8b'
-    #'gemma3:12b' 'gpt-oss:120b'#
-
-    # Request timeout - 5 minutes for most requests, adjust based on model size
-    ollama_timeout: int = 3000000  # 50 minutes
-
-    # Context window - optimized for speed (reduced from 32768)
-    ollama_num_ctx: int = 16384  # Faster inference while maintaining capability
-
+    ollama_timeout: int = 3000000
+    ollama_num_ctx: int = 16384
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.5  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 0.7  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.9      # Nucleus sampling
     ollama_top_k: int = 100          # Top-k sampling
 
@@ -57,36 +43,23 @@ class Settings(BaseSettings):
     # API Keys - SECURE THESE IN PRODUCTION
     # ============================================================================
 
-    # Tavily Search API - Get from https://tavily.com/
     tavily_api_key: str = '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'
 
     # ============================================================================
     # Vector Database - Optimized for Performance
     # ============================================================================
 
-    # Vector DB type - 'faiss' for speed, 'chroma' for persistence
     vector_db_type: str = 'faiss'
-
-    # Vector database storage path
     vector_db_path: str = './data/vector_db'
-
-    # Embedding model - nomic-embed-text:latest is fast and good quality
     embedding_model: str = 'bge-m3:latest'
 
     # ============================================================================
     # Storage Paths - Organized Data Structure
     # ============================================================================
 
-    # User data and authentication
     users_path: str = './data/users/users.json'
-
-    # Session management
     sessions_path: str = './data/sessions/sessions.json'
-
-    # Conversation history storage
     conversations_path: str = './data/conversations'
-
-    # File uploads directory
     uploads_path: str = './data/uploads'
 
     # ============================================================================
@@ -95,82 +68,37 @@ class Settings(BaseSettings):
 
     # JWT algorithm - HS256 is secure and widely supported
     jwt_algorithm: str = 'HS256'
-
-    # JWT expiration - 24 hours is reasonable for most applications
-    jwt_expiration_hours: int = 24
+    jwt_expiration_hours: int = 2400
 
     # ============================================================================
     # Logging - Comprehensive and Structured
     # ============================================================================
 
-    # Log level - INFO for production, DEBUG for development
     log_level: str = 'INFO'
-
-    # Log file location
     log_file: str = './data/logs/app.log'
-
-
 
     # ============================================================================
     # AGENTIC FLOW - Model Selection
     # ============================================================================
 
-    # Task classifier model - used for determining agent type (chat/react/plan_execute)
     agentic_classifier_model: str = 'qwen3:8b'
-    #'gemma3:12b' # 'gpt-oss:120b'
-    
-    # Code generation model - used for Python code generation tasks
-    # Can be same as ollama_model or a specialized coding model
     ollama_coder_model: str = 'qwen3:8b'
-    #'gemma3:12b' # 'deepseek-coder:6.7b' # Use specialized coder model if available
-
-    # NOTE: Agent type classifier prompt is now centralized in config/prompts/task_classification.py
-    # Use: from backend.config.prompts import get_agent_type_classifier_prompt
-    # This property provides backward compatibility (deprecated - use get_agent_type_classifier_prompt)
-    @property
-    def agentic_classifier_prompt(self) -> str:
-        """
-        Get agent type classifier prompt from centralized prompts module.
-        DEPRECATED: This returns the 3-way classifier (chat/react/plan_execute).
-        Use get_agent_type_classifier_prompt() directly for clarity.
-        """
-        from backend.config.prompts import get_agent_type_classifier_prompt
-        return get_agent_type_classifier_prompt()
+    ollama_coder_model_temperature: float = 0.1
 
     # Available tools
-    available_tools: list[str] = ['web_search', 'rag', 'python_coder', 'chat']
-
-
-
-
-
+    available_tools: list[str] = ['web_search', 'rag', 'python_coder']
 
     # ============================================================================
     # Python Code Execution - Sandbox Configuration
     # ============================================================================
 
-    # Enable/disable Python code execution feature
     python_code_enabled: bool = True
-
-    # Maximum execution time for generated code (seconds)
     python_code_timeout: int = 3000
-
-    # Maximum memory usage (MB) - future: cgroups for true enforcement
     python_code_max_memory: int = 5120
-
-    # Temporary execution directory for code execution
     python_code_execution_dir: str = './data/scratch'
-
-    # Maximum verification-modification loop iterations
     python_code_max_iterations: int = 5
-
-    # Execute code even if minor issues remain after max iterations
-    python_code_allow_partial_execution: bool = True
-
-    # Maximum input file size (MB) for code execution
+    python_code_allow_partial_execution: bool = False
     python_code_max_file_size: int = 500
-
-    # Use persistent REPL for faster retry execution (EXPERIMENTAL)
     python_code_use_persistent_repl: bool = True
 
     model_config = SettingsConfigDict(
@@ -196,29 +124,16 @@ def load_settings() -> Settings:
             print(f"WARNING: Removing system env var {var}={os.environ[var]} to use settings.py defaults")
             del os.environ[var]
 
-    # Check if .env exists (optional)
-    if os.path.exists(".env"):
-        print("Info: Using settings from settings.py with .env overrides")
-    else:
-        print("Info: Using settings from settings.py (no .env file found, which is OK)")
+    settings = Settings()
+    # Debug: Print loaded settings
+    print(f"DEBUG: ollama_host = '{settings.ollama_host}'")
+    print(f"DEBUG: ollama_model = '{settings.ollama_model}'")
+    print(f"DEBUG: server_host = '{settings.server_host}'")
 
-    try:
-        settings = Settings()
-        # Debug: Print loaded settings
-        print(f"DEBUG: ollama_host = '{settings.ollama_host}'")
-        print(f"DEBUG: ollama_model = '{settings.ollama_model}'")
-        print(f"DEBUG: server_host = '{settings.server_host}'")
-
-        # FORCE FIX: Override if wrong value loaded
-        if settings.ollama_host == '0.0.0.0' or not settings.ollama_host.startswith('http'):
-            print("WARNING: ollama_host has wrong value, forcing to http://127.0.0.1:11434")
-            settings.ollama_host = 'http://127.0.0.1:11434'
-
-    except Exception as e:
-        raise ValueError(
-            f"Configuration error: {e}\n"
-            "Please check your backend/config/settings.py file."
-        )
+    # FORCE FIX: Override if wrong value loaded
+    if settings.ollama_host == '0.0.0.0' or not settings.ollama_host.startswith('http'):
+        print("WARNING: ollama_host has wrong value, forcing to http://127.0.0.1:11434")
+        settings.ollama_host = 'http://127.0.0.1:11434'
 
     # Create necessary directories
     directories_to_create = [

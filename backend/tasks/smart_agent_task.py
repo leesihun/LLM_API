@@ -1,10 +1,3 @@
-"""
-Smart Agent Task Router
-
-Automatically routes to ReAct or Plan-and-Execute based on query characteristics.
-Provides intelligent agent selection for optimal task execution.
-"""
-
 from typing import List, Optional
 from enum import Enum
 
@@ -25,21 +18,6 @@ class AgentType(str, Enum):
 
 
 class SmartAgentTask:
-    """
-    Agent router that executes tasks using ReAct or Plan-and-Execute agents
-    
-    Note: Agent selection is now handled by LLM classification in chat.py
-    This class simply routes to the specified agent type.
-
-    ReAct Agent:
-    - Best for: Single-goal tasks, exploratory queries, simple tool usage
-    - Example: "Search for current weather in Seoul"
-
-    Plan-and-Execute Agent:
-    - Best for: Multi-step workflows, multiple files, complex planning
-    - Example: "Analyze multiple datasets, create visualizations, and generate a report"
-    """
-
     async def execute(
         self,
         messages: List[ChatMessage],
@@ -48,20 +26,7 @@ class SmartAgentTask:
         agent_type: AgentType = AgentType.AUTO,
         file_paths: Optional[List[str]] = None
     ) -> tuple[str, dict]:
-        """
-        Execute task using the appropriate agent
-
-        Args:
-            messages: Conversation messages
-            session_id: Session ID
-            user_id: User identifier
-            agent_type: Which agent to use (react or plan_execute)
-                       Note: AUTO is deprecated - classification should happen in chat.py
-            file_paths: Optional list of file paths for code execution
-
-        Returns:
-            Tuple of (AI response, metadata)
-        """
+    
         # Validate agent type - AUTO should not reach here
         if agent_type == AgentType.AUTO:
             logger.warning("[Smart Agent] AUTO agent type received - should be classified in chat.py. Defaulting to PLAN_EXECUTE.")

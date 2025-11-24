@@ -148,7 +148,7 @@ class LLMFactory:
 
         Args:
             model: Model name (defaults to settings.ollama_coder_model)
-            temperature: Sampling temperature (defaults to settings.ollama_temperature)
+            temperature: Sampling temperature (defaults to settings.ollama_coder_model_temperature)
             num_ctx: Context window size (defaults to settings.ollama_num_ctx)
             **kwargs: Additional parameters to pass to ChatOllama
 
@@ -160,13 +160,17 @@ class LLMFactory:
             >>> code = coder.invoke("Generate Python code to read a CSV file")
         """
         coder_model = model or settings.ollama_coder_model
+        coder_temperature = (
+            temperature if temperature is not None else settings.ollama_coder_model_temperature
+        )
+        coder_num_ctx = num_ctx or settings.ollama_num_ctx
         
         logger.debug(f"[LLMFactory] Creating coder LLM with model={coder_model}")
 
         return cls.create_llm(
             model=coder_model,
-            temperature=temperature,
-            num_ctx=num_ctx,
+            temperature=coder_temperature,
+            num_ctx=coder_num_ctx,
             **kwargs
         )
 

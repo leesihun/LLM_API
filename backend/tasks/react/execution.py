@@ -1,11 +1,17 @@
 """
-Tool Executor Module for ReAct Agent
+ReAct Execution Module
 
-Handles execution and routing of tool actions with intelligent guard logic.
-Uses llm_factory for LLM instances and tool_metadata models from Phase 2.
+Handles tool execution, verification, and auto-finish detection.
+
+Consolidated from:
+- tool_executor.py
+- verification.py
+- utils.py
 """
 
 from typing import List, Optional, Tuple, Any
+from langchain_core.messages import HumanMessage
+import json
 
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever_tool
@@ -21,10 +27,7 @@ class ToolExecutor:
     """
     Executes tools for ReAct agent with direct routing.
 
-    Features:
-    - Routes actions to appropriate tools
-    - Direct execution: Each tool executes when requested (no guard logic)
-    - Handles all tool-specific formatting and error handling
+    Routes actions to appropriate tools and handles tool-specific formatting.
     """
 
     def __init__(self, llm):
@@ -32,7 +35,7 @@ class ToolExecutor:
         Initialize ToolExecutor.
 
         Args:
-            llm: LLM instance for LLM operations
+            llm: LLM instance for operations
         """
         self.llm = llm
 
@@ -49,12 +52,12 @@ class ToolExecutor:
         Execute the selected action and return observation.
 
         Args:
-            action: Tool name to execute (from ToolName enum)
+            action: Tool name to execute
             action_input: Input for the tool
-            file_paths: Optional list of file paths for code execution
-            session_id: Optional session ID for code execution
-            steps: Optional list of ReActStep objects for context building
-            plan_context: Optional plan context from Plan-Execute agent
+            file_paths: Optional list of file paths
+            session_id: Optional session ID
+            steps: Optional list of ReActStep objects
+            plan_context: Optional plan context
 
         Returns:
             Observation string from tool execution
@@ -96,7 +99,6 @@ class ToolExecutor:
         )
         observation = web_search_tool.format_results(results)
 
-        # Include context metadata
         if context_metadata.get('query_enhanced'):
             observation = f"[Search performed with contextual enhancement]\n{observation}"
 
@@ -109,15 +111,7 @@ class ToolExecutor:
         return final_observation
 
     async def _execute_rag_retrieval(self, query: str) -> str:
-        """
-        Execute RAG retrieval tool.
-
-        Args:
-            query: Search query for document retrieval
-
-        Returns:
-            Formatted observation with retrieved documents
-        """
+        """Execute RAG retrieval tool."""
         results = await rag_retriever_tool.retrieve(query, top_k=5)
         observation = rag_retriever_tool.format_results(results)
         final_observation = observation if observation else "No relevant documents found."
@@ -138,17 +132,17 @@ class ToolExecutor:
         # Build context from execution history
         context = self._build_context_for_python_coder(steps, session_id)
 
-        # Build react_context with failed attempts (including saved code)
+        # Build react_context with failed attempts
         react_context = self._build_react_context(steps, session_id)
 
-        # Load conversation_history from conversation store
+        # Load conversation history
         conversation_history = self._load_conversation_history(session_id)
 
         # Use ReAct step number for hierarchical prompt organization
         current_step_num = len(steps) + 1 if steps else 1
         stage_prefix = f"step{current_step_num}"
 
-        # Extract plan_step if available from plan_context
+        # Extract plan_step if available
         plan_step_num = None
         if plan_context and 'current_step' in plan_context:
             plan_step_num = plan_context['current_step']
@@ -162,8 +156,8 @@ class ToolExecutor:
             react_context=react_context,
             plan_context=plan_context,
             conversation_history=conversation_history,
-            react_step=current_step_num,  # NEW: explicit react step
-            plan_step=plan_step_num        # NEW: explicit plan step if available
+            react_step=current_step_num,
+            plan_step=plan_step_num
         )
 
         logger.info(f"Python Coder - Success: {result['success']}")
@@ -171,7 +165,7 @@ class ToolExecutor:
         logger.info(f"Execution Attempts: {result.get('execution_attempts', 'N/A')}")
 
         if result["success"]:
-            # Build execution details safely
+            # Build execution details
             exec_details_parts = []
             if result.get('verification_iterations'):
                 exec_details_parts.append(f"{result['verification_iterations']} verification iterations")
@@ -210,27 +204,17 @@ class ToolExecutor:
         self,
         session_id: Optional[str]
     ) -> Optional[List[dict]]:
-        """
-        Load conversation history from conversation store.
-
-        Args:
-            session_id: Session ID for conversation lookup
-
-        Returns:
-            List of conversation messages as dicts, or None if not available
-        """
+        """Load conversation history from conversation store."""
         if not session_id:
             return None
 
         try:
             from backend.storage.conversation_store import conversation_store
 
-            # Load conversation messages
-            messages = conversation_store.get_messages(session_id, limit=10)  # Last 10 messages
+            messages = conversation_store.get_messages(session_id, limit=10)
             if not messages:
                 return None
 
-            # Convert to dict format for prompt
             history = []
             for msg in messages:
                 history.append({
@@ -242,7 +226,7 @@ class ToolExecutor:
             return history
 
         except Exception as e:
-            logger.warning(f"[ToolExecutor] Failed to load conversation history: {e}")
+            logger.warning(f"Failed to load conversation history: {e}")
             return None
 
     def _build_react_context(
@@ -251,14 +235,10 @@ class ToolExecutor:
         session_id: Optional[str] = None
     ) -> Optional[dict]:
         """
-        Build structured react_context with failed attempts for python_coder prompt.
-
-        Args:
-            steps: List of ReActStep objects from execution history
-            session_id: Session ID for loading saved code files
+        Build structured react_context with failed attempts for python_coder.
 
         Returns:
-            Dict with iteration history including failed code and errors, or None if no steps
+            Dict with iteration history including failed code and errors
         """
         if not steps:
             return None
@@ -266,7 +246,7 @@ class ToolExecutor:
         current_iteration = len(steps) + 1
         history = []
 
-        # Extract failed python_coder attempts from steps
+        # Extract failed python_coder attempts
         for step in steps:
             step_info = {
                 'thought': step.thought,
@@ -274,19 +254,17 @@ class ToolExecutor:
                 'tool_input': step.action_input
             }
 
-            # Check if this was a python_coder action
             if step.action == ToolName.PYTHON_CODER:
                 step_info['observation'] = step.observation
 
-                # Try to load the actual code from session directory
+                # Try to load code from session directory
                 code = self._load_code_for_step(session_id, step.step_num)
                 if code:
                     step_info['code'] = code
 
-                # Determine if failed or succeeded
+                # Determine status
                 if "failed" in step.observation.lower() or "error" in step.observation.lower():
                     step_info['status'] = 'error'
-                    # Try to extract error message
                     if "error:" in step.observation.lower():
                         error_parts = step.observation.split("error:", 1)
                         if len(error_parts) > 1:
@@ -299,12 +277,10 @@ class ToolExecutor:
 
                 history.append(step_info)
             elif "error" in step.observation.lower() or "failed" in step.observation.lower():
-                # Include other failed attempts too
                 step_info['observation'] = step.observation[:500]
                 step_info['status'] = 'error'
                 history.append(step_info)
 
-        # Only return context if there are failed attempts
         if not history:
             return None
 
@@ -318,16 +294,7 @@ class ToolExecutor:
         session_id: Optional[str],
         step_num: int
     ) -> Optional[str]:
-        """
-        Load saved code for a specific ReAct step from session directory.
-
-        Args:
-            session_id: Session ID
-            step_num: Step number to find code for
-
-        Returns:
-            Code string if found, None otherwise
-        """
+        """Load saved code for a specific ReAct step."""
         if not session_id:
             return None
 
@@ -339,23 +306,21 @@ class ToolExecutor:
             if not session_dir.exists():
                 return None
 
-            # Look for code files matching this step (script_step{N}_*.py)
+            # Look for code files matching this step
             pattern = f"script_step{step_num}_*.py"
             matching_files = list(session_dir.glob(pattern))
 
             if not matching_files:
                 return None
 
-            # Get the most recent file (by modification time)
+            # Get most recent file
             latest_file = max(matching_files, key=lambda p: p.stat().st_mtime)
-
-            # Read the code
             code = latest_file.read_text(encoding='utf-8')
-            logger.info(f"[ToolExecutor] Loaded code for step {step_num} from {latest_file.name}")
+            logger.info(f"Loaded code for step {step_num} from {latest_file.name}")
             return code
 
         except Exception as e:
-            logger.warning(f"[ToolExecutor] Failed to load code for step {step_num}: {e}")
+            logger.warning(f"Failed to load code for step {step_num}: {e}")
             return None
 
     def _build_context_for_python_coder(
@@ -363,19 +328,10 @@ class ToolExecutor:
         steps: Optional[List[Any]],
         session_id: Optional[str]
     ) -> str:
-        """
-        Build context string from ReAct execution history for python_coder.
-
-        Args:
-            steps: List of ReActStep objects from execution history
-            session_id: Session ID for retrieving code history
-
-        Returns:
-            Formatted context string with previous steps and observations
-        """
+        """Build context string from ReAct execution history."""
         context_parts = []
 
-        # Load previous code history if available
+        # Load previous code history
         code_history = python_coder_tool.get_previous_code_history(session_id, max_versions=3)
         if code_history:
             context_parts.append("=== Previous Code Versions ===\n")
@@ -402,7 +358,7 @@ class ToolExecutor:
 
         context_parts.append("=== Previous Agent Activity ===\n")
 
-        # Include recent steps (last 3 steps or all if less than 3)
+        # Include recent steps (last 3)
         recent_steps = steps[-3:] if len(steps) > 3 else steps
 
         for step in recent_steps:
@@ -410,11 +366,9 @@ class ToolExecutor:
             context_parts.append(f"  Thought: {step.thought[:300]}")
             context_parts.append(f"  Action: {step.action}")
 
-            # Include observation summary
             obs_preview = step.observation[:500] if len(step.observation) > 500 else step.observation
             context_parts.append(f"  Result: {obs_preview}")
 
-            # Highlight errors
             if "error" in step.observation.lower() or "failed" in step.observation.lower():
                 context_parts.append(f"  ⚠ Note: This action encountered errors")
 
@@ -433,3 +387,142 @@ class ToolExecutor:
             context_parts.append("- Reference the previous code versions shown above")
 
         return "\n".join(context_parts)
+
+
+class StepVerifier:
+    """
+    Handles step verification and auto-finish detection.
+
+    Features:
+    - Heuristic-based auto-finish (fast)
+    - LLM-enhanced auto-finish with confidence scoring
+    - Plan step verification
+    """
+
+    def __init__(self, llm):
+        """
+        Initialize step verifier.
+
+        Args:
+            llm: LangChain LLM instance
+        """
+        self.llm = llm
+
+    def should_auto_finish(self, observation: str, step_num: int) -> bool:
+        """
+        Heuristic-based auto-finish detection (fast, no LLM call).
+
+        Checks:
+        1. Length check (> 200 chars)
+        2. No error keywords
+        3. Has answer keywords OR very long (> 500 chars)
+
+        Args:
+            observation: Latest observation
+            step_num: Current step number
+
+        Returns:
+            True if should auto-finish
+        """
+        if step_num < 2:
+            return False
+
+        if not observation or len(observation) < 200:
+            return False
+
+        observation_lower = observation.lower()
+
+        # Has error - don't finish
+        error_keywords = ['error', 'failed', 'exception', 'traceback']
+        if any(keyword in observation_lower for keyword in error_keywords):
+            return False
+
+        # Has answer keywords - finish
+        answer_keywords = ['answer is', 'result is', 'found that', 'shows that', 'indicates']
+        if any(keyword in observation_lower for keyword in answer_keywords):
+            logger.info("[EARLY EXIT] Observation contains answer keywords")
+            return True
+
+        # Very long observation with data - probably complete
+        if len(observation) > 500:
+            logger.info("[EARLY EXIT] Observation is substantial (> 500 chars)")
+            return True
+
+        return False
+
+    async def should_auto_finish_enhanced(
+        self,
+        observation: str,
+        user_query: str,
+        iteration: int,
+        steps_context: str
+    ) -> Tuple[bool, float, str]:
+        """
+        Enhanced auto-finish with LLM-based adequacy check.
+
+        Checks heuristics first, then uses LLM for borderline cases.
+
+        Args:
+            observation: Latest observation
+            user_query: Original user query
+            iteration: Current iteration number
+            steps_context: Formatted context from steps
+
+        Returns:
+            Tuple of (should_finish, confidence_score, reason)
+        """
+        # LLM adequacy check for borderline cases
+        try:
+            prompt = f"""Assess if this observation adequately answers the user's query.
+
+User Query:
+{user_query}
+
+Latest Observation:
+{observation[:]}
+
+Previous Steps Context:
+{steps_context[:]}
+
+Question: Does the observation contain enough information to FULLY and ACCURATELY answer the user's query?
+
+Respond with JSON only:
+{{
+  "adequate": true or false,
+  "confidence": 0.0 to 1.0,
+  "reason": "brief explanation",
+  "missing_info": "what's still needed if inadequate, otherwise empty string"
+}}
+"""
+
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content.strip()
+
+            # Parse JSON
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+
+            result = json.loads(response_text.strip())
+
+            adequate = result.get("adequate", False)
+            confidence = float(result.get("confidence", 0.0))
+            reason = result.get("reason", "No reason provided")
+            missing_info = result.get("missing_info", "")
+
+            # Require high confidence (>= 0.8) to auto-finish
+            should_finish = adequate and confidence >= 0.9
+
+            if should_finish:
+                logger.info(f"[AUTO-FINISH ENHANCED] Confidence: {confidence:.2f} - {reason}")
+            else:
+                logger.info(f"[CONTINUE] Confidence: {confidence:.2f} - {reason}")
+                if missing_info:
+                    logger.info(f"[CONTINUE] Missing: {missing_info}")
+
+            return should_finish, confidence, reason
+
+        except Exception as e:
+            logger.error(f"[AUTO-FINISH ENHANCED] LLM check failed: {e}")
+            raise

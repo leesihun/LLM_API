@@ -1,24 +1,20 @@
 """
-ReAct Plan Executor Module
+ReAct Planning Module
 
-Handles guided plan execution where the ReAct agent executes
-a structured plan step-by-step.
+Handles structured plan execution with dynamic adaptation.
 
-Features:
-- Dynamic plan adaptation (re-planning when steps fail or observations reveal new requirements)
-- Preserves completed work when adapting plans
-- Multi-trigger re-planning detection
-
-Extracted from React.py for improved modularity.
+Consolidated from:
+- plan_executor.py
+- plan_adapter.py
 """
 
 from typing import List, Tuple, Optional
 from langchain_core.messages import HumanMessage
+import json
 
 from .models import ToolName
-from .plan_adapter import PlanAdapter
 from backend.config.prompts import PromptRegistry
-from backend.models.schemas import PlanStep, StepResult, ChatMessage
+from backend.models.schemas import PlanStep, StepResult
 from backend.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -26,49 +22,38 @@ logger = get_logger(__name__)
 
 class PlanExecutor:
     """
-    Executes structured plans step-by-step using ReAct-style tool execution.
+    Executes structured plans step-by-step with dynamic adaptation.
 
-    This class coordinates plan execution by:
-    1. Iterating through plan steps
-    2. Executing each step with its primary tool (no fallback)
-    3. Verifying step success
-    4. Accumulating observations for final answer
-
-    Simplified: Each step uses only its primary tool. No fallback logic.
-    If a step fails, the plan should explicitly define retry steps.
-
-    Attributes:
-        tool_executor: ToolExecutor instance for running tools
-        context_manager: ContextManager for building execution context
-        verifier: StepVerifier for validating step success
-        answer_generator: AnswerGenerator for final synthesis
-        llm: Language model instance
+    Features:
+    - Step-by-step plan execution
+    - Dynamic plan adaptation when steps fail
+    - Context pruning for long executions
     """
 
     def __init__(
         self,
         tool_executor,
-        context_manager,
+        context_formatter,
         verifier,
         answer_generator,
         llm
     ):
         """
-        Initialize plan executor with dynamic plan adaptation.
+        Initialize plan executor.
 
         Args:
             tool_executor: ToolExecutor instance
-            context_manager: ContextManager instance
+            context_formatter: ContextFormatter instance
             verifier: StepVerifier instance
             answer_generator: AnswerGenerator instance
             llm: Language model instance
         """
         self.tool_executor = tool_executor
-        self.context_manager = context_manager
+        self.context_formatter = context_formatter
         self.verifier = verifier
         self.answer_generator = answer_generator
         self.llm = llm
-        self.plan_adapter = PlanAdapter(llm)  # New: Dynamic plan adaptation
+        self.plan_adapter = PlanAdapter(llm)
 
     async def execute_plan(
         self,
@@ -86,19 +71,18 @@ class PlanExecutor:
             user_query: Original user query
             file_paths: Optional list of file paths
             session_id: Optional session ID
-            max_iterations_per_step: Max iterations to try per step
+            max_iterations_per_step: Max iterations per step
 
         Returns:
             Tuple of (final_answer, step_results)
         """
-        logger.info("\n\n\n" + "=" * 100)
+        logger.info("\n" + "=" * 100)
         logger.info("[PlanExecutor] EXECUTION STARTED")
         logger.info(f"Plan has {len(plan_steps)} steps")
         if file_paths:
             logger.info(f"Attached Files: {len(file_paths)} files")
-        logger.info("=" * 100 + "\n\n\n")
+        logger.info("=" * 100 + "\n")
 
-        # Track results from each step
         step_results: List[StepResult] = []
         accumulated_observations = []
 
@@ -129,7 +113,7 @@ class PlanExecutor:
                     f"Step {step_result.step_num} ({step_result.goal}): {step_result.observation}"
                 )
 
-                # Apply pruning if observations grow too large (keep last 5 steps)
+                # Apply pruning if observations grow too large (keep last 5)
                 if len(accumulated_observations) > 5:
                     pruned_observations = accumulated_observations[-5:]
                     logger.info(f"[PlanExecutor] Context pruned: keeping last 5 observations (removed {len(accumulated_observations) - 5})")
@@ -139,7 +123,7 @@ class PlanExecutor:
             logger.info(f"Tool used: {step_result.tool_used}")
             logger.info(f"Attempts: {step_result.attempts}\n")
 
-            # Check if re-planning is needed (skip if this is the last step)
+            # Check if re-planning is needed (skip if last step)
             remaining_steps = plan_steps[step_idx + 1:] if step_idx + 1 < len(plan_steps) else []
             if remaining_steps:
                 needs_replan, reason = await self.plan_adapter.should_replan(
@@ -166,13 +150,12 @@ class PlanExecutor:
                     for i, step in enumerate(adapted_plan, 1):
                         logger.info(f"  {i}. {step.goal}")
 
-                    # Replace remaining steps with adapted plan
-                    # Renumber adapted plan steps to continue from current step number
+                    # Renumber adapted plan steps
                     next_step_num = plan_step.step_num + 1
                     for i, step in enumerate(adapted_plan):
                         step.step_num = next_step_num + i
 
-                    # Update plan_steps to include completed + adapted
+                    # Update plan_steps
                     plan_steps = plan_steps[:step_idx + 1] + adapted_plan
 
                     logger.info(f"[PlanExecutor] Updated plan: {len(plan_steps)} total steps\n")
@@ -209,16 +192,13 @@ class PlanExecutor:
         """
         Execute a single plan step with single tool (no fallback).
 
-        Simplified: Each step uses only its primary tool. No fallback tools.
-        If execution fails, return failure. Let the plan handle retries.
-
         Args:
             plan_step: The plan step to execute
             user_query: Original user query
             accumulated_observations: Context from previous steps
             file_paths: Optional file paths
             session_id: Optional session ID
-            all_plan_steps: Optional list of all plan steps for context
+            all_plan_steps: Optional list of all plan steps
             step_results: Optional list of completed step results
 
         Returns:
@@ -229,7 +209,7 @@ class PlanExecutor:
         # Build context from previous steps
         context = "\n".join(accumulated_observations) if accumulated_observations else "This is the first step."
 
-        # Use only the primary tool (no fallback)
+        # Use only the primary tool
         tool_name = plan_step.primary_tools[0] if plan_step.primary_tools else None
 
         if not tool_name:
@@ -300,20 +280,10 @@ class PlanExecutor:
         """
         Execute a specific tool to achieve the step goal.
 
-        Args:
-            tool_name: Name of tool to execute
-            plan_step: Current plan step
-            user_query: Original user query
-            context: Context from previous steps
-            file_paths: Optional file paths
-            session_id: Optional session ID
-            all_plan_steps: Optional list of all plan steps for context
-            step_results: Optional list of completed step results
-
         Returns:
             Tuple of (observation, success)
         """
-        # Use plan step's goal + context directly as action input (no LLM call needed!)
+        # Build action input from plan step
         action_input = self._build_action_input_from_plan(
             plan_step=plan_step,
             user_query=user_query,
@@ -351,8 +321,7 @@ class PlanExecutor:
             plan_context=plan_context
         )
 
-        # Trust tool execution result - no separate verification needed
-        # Success is determined by whether tool produced output without errors
+        # Determine success
         success = bool(observation and len(observation.strip()) > 0 and "error" not in observation.lower()[:100])
 
         return observation, success
@@ -363,17 +332,7 @@ class PlanExecutor:
         all_plan_steps: List[PlanStep],
         step_results: List[StepResult]
     ) -> dict:
-        """
-        Build structured plan_context for python_coder prompt.
-
-        Args:
-            current_step: The current plan step being executed
-            all_plan_steps: List of all plan steps
-            step_results: List of completed step results
-
-        Returns:
-            Dict with plan context information
-        """
+        """Build structured plan_context for python_coder prompt."""
         # Build plan structure with status
         plan = []
         for step in all_plan_steps:
@@ -386,7 +345,6 @@ class PlanExecutor:
 
             # Determine status
             if step.step_num < current_step.step_num:
-                # Check if completed successfully
                 result = next((r for r in step_results if r.step_num == step.step_num), None)
                 if result:
                     step_dict['status'] = 'completed' if result.success else 'failed'
@@ -421,27 +379,16 @@ class PlanExecutor:
         user_query: str,
         context: str
     ) -> str:
-        """
-        Build action input directly from plan step (no LLM call needed).
-
-        Args:
-            plan_step: Current plan step
-            user_query: Original user query
-            context: Context from previous steps
-
-        Returns:
-            Action input string for the tool
-        """
-        # Combine plan step goal + context + step-specific instructions
+        """Build action input directly from plan step."""
         parts = []
 
-        # Add original user query for context
+        # Add original user query
         parts.append(f"User Query: {user_query}")
 
-        # Add step goal (this is the main instruction)
+        # Add step goal
         parts.append(f"\nTask for this step: {plan_step.goal}")
 
-        # Add step-specific context/instructions if available
+        # Add step-specific context
         if plan_step.context:
             parts.append(f"\nInstructions: {plan_step.context}")
 
@@ -457,17 +404,7 @@ class PlanExecutor:
         step_results: List[StepResult],
         accumulated_observations: List[str]
     ) -> str:
-        """
-        Generate final answer based on all step results.
-
-        Args:
-            user_query: Original user query
-            step_results: Results from all steps
-            accumulated_observations: All observations
-
-        Returns:
-            Final answer string
-        """
+        """Generate final answer based on all step results."""
         # Build context from all steps
         steps_summary = []
         for result in step_results:
@@ -489,17 +426,257 @@ class PlanExecutor:
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
 
-    def select_tool_for_step(self, step: PlanStep) -> str:
+
+class PlanAdapter:
+    """
+    Handles dynamic plan adaptation during execution.
+
+    Determines when re-planning is needed and generates adapted plans.
+    """
+
+    def __init__(self, llm):
         """
-        Select the primary tool for a plan step.
+        Initialize PlanAdapter.
 
         Args:
-            step: PlanStep with tool preferences
+            llm: LangChain LLM instance
+        """
+        self.llm = llm
+
+    async def should_replan(
+        self,
+        current_step_result: StepResult,
+        remaining_steps: List[PlanStep],
+        original_query: str
+    ) -> Tuple[bool, str]:
+        """
+        Determine if re-planning is needed.
+
+        Uses multiple triggers:
+        1. Step failed after max attempts
+        2. Observation indicates additional requirements
+        3. LLM-based assessment of plan viability
 
         Returns:
-            Tool name to use (from primary tools)
+            Tuple of (needs_replan, reason)
         """
-        if step.primary_tools:
-            return step.primary_tools[0]
-        else:
-            raise ValueError(f"No primary tool specified for step {step.step_num}")
+        # Trigger 1: Step failed after multiple attempts
+        if not current_step_result.success and current_step_result.attempts >= 3:
+            logger.warning(f"[PlanAdapter] Trigger 1: Step failed after {current_step_result.attempts} attempts")
+            return True, f"Step '{current_step_result.goal}' failed after {current_step_result.attempts} attempts"
+
+        # Trigger 2: Observation reveals additional work needed
+        observation_lower = current_step_result.observation.lower() if current_step_result.observation else ""
+        replan_keywords = [
+            "additional analysis needed",
+            "more information required",
+            "cannot complete without",
+            "missing prerequisite",
+            "unexpected result",
+            "requires further"
+        ]
+
+        for keyword in replan_keywords:
+            if keyword in observation_lower:
+                logger.warning(f"[PlanAdapter] Trigger 2: Observation indicates '{keyword}'")
+                return True, f"Observation indicates additional work: '{keyword}'"
+
+        # Trigger 3: LLM-based viability assessment
+        if remaining_steps and len(remaining_steps) > 0:
+            try:
+                prompt = f"""Assess if the current plan should continue or needs re-planning.
+
+Original Query: {original_query}
+
+Current Step: {current_step_result.goal}
+Success: {current_step_result.success}
+Tool Used: {current_step_result.tool_used}
+Attempts: {current_step_result.attempts}
+
+Observation:
+{current_step_result.observation[:500]}
+
+Remaining Steps ({len(remaining_steps)}):
+{self._format_remaining_steps(remaining_steps)}
+
+Question: Based on the current step result, should we:
+A) Continue with the current plan as-is
+B) Re-plan to address issues or new requirements
+
+Respond with JSON:
+{{
+  "continue_plan": true or false,
+  "confidence": 0.0 to 1.0,
+  "reason": "brief explanation"
+}}
+"""
+
+                response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+                response_text = response.content.strip()
+
+                # Parse JSON
+                if "```json" in response_text:
+                    response_text = response_text.split("```json")[1].split("```")[0]
+                elif "```" in response_text:
+                    response_text = response_text.split("```")[1].split("```")[0]
+
+                result = json.loads(response_text.strip())
+
+                continue_plan = result.get("continue_plan", True)
+                confidence = float(result.get("confidence", 0.5))
+                reason = result.get("reason", "No reason provided")
+
+                # Require high confidence to trigger re-planning
+                if not continue_plan and confidence >= 0.7:
+                    logger.warning(f"[PlanAdapter] Trigger 3: LLM recommends re-planning (confidence: {confidence:.2f})")
+                    return True, f"LLM assessment: {reason}"
+
+                logger.info(f"[PlanAdapter] LLM recommends continuing (confidence: {confidence:.2f})")
+
+            except Exception as e:
+                logger.warning(f"[PlanAdapter] LLM assessment failed: {e}, assuming continue")
+
+        return False, "Plan execution on track"
+
+    async def adapt_plan(
+        self,
+        original_plan: List[PlanStep],
+        completed_steps: List[StepResult],
+        current_step_result: StepResult,
+        remaining_steps: List[PlanStep],
+        original_query: str
+    ) -> List[PlanStep]:
+        """
+        Generate adapted plan that preserves completed work.
+
+        Returns:
+            List of new PlanStep objects
+        """
+        # Build context from completed work
+        completed_context = self._build_completed_context(completed_steps)
+
+        # Build current issue description
+        current_issue = self._describe_current_issue(current_step_result)
+
+        prompt = f"""Generate an adapted execution plan that addresses current issues.
+
+Original Query: {original_query}
+
+COMPLETED WORK (preserve and build on this):
+{completed_context}
+
+CURRENT ISSUE:
+{current_issue}
+
+ORIGINAL REMAINING STEPS (for reference):
+{self._format_plan_steps(remaining_steps)}
+
+Task: Generate a NEW plan that:
+1. BUILDS ON completed work (don't repeat successful steps)
+2. ADDRESSES the current issue or blocker
+3. ACHIEVES the original query goal
+4. Has concrete, actionable steps with clear success criteria
+
+Format: Respond with JSON array of plan steps:
+[
+  {{
+    "step_num": 1,
+    "goal": "specific goal description",
+    "primary_tools": ["tool1", "tool2"],
+    "success_criteria": "how to verify this step succeeded",
+    "context": "relevant context for this step"
+  }},
+  ...
+]
+
+Available tools: web_search, rag_retrieval, python_coder, file_analyzer
+"""
+
+        try:
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content.strip()
+
+            # Parse JSON
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+
+            new_plan_data = json.loads(response_text.strip())
+
+            # Convert to PlanStep objects
+            adapted_plan = []
+            for step_data in new_plan_data:
+                plan_step = PlanStep(
+                    step_num=step_data.get("step_num", len(adapted_plan) + 1),
+                    goal=step_data.get("goal", ""),
+                    primary_tools=step_data.get("primary_tools", []),
+                    success_criteria=step_data.get("success_criteria", ""),
+                    context=step_data.get("context")
+                )
+                adapted_plan.append(plan_step)
+
+            logger.info(f"[PlanAdapter] Generated adapted plan with {len(adapted_plan)} steps:")
+            for i, step in enumerate(adapted_plan, 1):
+                logger.info(f"[PlanAdapter]   {i}. {step.goal} (tools: {step.primary_tools})")
+
+            return adapted_plan
+
+        except Exception as e:
+            logger.error(f"[PlanAdapter] Failed to generate adapted plan: {e}")
+            raise
+
+    def _format_plan_steps(self, steps: List[PlanStep]) -> str:
+        """Format plan steps for display."""
+        if not steps:
+            return "No remaining steps"
+
+        lines = []
+        for i, step in enumerate(steps, 1):
+            lines.append(f"{i}. {step.goal}")
+            lines.append(f"   Primary tools: {', '.join(step.primary_tools)}")
+            lines.append(f"   Success criteria: {step.success_criteria}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _format_remaining_steps(self, steps: List[PlanStep]) -> str:
+        """Simplified format for remaining steps."""
+        if not steps:
+            return "No remaining steps"
+
+        return "\n".join([f"  - {step.goal}" for step in steps])
+
+    def _build_completed_context(self, completed_steps: List[StepResult]) -> str:
+        """Build summary of completed work."""
+        if not completed_steps:
+            return "No steps completed yet"
+
+        lines = []
+        for step in completed_steps:
+            status = "SUCCESS" if step.success else "FAILED"
+            lines.append(f"Step {step.step_num}: {step.goal} - {status}")
+            if step.tool_used:
+                lines.append(f"  Tool used: {step.tool_used}")
+            if step.observation:
+                obs_preview = step.observation[:200]
+                lines.append(f"  Result: {obs_preview}...")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _describe_current_issue(self, step_result: StepResult) -> str:
+        """Describe the current issue/blocker."""
+        lines = []
+        lines.append(f"Step {step_result.step_num}: {step_result.goal}")
+        lines.append(f"Status: {'SUCCESS' if step_result.success else 'FAILED'}")
+        lines.append(f"Tool used: {step_result.tool_used}")
+        lines.append(f"Attempts: {step_result.attempts}")
+
+        if step_result.error:
+            lines.append(f"Error: {step_result.error}")
+
+        if step_result.observation:
+            lines.append(f"Observation: {step_result.observation[:300]}...")
+
+        return "\n".join(lines)

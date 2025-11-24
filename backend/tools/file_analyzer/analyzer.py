@@ -109,38 +109,14 @@ class FileAnalyzer:
         ]
 
     def analyze(self, file_paths: List[str], user_query: str = "") -> Dict[str, Any]:
-        """
-        Main analysis entry point.
-
-        Args:
-            file_paths: List of file paths to analyze
-            user_query: User's question (optional, for context)
-
-        Returns:
-            Dict with analysis results including:
-            - success: Boolean indicating overall success
-            - files_analyzed: Number of files processed
-            - results: List of per-file analysis results
-            - summary: Human-readable summary
-        """
         try:
             normalized_paths = self._normalize_inputs(file_paths)
-            if not normalized_paths:
-                return {
-                    "success": False,
-                    "error": "No files provided for analysis"
-                }
 
             analysis_id = uuid.uuid4().hex
             results: List[Dict[str, Any]] = []
             missing_files = 0
 
             for file_path in normalized_paths:
-                if not os.path.exists(file_path):
-                    missing_files += 1
-                    results.append(self._build_missing_file_result(file_path))
-                    continue
-
                 file_result = self._analyze_single_file(file_path)
                 results.append(file_result)
 
@@ -171,15 +147,7 @@ class FileAnalyzer:
             }
 
     def _analyze_single_file(self, file_path: str) -> Dict[str, Any]:
-        """
-        Analyze a single file.
 
-        Args:
-            file_path: Path to file to analyze
-
-        Returns:
-            Dictionary with analysis results
-        """
         try:
             path = Path(file_path)
             size_bytes = os.path.getsize(file_path)

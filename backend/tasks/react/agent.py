@@ -1,33 +1,8 @@
-"""
-ReAct Agent - Main Orchestration Module
-
-This module contains the main ReActAgent class that orchestrates the complete
-ReAct (Reasoning + Acting) execution flow by coordinating specialized modules.
-
-The ReActAgent is the public interface for ReAct execution and delegates to:
-- ThoughtActionGenerator: For generating thoughts and selecting actions
-- ToolExecutor: For executing tools and managing guard logic
-- AnswerGenerator: For synthesizing final answers
-- ContextManager: For building and formatting context
-- StepVerifier: For verification and auto-finish detection
-- PlanExecutor: For guided plan-based execution
-
-Architecture:
-- Orchestration only - no inline prompts or complex logic
-- Delegates to specialized modules for all major operations
-- Uses llm_factory for LLM instance creation
-- Uses PromptRegistry for all prompts
-"""
-
 from typing import List, Optional, Tuple, Dict, Any
-
 from .models import ReActStep, ToolName, ReActResult
-from .thought_action_generator import ThoughtActionGenerator
-from .tool_executor import ToolExecutor
-from .answer_generator import AnswerGenerator
-from .context_manager import ContextManager
-from .verification import StepVerifier
-from .plan_executor import PlanExecutor
+from .generators import ThoughtActionGenerator, AnswerGenerator, ContextFormatter
+from .execution import ToolExecutor, StepVerifier
+from .planning import PlanExecutor
 from backend.models.schemas import ChatMessage, PlanStep
 from backend.utils.llm_factory import LLMFactory
 from backend.utils.logging_utils import get_logger
@@ -37,45 +12,21 @@ logger = get_logger(__name__)
 
 
 class ReActAgent:
-    """
-    Main ReAct Agent for Reasoning + Acting execution.
-
-    This class orchestrates the ReAct pattern:
-    1. Thought: Reason about what to do next
-    2. Action: Select and execute a tool
-    3. Observation: Observe the result
-    4. Repeat until answer is ready
-
-    Public Methods:
-        execute(): Free-form ReAct loop execution
-        execute_with_plan(): Guided execution with structured plan
-
-    Architecture:
-        All logic is delegated to specialized modules. This class only
-        handles initialization, coordination, and public API.
-    """
-
-    def __init__(self, max_iterations: int = 3):
-        """
-        Initialize ReAct agent with specialized modules.
-
-        Args:
-            max_iterations: Maximum iterations for ReAct loop (reduced to 6 for efficiency)
-        """
+    def __init__(self, max_iterations: int = 20):
         self.max_iterations = max_iterations
 
         # Create LLM instance using factory
         self.llm = LLMFactory.create_llm()
 
         # Initialize specialized modules
-        self.context_manager = ContextManager()
+        self.context_formatter = ContextFormatter()
         self.verifier = StepVerifier(self.llm)
         self.answer_generator = AnswerGenerator(self.llm)
         self.tool_executor = ToolExecutor(self.llm)
         self.thought_action_generator = None  # Initialized per execution (needs file_paths)
         self.plan_executor = PlanExecutor(
             tool_executor=self.tool_executor,
-            context_manager=self.context_manager,
+            context_formatter=self.context_formatter,
             verifier=self.verifier,
             answer_generator=self.answer_generator,
             llm=self.llm
@@ -93,24 +44,10 @@ class ReActAgent:
         user_id: str,
         file_paths: Optional[List[str]] = None
     ) -> Tuple[str, Dict[str, Any]]:
-        """
-        Execute ReAct loop in free-form mode.
-
-        Args:
-            messages: Conversation messages
-            session_id: Session ID
-            user_id: User identifier
-            file_paths: Optional list of file paths for code execution
-
-        Returns:
-            Tuple of (final_answer, metadata)
-        """
-        # Store context
+    
         self.file_paths = file_paths
         self.session_id = session_id
-        self.context_manager.session_id = session_id
-
-        # Initialize thought-action generator with file context
+        self.context_formatter.session_id = session_id
         self.thought_action_generator = ThoughtActionGenerator(self.llm, file_paths)
 
         # Extract user query
@@ -125,7 +62,7 @@ class ReActAgent:
             "Max Iterations": self.max_iterations
         }
         logger.key_values(exec_params, title="Execution Parameters")
-        logger.multiline(user_query, title="User Query", max_lines=10)
+        logger.multiline(user_query, title="User Query", max_lines=100)
 
         # Initialize execution
         self.steps = []
@@ -134,7 +71,8 @@ class ReActAgent:
         
         # Pre-step: Analyze files if attached
         if self.file_paths:
-            await self._analyze_files_pre_step(user_query)
+            await self._analyze_files_pre_step(user_query)  
+            # Generated file summary, with access patterns...
 
         # ReAct loop
         while iteration < self.max_iterations:
@@ -145,7 +83,7 @@ class ReActAgent:
 
             # Generate thought and action
             logger.subsection("Thought + Action Generation")
-            context = self.context_manager.build_tool_context(self.steps)
+            context = self.context_formatter.build_tool_context(self.steps)
             thought, action, action_input = await self.thought_action_generator.generate(
                 user_query=user_query,
                 steps=self.steps,
@@ -157,10 +95,10 @@ class ReActAgent:
             step.action_input = action_input
 
             # Log
-            logger.multiline(thought, title="Thought", max_lines=20)
+            logger.multiline(thought, title="Thought", max_lines=200)
             logger.key_values({
                 "Action": action,
-                "Input": action_input[:150] + "..." if len(action_input) > 150 else action_input
+                "Input": action_input[:]
             })
 
             # Check if done
@@ -184,13 +122,13 @@ class ReActAgent:
             )
 
             step.observation = observation
-            logger.multiline(observation, title="Observation", max_lines=30)
+            logger.multiline(observation, title="Observation", max_lines=300)
 
             # Store step
             self.steps.append(step)
 
             # Check for early exit with enhanced auto-finish
-            context = self.context_manager.build_tool_context(self.steps)
+            context = self.context_formatter.build_tool_context(self.steps)
             should_finish, confidence, reason = await self.verifier.should_auto_finish_enhanced(
                 observation=observation,
                 user_query=user_query,
@@ -250,7 +188,7 @@ class ReActAgent:
         # Store context
         self.file_paths = file_paths
         self.session_id = session_id
-        self.context_manager.session_id = session_id
+        self.context_formatter.session_id = session_id
 
         # Extract user query
         user_query = messages[-1].content
@@ -279,7 +217,7 @@ class ReActAgent:
 
             var_metadata = VariableStorage.get_metadata(self.session_id)
             if var_metadata:
-                self.context_manager.set_variables(var_metadata)
+                self.context_formatter.set_variables(var_metadata)
                 logger.info(f"[ReActAgent] Loaded {len(var_metadata)} saved variables")
         except Exception as exc:
             logger.warning(f"[ReActAgent] Failed to load variables: {exc}")

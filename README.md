@@ -135,6 +135,7 @@ ollama_num_ctx: int = 16384
 # Agentic Flow - Model Selection
 agentic_classifier_model: str = 'qwen3:8b'  # Task classification
 ollama_coder_model: str = 'qwen3:8b'  # Code generation (can use specialized model like 'deepseek-coder:6.7b')
+ollama_coder_model_temperature: float = 0.1  # Dedicated sampling temp for coder LLM
 
 # Python Code Execution
 python_code_enabled: bool = True
@@ -167,6 +168,16 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.7.5 (November 24, 2025)
+
+**Refactor: Prompt registry cleanup**
+
+- Removed unused prompt modules (`backend/config/prompts/agent_graph.py`, `context_formatting.py`, `phase_manager.py`, `python_coder_legacy.py`, `rag.py`, `templates.py`, `validators.py`) to keep the prompt directory aligned with real runtime usage.
+- `backend/config/prompts/__init__.py` - pruned imports, registry entries, and `__all__` exports so the centralized registry only exposes prompts that are actually queried.
+- `backend/config/prompts/react_agent.py` - deleted the unused finish-step and action-input prompts that previously caused parameter mismatches in historical logs.
+- `backend/config/prompts/python_coder/fixing.py` & `backend/config/prompts/python_coder/__init__.py` - removed the orphaned `get_smart_fix_prompt` helper and its export to reduce dead code.
+- Documentation updated to reflect the leaner prompt surface area.
+
 ### Version 1.7.2 (November 24, 2025)
 
 **Bugfix: Resilient plan JSON parsing**
@@ -178,6 +189,13 @@ The system can generate and execute Python code safely:
 **Bugfix: Default plan fallback**
 
 - `backend/tasks/Plan_execute.py` - `_parse_plan_text()` now emits a single-step fallback plan (web_search or python_coder) instead of raising when the LLM output can’t be parsed, preventing “Unable to parse execution plan as JSON array” from aborting Plan-and-Execute runs.
+
+### Version 1.7.4 (November 24, 2025)
+
+**Feature: Coder temperature setting**
+
+- `backend/utils/llm_factory.py` - `create_coder_llm()` now defaults to `settings.ollama_coder_model_temperature`, decoupling code-generation sampling from the general-purpose LLM temperature.
+- `backend/config/settings.py` / `README` - documented `ollama_coder_model_temperature` so deployments can tune deterministic code output separately.
 
 ### Version 1.7.1 (November 24, 2025)
 
@@ -647,6 +665,6 @@ jupyter notebook API_examples.ipynb
 
 ---
 
-**Last Updated**: November 24, 2024
-**Version**: 1.5.0
+**Last Updated**: November 24, 2025
+**Version**: 1.7.5
 
