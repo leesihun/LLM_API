@@ -161,14 +161,15 @@ async def _handle_file_uploads(
     return file_paths, new_files_uploaded
 
 
-async def determine_agent_type(query: str, has_files: bool = False) -> str:
+async def determine_agent_type(query: str, has_files: bool = False, user_id: str = "default") -> str:
     """
     Determine agent type using LLM 3-way classification
-    
+
     Args:
         query: User query to classify
         has_files: Whether files are attached (forces agentic workflow)
-    
+        user_id: User ID for prompt logging
+
     Returns:
         One of: "chat", "react", or "plan_execute"
     """
@@ -177,13 +178,13 @@ async def determine_agent_type(query: str, has_files: bool = False) -> str:
         logger.info("[Agent Classifier] Files attached; forcing agentic workflow (minimum: react)")
         # For files, we still want to determine if it's react or plan_execute
         # So we continue with classification but won't return "chat"
-    
+
     try:
         logger.info(f"[Agent Classifier] Classifying query: {query[:100]}...")
         from backend.utils.llm_factory import LLMFactory
         from backend.config.prompts.task_classification import get_agent_type_classifier_prompt
-        
-        classifier_llm = LLMFactory.create_classifier_llm()
+
+        classifier_llm = LLMFactory.create_classifier_llm(user_id=user_id)
         messages = [
             SystemMessage(content=get_agent_type_classifier_prompt()),
             HumanMessage(content=f"Query: {query}")
@@ -286,7 +287,7 @@ async def chat_completions(
     # Determine agent type (chat/react/plan_execute)
     if agent_type == "auto":
         # Use LLM to classify
-        classified_agent_type = await determine_agent_type(user_message, has_files=bool(file_paths))
+        classified_agent_type = await determine_agent_type(user_message, has_files=bool(file_paths), user_id=user_id)
     else:
         # Use explicitly specified agent type
         classified_agent_type = agent_type.lower()
@@ -309,7 +310,8 @@ async def chat_completions(
             response_text = await chat_task.execute(
                 messages=parsed_messages,
                 session_id=session_id,
-                use_memory=(session_id is not None)
+                use_memory=(session_id is not None),
+                user_id=user_id
             )
         elif classified_agent_type == "react":
             # Use ReAct agent

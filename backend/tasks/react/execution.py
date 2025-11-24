@@ -30,14 +30,16 @@ class ToolExecutor:
     Routes actions to appropriate tools and handles tool-specific formatting.
     """
 
-    def __init__(self, llm):
+    def __init__(self, llm, user_id: str = "default"):
         """
         Initialize ToolExecutor.
 
         Args:
             llm: LLM instance for operations
+            user_id: User ID for tracking and logging
         """
         self.llm = llm
+        self.user_id = user_id
 
     async def execute(
         self,

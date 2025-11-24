@@ -57,19 +57,28 @@ class PlanExecuteTask:
     def __init__(self):
         """Initialize the Plan-and-Execute agent."""
         self.llm = None
+        self.current_user_id = None
+        self.LLMFactory = None
 
-    def _get_llm(self):
-        """Lazy-load the LLM."""
-        if self.llm is None:
+    def _get_llm(self, user_id: str = "default"):
+        """Lazy-load the LLM with user_id for prompt logging."""
+        if self.LLMFactory is None:
             from backend.utils.llm_factory import LLMFactory
-            self.llm = LLMFactory.create_llm(temperature=0.3)
+            self.LLMFactory = LLMFactory
+
+        # Recreate LLM if user_id changed
+        if self.llm is None or self.current_user_id != user_id:
+            self.llm = self.LLMFactory.create_llm(temperature=0.3, user_id=user_id)
+            self.current_user_id = user_id
+
         return self.llm
 
     async def _create_execution_plan(
         self,
         query: str,
         conversation_history: str,
-        has_files: bool = False
+        has_files: bool = False,
+        user_id: str = "default"
     ) -> List[PlanStep]:
         """
         Create detailed structured execution plan by analyzing the query.
@@ -84,7 +93,7 @@ class PlanExecuteTask:
         """
         logger.info(f"[Plan-Execute: Planning] Analyzing query: {query[:]}...")
 
-        llm = self._get_llm()
+        llm = self._get_llm(user_id=user_id)
 
         # Use centralized prompt from prompts module
         planning_prompt = prompts.get_execution_plan_prompt(
@@ -179,7 +188,7 @@ class PlanExecuteTask:
 
         # ====== PHASE 1: PLANNING ======
         logger.info("[Plan-Execute] Phase 1: Creating structured execution plan...")
-        plan_steps = await self._create_execution_plan(user_query, conversation_history, has_files=bool(file_paths))
+        plan_steps = await self._create_execution_plan(user_query, conversation_history, has_files=bool(file_paths), user_id=user_id)
 
         logger.info(f"[Plan-Execute] Plan created with {len(plan_steps)} steps")
 

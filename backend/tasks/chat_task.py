@@ -16,13 +16,16 @@ class ChatTask:
 
     def __init__(self):
         from backend.utils.llm_factory import LLMFactory
-        self.llm = LLMFactory.create_llm()
+        self.LLMFactory = LLMFactory
+        self.llm = None
+        self.current_user_id = None
 
     async def execute(
         self,
         messages: List[ChatMessage],
         session_id: Optional[str] = None,
-        use_memory: bool = True
+        use_memory: bool = True,
+        user_id: str = "default"
     ) -> str:
         """
         Execute a simple chat interaction
@@ -31,10 +34,16 @@ class ChatTask:
             messages: List of chat messages (current conversation)
             session_id: Optional session ID for conversation history
             use_memory: Whether to use conversation memory
+            user_id: User ID for prompt logging
 
         Returns:
             AI response text
         """
+        # Create or update LLM with user_id for prompt logging
+        if self.llm is None or self.current_user_id != user_id:
+            self.llm = self.LLMFactory.create_llm(user_id=user_id)
+            self.current_user_id = user_id
+
         # Build conversation context
         conversation = self._build_conversation(messages, session_id, use_memory)
 

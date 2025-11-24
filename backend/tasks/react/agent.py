@@ -12,17 +12,18 @@ logger = get_logger(__name__)
 
 
 class ReActAgent:
-    def __init__(self, max_iterations: int = 20):
+    def __init__(self, max_iterations: int = 20, user_id: str = "default"):
         self.max_iterations = max_iterations
+        self.user_id = user_id
 
-        # Create LLM instance using factory
-        self.llm = LLMFactory.create_llm()
+        # Create LLM instance using factory with user_id for prompt logging
+        self.llm = LLMFactory.create_llm(user_id=user_id)
 
         # Initialize specialized modules
         self.context_formatter = ContextFormatter()
         self.verifier = StepVerifier(self.llm)
         self.answer_generator = AnswerGenerator(self.llm)
-        self.tool_executor = ToolExecutor(self.llm)
+        self.tool_executor = ToolExecutor(self.llm, user_id=user_id)
         self.thought_action_generator = None  # Initialized per execution (needs file_paths)
         self.plan_executor = PlanExecutor(
             tool_executor=self.tool_executor,
@@ -44,7 +45,18 @@ class ReActAgent:
         user_id: str,
         file_paths: Optional[List[str]] = None
     ) -> Tuple[str, Dict[str, Any]]:
-    
+
+        # Update user_id if different from initialization
+        if user_id != self.user_id:
+            self.user_id = user_id
+            # Recreate LLM with new user_id for proper logging
+            self.llm = LLMFactory.create_llm(user_id=user_id)
+            self.verifier = StepVerifier(self.llm)
+            self.answer_generator = AnswerGenerator(self.llm)
+            self.tool_executor = ToolExecutor(self.llm, user_id=user_id)
+            self.plan_executor.llm = self.llm
+            self.plan_executor.tool_executor = self.tool_executor
+
         self.file_paths = file_paths
         self.session_id = session_id
         self.context_formatter.session_id = session_id
