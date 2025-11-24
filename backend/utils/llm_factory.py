@@ -39,7 +39,7 @@ class LLMInterceptor:
         self.user_id = user_id
 
         # Create user-specific log file path: data/scratch/{username}/prompts.log
-        self.log_file = Path(f"data/scratch/{user_id}/prompts.log")
+        self.log_file = Path(f"data/scratch/prompts.log")
 
         # Ensure log directory exists
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
