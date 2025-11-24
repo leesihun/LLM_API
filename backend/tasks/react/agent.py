@@ -255,10 +255,6 @@ class ReActAgent:
         # Extract user query
         user_query = messages[-1].content
 
-        # Load variables for context injection
-        if self.session_id:
-            await self._load_variables()
-
         # Delegate to plan executor
         final_answer, step_results = await self.plan_executor.execute_plan(
             plan_steps=plan_steps,
