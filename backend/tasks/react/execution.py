@@ -66,7 +66,7 @@ class ToolExecutor:
         """
         try:
             logger.info(f"EXECUTING TOOL: {action}")
-            logger.info(f"Tool Input: {action_input[:200]}...")
+            logger.info(f"Tool Input: {action_input}")
 
             if action == ToolName.WEB_SEARCH:
                 return await self._execute_web_search(action_input)
@@ -270,16 +270,16 @@ class ToolExecutor:
                     if "error:" in step.observation.lower():
                         error_parts = step.observation.split("error:", 1)
                         if len(error_parts) > 1:
-                            step_info['error_reason'] = error_parts[1].strip()[:500]
+                            step_info['error_reason'] = error_parts[1].strip()
                     else:
-                        step_info['error_reason'] = step.observation[:500]
+                        step_info['error_reason'] = step.observation
                 else:
                     step_info['status'] = 'success'
-                    step_info['observation'] = step.observation[:500]
+                    step_info['observation'] = step.observation
 
                 history.append(step_info)
             elif "error" in step.observation.lower() or "failed" in step.observation.lower():
-                step_info['observation'] = step.observation[:500]
+                step_info['observation'] = step.observation
                 step_info['status'] = 'error'
                 history.append(step_info)
 
@@ -365,11 +365,9 @@ class ToolExecutor:
 
         for step in recent_steps:
             context_parts.append(f"Step {step.step_num}:")
-            context_parts.append(f"  Thought: {step.thought[:300]}")
+            context_parts.append(f"  Thought: {step.thought}")
             context_parts.append(f"  Action: {step.action}")
-
-            obs_preview = step.observation[:500] if len(step.observation) > 500 else step.observation
-            context_parts.append(f"  Result: {obs_preview}")
+            context_parts.append(f"  Result: {step.observation}")
 
             if "error" in step.observation.lower() or "failed" in step.observation.lower():
                 context_parts.append(f"  ⚠ Note: This action encountered errors")

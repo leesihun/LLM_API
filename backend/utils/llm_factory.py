@@ -98,25 +98,70 @@ END OF PROMPT
 
         logger.debug(f"[LLMInterceptor] Logged prompt for user '{self.user_id}' to {self.log_file} (length: {len(formatted_prompt)} chars)")
 
+    def _log_response(self, response, model: str = None):
+        """Save LLM response to log file with timestamp and separation."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        model_name = model or getattr(self.llm, 'model', 'unknown')
+
+        # Format response - extract content
+        if hasattr(response, 'content'):
+            response_content = response.content
+        else:
+            response_content = str(response)
+
+        log_entry = f"""
+{'='*80}
+TIMESTAMP: {timestamp}
+MODEL: {model_name}
+USER: {self.user_id}
+TYPE: RESPONSE
+{'='*80}
+
+{response_content}
+
+
+{'='*80}
+END OF RESPONSE
+{'='*80}
+
+
+"""
+
+        # Append to log file
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+
+        logger.debug(f"[LLMInterceptor] Logged response for user '{self.user_id}' (length: {len(response_content)} chars)")
+
     async def ainvoke(self, prompt, **kwargs):
-        """Async invoke with prompt logging."""
+        """Async invoke with prompt and response logging."""
         self._log_prompt(prompt)
-        return await self.llm.ainvoke(prompt, **kwargs)
+        response = await self.llm.ainvoke(prompt, **kwargs)
+        self._log_response(response)
+        return response
 
     def invoke(self, prompt, **kwargs):
-        """Sync invoke with prompt logging."""
+        """Sync invoke with prompt and response logging."""
         self._log_prompt(prompt)
-        return self.llm.invoke(prompt, **kwargs)
+        response = self.llm.invoke(prompt, **kwargs)
+        self._log_response(response)
+        return response
 
     async def astream(self, prompt, **kwargs):
-        """Async stream with prompt logging."""
+        """Async stream with prompt and response logging."""
         self._log_prompt(prompt)
-        return await self.llm.astream(prompt, **kwargs)
+        stream = await self.llm.astream(prompt, **kwargs)
+        # For streaming, we can't easily log the full response
+        # Return the stream as-is
+        return stream
 
     def stream(self, prompt, **kwargs):
-        """Sync stream with prompt logging."""
+        """Sync stream with prompt and response logging."""
         self._log_prompt(prompt)
-        return self.llm.stream(prompt, **kwargs)
+        stream = self.llm.stream(prompt, **kwargs)
+        # For streaming, we can't easily log the full response
+        # Return the stream as-is
+        return stream
 
     def __getattr__(self, name):
         """Delegate all other attributes to the wrapped LLM."""

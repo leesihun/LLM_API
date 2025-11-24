@@ -289,13 +289,12 @@ def format_pruned_steps(steps: List[ReActStep]) -> str:
     context_parts.append("\n[Recent Steps - Full Detail]")
     recent_steps = steps[-2:]
     for step in recent_steps:
-        obs_display = step.observation[:500] if len(step.observation) > 500 else step.observation
         context_parts.append(f"""
 Step {step.step_num}:
-- Thought: {step.thought[:200]}...
+- Thought: {step.thought}
 - Action: {step.action}
-- Action Input: {step.action_input[:200] if len(step.action_input) > 200 else step.action_input}
-- Observation: {obs_display}
+- Action Input: {step.action_input}
+- Observation: {step.observation}
 """)
 
     return "\n".join(context_parts)

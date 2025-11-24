@@ -362,7 +362,7 @@ class PlanExecutor:
         for result in step_results:
             previous_results.append({
                 'step_number': result.step_num,
-                'summary': result.observation[:200] if result.observation else "",
+                'summary': result.observation if result.observation else "",
                 'success': result.success
             })
 
@@ -412,7 +412,7 @@ class PlanExecutor:
             steps_summary.append(
                 f"Step {result.step_num} {status}: {result.goal}\n"
                 f"  Tool: {result.tool_used}\n"
-                f"  Result: {result.observation[:300]}"
+                f"  Result: {result.observation}"
             )
 
         steps_text = "\n\n".join(steps_summary)
@@ -494,7 +494,7 @@ Tool Used: {current_step_result.tool_used}
 Attempts: {current_step_result.attempts}
 
 Observation:
-{current_step_result.observation[:500]}
+{current_step_result.observation}
 
 Remaining Steps ({len(remaining_steps)}):
 {self._format_remaining_steps(remaining_steps)}
@@ -659,8 +659,7 @@ Available tools: web_search, rag_retrieval, python_coder, file_analyzer
             if step.tool_used:
                 lines.append(f"  Tool used: {step.tool_used}")
             if step.observation:
-                obs_preview = step.observation[:200]
-                lines.append(f"  Result: {obs_preview}...")
+                lines.append(f"  Result: {step.observation}")
             lines.append("")
 
         return "\n".join(lines)
@@ -677,6 +676,6 @@ Available tools: web_search, rag_retrieval, python_coder, file_analyzer
             lines.append(f"Error: {step_result.error}")
 
         if step_result.observation:
-            lines.append(f"Observation: {step_result.observation[:300]}...")
+            lines.append(f"Observation: {step_result.observation}")
 
         return "\n".join(lines)
