@@ -279,9 +279,10 @@ async def chat_completions(
     
     # First create the file
     Path(f"data/scratch/{user_id}").mkdir(parents=True, exist_ok=True)
-    serialized_messages = [message.model_dump() for message in parsed_messages]
     with open(f"data/scratch/{user_id}/llm_input_messages_{session_id}.json", "w") as f:
-        json.dump(serialized_messages, f, indent=4)
+        # Write the messages to the file
+        for message in parsed_messages:
+            f.write(message.model_dump_json() + "\n")
 
     # Determine agent type (chat/react/plan_execute)
     if agent_type == "auto":
