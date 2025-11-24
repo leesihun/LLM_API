@@ -255,6 +255,10 @@ class ReActAgent:
         # Extract user query
         user_query = messages[-1].content
 
+        # Load persisted variables for context-aware execution
+        if self.session_id:
+            await self._load_variables()
+
         # Delegate to plan executor
         final_answer, step_results = await self.plan_executor.execute_plan(
             plan_steps=plan_steps,
@@ -265,6 +269,20 @@ class ReActAgent:
         )
 
         return final_answer, step_results
+
+    async def _load_variables(self) -> None:
+        """
+        Load persisted python_coder variable metadata for the active session.
+        """
+        try:
+            from backend.tools.python_coder.variable_storage import VariableStorage
+
+            var_metadata = VariableStorage.get_metadata(self.session_id)
+            if var_metadata:
+                self.context_manager.set_variables(var_metadata)
+                logger.info(f"[ReActAgent] Loaded {len(var_metadata)} saved variables")
+        except Exception as exc:
+            logger.warning(f"[ReActAgent] Failed to load variables: {exc}")
 
     async def _analyze_files_pre_step(self, user_query: str) -> None:
         """

@@ -313,7 +313,10 @@ class StructuredLogger:
         self.logger.debug(msg)
 
     def info(self, msg: str):
-        self.logger.info(msg)
+        if "\n" in msg:
+            self._log_lines(logging.INFO, LogFormatter.multiline(msg))
+        else:
+            self.logger.info(msg)
 
     def warning(self, msg: str):
         self.logger.warning(msg)

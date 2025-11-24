@@ -191,7 +191,7 @@ async def determine_agent_type(query: str, has_files: bool = False) -> str:
         ]
         
         try:
-            response = await asyncio.wait_for(classifier_llm.ainvoke(messages), timeout=10)
+            response = await asyncio.wait_for(classifier_llm.ainvoke(messages), timeout=100)
             classification = response.content.strip().lower()
             
             # Validate classification

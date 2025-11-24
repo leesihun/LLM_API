@@ -167,6 +167,24 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.6.5 (November 24, 2024)
+
+**Enhancement: Multi-line info logging**
+
+- `backend/utils/logging_utils.py` - `StructuredLogger.info()` now detects newline characters and logs each line separately (using the same formatting as `multiline`), so `logger.info()` can handle multi-line commands without manual `logger.multiline()` calls.
+
+### Version 1.6.4 (November 24, 2024)
+
+**Bugfix: Restored ReAct variable loading**
+
+- `backend/tasks/react/agent.py` - reintroduced `_load_variables()` and invoke it before guided plan execution so sessions with saved python_coder variables no longer crash with `'ReActAgent' object has no attribute '_load_variables'`.
+
+### Version 1.6.3 (November 24, 2024)
+
+**Documentation: Plan-and-Execute workflow**
+
+- Added `PLAN_EXECUTE_WORKFLOW.md`, a comprehensive description of every phase (planning, guided execution, monitoring, adaptation) in the hybrid Plan-and-Execute agent.
+
 ### Version 1.6.2 (November 24, 2024)
 
 **Change: Removed ReAct fuzzy action matching**
