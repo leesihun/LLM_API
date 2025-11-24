@@ -10,7 +10,7 @@ from backend.models.schemas import (
     ModelChangeRequest,
     ModelChangeResponse
 )
-from backend.utils.auth import get_current_user
+from backend.api.dependencies import require_admin
 from backend.config.settings import settings
 from backend.tasks.chat_task import chat_task
 from backend.utils.logging_utils import get_logger
@@ -29,11 +29,15 @@ admin_router = APIRouter(prefix="/api/admin", tags=["Admin"])
 # ============================================================================
 
 @admin_router.post("/model", response_model=ModelChangeResponse)
-async def change_model(request: ModelChangeRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Change the active Ollama model (admin only)"""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
+async def change_model(
+    request: ModelChangeRequest,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Change the active Ollama model (admin only)
 
+    Requires admin role for access.
+    """
     try:
         # Update settings in-memory
         settings.ollama_model = request.model

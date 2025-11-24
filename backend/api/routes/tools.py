@@ -13,7 +13,7 @@ from backend.models.schemas import (
     WebSearchResponse,
     RAGSearchResponse
 )
-from backend.utils.auth import get_current_user
+from backend.api.dependencies import get_current_user
 from backend.tools.rag_retriever import rag_retriever
 from backend.tools.web_search import web_search_tool
 from backend.utils.logging_utils import get_logger

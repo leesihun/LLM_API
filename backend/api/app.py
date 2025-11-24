@@ -11,6 +11,7 @@ from pathlib import Path
 
 from backend.config.settings import settings
 from backend.api.routes import create_routes
+from backend.api.middleware import SecurityHeadersMiddleware
 
 
 # ============================================================================
@@ -92,9 +93,17 @@ app = FastAPI(
 
 
 # ============================================================================
-# CORS Configuration
+# Middleware Configuration
 # ============================================================================
 
+# Security Headers Middleware (applied first for all responses)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=True,  # Enable HTTPS enforcement
+    enable_csp=False,  # CSP disabled by default (can break functionality)
+)
+
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure this for production

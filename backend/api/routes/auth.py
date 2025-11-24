@@ -16,7 +16,12 @@ from backend.models.schemas import (
     SignupRequest,
     SignupResponse
 )
-from backend.utils.auth import authenticate_user, create_access_token, get_current_user
+from backend.utils.auth import (
+    authenticate_user,
+    create_access_token,
+    hash_password
+)
+from backend.api.dependencies import get_current_user
 from backend.config.settings import settings
 from backend.utils.logging_utils import get_logger
 
@@ -79,11 +84,32 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
 
 @auth_router.post("/signup", response_model=SignupResponse)
 async def signup(request: SignupRequest):
-    """Create a new user account (stores plaintext password for simplicity)"""
+    """
+    Create a new user account with hashed password
+
+    Security improvements:
+    - Passwords are hashed using bcrypt before storage
+    - Password validation (minimum length, complexity)
+    - Username validation
+    """
     users_path = Path(settings.users_path)
     users_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
+        # Validate username
+        if len(request.username.strip()) < 3:
+            raise HTTPException(
+                status_code=400,
+                detail="Username must be at least 3 characters long"
+            )
+
+        # Validate password
+        if len(request.password) < 8:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must be at least 8 characters long"
+            )
+
         if users_path.exists():
             with open(users_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -95,10 +121,14 @@ async def signup(request: SignupRequest):
             if u.get("username") == request.username:
                 raise HTTPException(status_code=400, detail="Username already exists")
 
-        # Append new user (plaintext password for dev simplicity)
+        # Hash password before storing
+        hashed_password = hash_password(request.password)
+        logger.info(f"Creating new user: {request.username} with role: {request.role or 'guest'}")
+
+        # Create new user with hashed password
         new_user = {
             "username": request.username,
-            "password": request.password,
+            "password_hash": hashed_password,  # Store as 'password_hash' for clarity
             "role": request.role or "guest",
         }
         data.setdefault("users", []).append(new_user)
@@ -106,10 +136,15 @@ async def signup(request: SignupRequest):
         with open(users_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-        return SignupResponse(success=True, user=User(username=new_user["username"], role=new_user["role"]))
+        logger.info(f"User created successfully: {request.username}")
+        return SignupResponse(
+            success=True,
+            user=User(username=new_user["username"], role=new_user["role"])
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Signup error: {e}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Error creating user")

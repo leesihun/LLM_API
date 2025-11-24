@@ -11,17 +11,57 @@ from pathlib import Path
 from jose import JWTError, jwt
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from passlib.context import CryptContext
 
 from backend.config.settings import settings
 
 
 # ============================================================================
-# Password Verification (Plain Text)
+# Password Hashing with bcrypt
 # ============================================================================
 
-def verify_password(plain_password: str, stored_password: str) -> bool:
-    """Verify a password by direct comparison"""
-    return plain_password == stored_password
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    """
+    Hash a password using bcrypt
+
+    Args:
+        password: Plain text password
+
+    Returns:
+        Hashed password string
+    """
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verify a password against a hashed password
+
+    Args:
+        plain_password: Plain text password to verify
+        hashed_password: Hashed password to compare against
+
+    Returns:
+        True if password matches, False otherwise
+
+    Note:
+        Also handles backward compatibility with plaintext passwords
+        for migration purposes. If hashed_password doesn't start with
+        bcrypt prefix ($2b$), falls back to plaintext comparison.
+    """
+    # Backward compatibility: check if password is hashed
+    if hashed_password.startswith("$2b$") or hashed_password.startswith("$2a$"):
+        # Bcrypt hashed password
+        try:
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception:
+            return False
+    else:
+        # Legacy plaintext password - allow for migration
+        return plain_password == hashed_password
 
 
 # ============================================================================
@@ -89,12 +129,26 @@ def load_users() -> Dict[str, Any]:
 
 
 def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
-    """Authenticate user with username and password"""
+    """
+    Authenticate user with username and password
+
+    Args:
+        username: Username to authenticate
+        password: Plain text password
+
+    Returns:
+        User dict with username and role if authentication succeeds, None otherwise
+
+    Note:
+        Supports both 'password' (legacy) and 'password_hash' fields for migration
+    """
     users_data = load_users()
 
     for user in users_data.get("users", []):
         if user["username"] == username:
-            if verify_password(password, user.get("password", user.get("password_hash", ""))):
+            # Support both 'password_hash' (new) and 'password' (legacy) fields
+            stored_password = user.get("password_hash", user.get("password", ""))
+            if verify_password(password, stored_password):
                 return {
                     "username": user["username"],
                     "role": user["role"]
@@ -104,14 +158,28 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
 
 
 # ============================================================================
-# FastAPI Dependencies
+# FastAPI Dependencies (DEPRECATED - Use backend.api.dependencies instead)
 # ============================================================================
 
 security = HTTPBearer()
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
-    """FastAPI dependency to get current authenticated user"""
+    """
+    FastAPI dependency to get current authenticated user
+
+    DEPRECATED: This function is kept for backward compatibility.
+    New code should import from: backend.api.dependencies.get_current_user
+
+    Args:
+        credentials: HTTP Bearer credentials
+
+    Returns:
+        Dict containing user information (username, role)
+
+    Raises:
+        HTTPException: If authentication fails
+    """
     token = credentials.credentials
 
     try:

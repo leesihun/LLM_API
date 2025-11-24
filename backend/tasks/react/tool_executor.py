@@ -42,10 +42,9 @@ class ToolExecutor:
         action_input: str,
         file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
-        attempted_coder: bool = False,
         steps: Optional[List[Any]] = None,
         plan_context: Optional[dict] = None
-    ) -> Tuple[str, bool]:
+    ) -> str:
         """
         Execute the selected action and return observation.
 
@@ -54,41 +53,38 @@ class ToolExecutor:
             action_input: Input for the tool
             file_paths: Optional list of file paths for code execution
             session_id: Optional session ID for code execution
-            attempted_coder: Whether python_coder has been attempted (for guard logic)
             steps: Optional list of ReActStep objects for context building
             plan_context: Optional plan context from Plan-Execute agent
 
         Returns:
-            Tuple of (observation, attempted_coder_updated)
+            Observation string from tool execution
         """
         try:
             logger.info(f"EXECUTING TOOL: {action}")
             logger.info(f"Tool Input: {action_input[:200]}...")
 
             if action == ToolName.WEB_SEARCH:
-                return await self._execute_web_search(action_input), attempted_coder
+                return await self._execute_web_search(action_input)
 
             elif action == ToolName.RAG_RETRIEVAL:
-                return await self._execute_rag_retrieval(
-                    action_input, file_paths, session_id, attempted_coder, steps
-                )
+                return await self._execute_rag_retrieval(action_input)
 
             elif action == ToolName.PYTHON_CODER:
                 return await self._execute_python_coder(
                     action_input, file_paths, session_id, steps, plan_context
-                ), True
+                )
 
             elif action == ToolName.FILE_ANALYZER:
-                return await self._execute_file_analyzer(action_input, file_paths), attempted_coder
+                return await self._execute_file_analyzer(action_input, file_paths)
 
             else:
                 logger.warning(f"Invalid action: {action}")
-                return "Invalid action.", attempted_coder
+                return "Invalid action."
 
         except Exception as e:
             logger.error(f"ERROR EXECUTING ACTION: {action}")
             logger.error(f"Exception: {type(e).__name__}: {str(e)}")
-            return f"Error executing action: {str(e)}", attempted_coder
+            return f"Error executing action: {str(e)}"
 
     async def _execute_web_search(self, query: str) -> str:
         """Execute web search tool."""
@@ -112,28 +108,23 @@ class ToolExecutor:
 
         return final_observation
 
-    async def _execute_rag_retrieval(
-        self,
-        query: str,
-        file_paths: Optional[List[str]],
-        session_id: Optional[str],
-        attempted_coder: bool,
-        steps: Optional[List[Any]]
-    ) -> Tuple[str, bool]:
+    async def _execute_rag_retrieval(self, query: str) -> str:
         """
-        Execute RAG retrieval tool directly.
+        Execute RAG retrieval tool.
 
-        Simplified: No guard logic. If RAG is requested, execute RAG.
-        Let the LLM decide which tool to use.
+        Args:
+            query: Search query for document retrieval
+
+        Returns:
+            Formatted observation with retrieved documents
         """
-        # Execute RAG retrieval directly
         results = await rag_retriever.retrieve(query, top_k=5)
         observation = rag_retriever.format_results(results)
         final_observation = observation if observation else "No relevant documents found."
 
         logger.info(f"RAG Retrieval: {len(results)} documents")
 
-        return final_observation, attempted_coder
+        return final_observation
 
     async def _execute_python_coder(
         self,

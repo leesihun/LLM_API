@@ -20,8 +20,10 @@ from .orchestrator import (
     SUPPORTED_FILE_TYPES,
 )
 
-from .executor import CodeExecutor
+from .executor.core import CodeExecutor
 from .file_context_storage import FileContextStorage
+from .code_generator import CodeGenerator
+from .code_verifier import CodeVerifier
 
 __all__ = [
     # Main API
@@ -30,6 +32,8 @@ __all__ = [
 
     # Components (if needed for advanced usage)
     'CodeExecutor',
+    'CodeGenerator',
+    'CodeVerifier',
     'FileContextStorage',
 
     # Backward compatibility

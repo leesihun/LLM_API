@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage
 
 from .models import ReActStep
 from backend.models.schemas import PlanStep
+from backend.config.prompts import PromptRegistry
 from backend.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -121,16 +122,13 @@ class StepVerifier:
             return True
 
         # Use LLM to verify goal achievement
-        verification_prompt = f"""Verify if the step goal was achieved.
-
-Step Goal: {plan_step.goal}
-Success Criteria: {plan_step.success_criteria}
-
-Tool Used: {tool_used}
-Observation: {observation[:1000]}
-
-Based on the observation, was the step goal achieved according to the success criteria?
-Answer with "YES" or "NO" and brief reasoning:"""
+        verification_prompt = PromptRegistry.get(
+            'react_step_verification',
+            plan_step_goal=plan_step.goal,
+            success_criteria=plan_step.success_criteria,
+            tool_used=tool_used,
+            observation=observation[:1000]
+        )
 
         response = await self.llm.ainvoke([HumanMessage(content=verification_prompt)])
         result = response.content.strip().lower()

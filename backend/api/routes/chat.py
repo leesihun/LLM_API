@@ -22,7 +22,7 @@ from backend.models.schemas import (
     ConversationHistoryResponse,
     ChatMessage
 )
-from backend.utils.auth import get_current_user
+from backend.api.dependencies import get_current_user
 from backend.storage.conversation_store import conversation_store
 from backend.tasks.chat_task import chat_task
 from backend.tasks.smart_agent_task import smart_agent_task, AgentType
