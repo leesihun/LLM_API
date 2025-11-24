@@ -27,9 +27,13 @@ from backend.tools.rag_retriever.models import (
     RAGRetrievalResponse
 )
 
+# Backward compatibility: Legacy code imports 'rag_retriever'
+rag_retriever = rag_retriever_tool
+
 __all__ = [
     'RAGRetrieverTool',
     'rag_retriever_tool',
+    'rag_retriever',  # Backward compatibility
     'RAGRetrieverCore',
     'RAGDocument',
     'RAGRetrievalRequest',

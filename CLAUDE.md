@@ -60,6 +60,14 @@ jupyter notebook API_examples.ipynb
 curl http://127.0.0.1:11434/api/tags
 ```
 
+### Git Workflow
+
+**Auto-commit and push:**
+```bash
+bash git-auto-push.sh
+```
+This script automatically stages all changes, commits with timestamp, pulls remote changes (with rebase), and pushes to the remote repository.
+
 ## Architecture Overview
 
 ### High-Level System Flow
@@ -94,11 +102,13 @@ User Request → Classifier → [Agentic Flow vs Simple Chat]
 
 **3. Python Code Generation (backend/tools/python_coder/)**
 - **Modular architecture** (v2.0.0): Separated into specialized modules
+- **Context-aware generation** (v1.4.0): Uses conversation history, plan context, and ReAct iteration history
 - **Verification phase:** Max 3 iterations, focused ONLY on "Does code answer user's question?"
 - **Execution retry:** Max 5 attempts with auto-fixing between retries
+- **Variable persistence** (v1.3.0): Automatic variable serialization and reuse across session
 - **File handling:** Supports CSV, Excel, JSON, PDF, images, etc.
 - **Security:** Sandboxed execution, import restrictions, timeout controls
-- Important: Uses session-based execution directories (persisted if session_id provided)
+- **Session continuity:** Uses session-based execution directories with notepad memory
 
 **4. Dual Agent Strategy (backend/tasks/smart_agent_task.py)**
 - For complex multi-step tasks
@@ -159,10 +169,13 @@ backend/
 │   ├── python_coder/        # Modular Python code tool (v2.0.0)
 │   │   ├── __init__.py      # Public exports
 │   │   ├── tool.py          # PythonCoderTool main class
+│   │   ├── orchestrator.py  # High-level orchestration with context
 │   │   ├── generator.py     # Code generation
 │   │   ├── executor.py      # Code execution (CodeExecutor)
 │   │   ├── verifier.py      # Code verification
+│   │   ├── variable_storage.py  # Variable persistence (v1.3.0)
 │   │   └── models.py        # Data models
+│   ├── notepad.py           # Session memory/notepad (v1.3.0)
 │   ├── file_analyzer/       # Modular file analyzer (v2.0.0)
 │   │   ├── __init__.py      # Public exports
 │   │   ├── tool.py          # FileAnalyzer main class
@@ -172,8 +185,13 @@ backend/
 │   ├── web_search/          # Modular web search (v2.0.0)
 │   │   ├── __init__.py      # Public exports
 │   │   └── tool.py          # WebSearchTool
+│   ├── rag_retriever/       # Modular RAG retriever (v2.0.0)
+│   │   ├── __init__.py      # Public exports (includes backward compatibility)
+│   │   ├── tool.py          # RAGRetrieverTool
+│   │   ├── retriever.py     # RAGRetrieverCore
+│   │   └── models.py        # Data models
 │   ├── web_search.py        # Legacy monolithic web search (deprecated)
-│   ├── rag_retriever.py     # Document retrieval (FAISS)
+│   ├── rag_retriever.py     # Legacy monolithic RAG (deprecated, kept for fallback)
 │   └── legacy/
 │       ├── python_coder_tool.py      # Legacy monolithic (deprecated)
 │       └── file_analyzer_tool.py     # Legacy monolithic (deprecated)
@@ -216,12 +234,15 @@ data/
 
 ### When Modifying python_coder/:
 - **tool.py (PythonCoderTool):** High-level orchestration (generation, verification, retry)
+- **orchestrator.py:** Context-aware orchestration, integrates conversation/plan/react history
 - **generator.py (CodeGenerator):** LLM-based code generation with file context
-- **executor.py (CodeExecutor):** Low-level execution (subprocess, file handling, import validation)
+- **executor.py (CodeExecutor):** Low-level execution (subprocess, file handling, import validation, namespace capture)
 - **verifier.py (CodeVerifier):** Static and semantic code verification
+- **variable_storage.py:** Type-specific variable serialization (DataFrames→Parquet, arrays→.npy, etc.)
 - **models.py:** Data models for code generation/execution
 - Backward compatibility: `PythonExecutor = CodeExecutor` (legacy alias)
 - File metadata extraction is critical for good code generation (handled in generator.py)
+- **Context injection:** orchestrator.py passes conversation history, plan context, and react iteration history to prompts
 
 ### Security Considerations:
 - Blocked imports: socket, subprocess, eval, exec, pickle, etc.
@@ -311,6 +332,14 @@ GET /health
 - Tools track execution history (steps, observations, code, etc.)
 - Retrieval by user_id or session_id
 
+### Session Notepad & Variable Persistence (v1.3.0)
+- **Automatic memory generation:** After each ReAct execution, LLM creates structured notepad entry
+- **Variable persistence:** Successful code execution variables auto-saved with type-specific serialization
+- **Context auto-injection:** Notepad entries and variable metadata automatically injected into subsequent executions
+- **Storage structure:** `data/scratch/{session_id}/notepad.json` and `variables/` directory
+- **Load-on-demand:** Agent sees available variables and writes code to load when needed
+- **Safe serialization:** No pickle; uses Parquet, .npy, JSON, PNG for different types
+
 ## Common Development Tasks
 
 ### Adding a New Tool
@@ -344,7 +373,9 @@ react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 ## Version History & Breaking Changes
 
 ### Version 2.0.0 (January 2025)
-**Major refactoring: Modular architecture for all core components:**
+**Major refactoring: Modular architecture for all core components**
+
+Comprehensive code restructuring that splits large monolithic files into focused, maintainable modules while preserving backward compatibility.
 
 **ReAct Agent Modularization:**
 - Split `backend/tasks/React.py` (2000+ lines) → `backend/tasks/react/` (8 focused modules)
@@ -371,6 +402,13 @@ react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 - Import unchanged: `from backend.tools.web_search import web_search_tool`
 - Modules: tool.py, models.py
 
+**RAG Retriever Tool Modularization:**
+- Split `backend/tools/rag_retriever.py` → `backend/tools/rag_retriever/` (4 modules)
+- Old import: `from backend.tools.rag_retriever import rag_retriever` (still works via backward compatibility)
+- New import: `from backend.tools.rag_retriever import rag_retriever_tool`
+- Modules: tool.py, retriever.py, models.py
+- Backward compatibility: `rag_retriever = rag_retriever_tool` (legacy alias)
+
 **API Routes Modularization:**
 - Split `backend/api/routes.py` → `backend/api/routes/` (5 modules)
 - Old import: `from backend.api.routes import router`
@@ -383,8 +421,56 @@ react_agent = ReActAgent(max_iterations=10)  # ReAct loop limit
 - All old imports updated throughout codebase
 - Legacy files preserved for backward compatibility
 
+### Version 1.4.0 (November 20, 2024)
+**Enhancement: Context-Aware Python Code Generation**
+
+Significantly improved Python code generation by integrating comprehensive context from agent workflows and conversation history.
+
+**Key Changes:**
+- Enhanced `orchestrator.py` with `conversation_history`, `plan_context`, and `react_context` parameters
+- Improved prompts with 8 sections: HISTORIES → INPUT → PLANS → REACTS → TASK → METADATA → RULES → CHECKLISTS
+- ReAct agent integration: `_build_react_context()` extracts failed code attempts and errors
+- Plan-Execute integration: `_build_plan_context()` creates structured plan context
+- Automatic conversation history loading via `ConversationStore`
+
+**Benefits:**
+- Better context awareness reduces repeated questions
+- Learn from previous failures to prevent same mistakes
+- Plan alignment ensures code matches overall strategy
+- Improved code quality with full context visibility
+- Reduced iterations through context-aware generation
+
+### Version 1.3.0 (November 19, 2024)
+**Feature: Session Notepad & Variable Persistence**
+
+Automatic session memory system that maintains continuity across ReAct executions.
+
+**New Components:**
+- `backend/tools/notepad.py` - SessionNotepad class for persistent memory
+- `backend/tools/python_coder/variable_storage.py` - Type-specific variable serialization
+
+**Key Features:**
+- Automatic notepad generation after each ReAct execution
+- Variable persistence with type-specific serialization (DataFrames→Parquet, arrays→.npy)
+- Context auto-injection into subsequent executions
+- Namespace capture in REPL mode
+- Task-based organization with descriptive names
+
+**Storage Structure:**
+```
+./data/scratch/{session_id}/
+├── notepad.json                 # Session memory entries
+├── {task}_{timestamp}.py        # Saved code files
+└── variables/                   # Persisted variables
+    ├── variables_metadata.json  # Variable catalog
+    ├── df_*.parquet            # DataFrames
+    ├── *.json                  # Simple types
+    └── *.npy                   # NumPy arrays
+```
+
 ### Version 1.2.0 (October 31, 2024)
-**Major unification of Python code tools:**
+**Major unification of Python code tools**
+
 - Merged `python_coder_tool.py` and `python_executor_engine.py` into single file
 - Removed `python_executor.py` (unused legacy)
 - Reduced verification iterations: 10 → 3
@@ -500,7 +586,20 @@ result2, _ = client.chat_continue(MODEL, sid, "Analyze file X again for Y", file
 - Ensure required packages installed in environment
 - Check AST validation in `CodeExecutor.validate_imports()`
 
+## Additional Resources
+
+**Example Notebooks:**
+- [API_examples.ipynb](API_examples.ipynb) - Basic API usage examples
+- [PPTX_Report_Generator_Agent_v2.ipynb](PPTX_Report_Generator_Agent_v2.ipynb) - PowerPoint generation with multi-phase workflow
+- [Multi_Phase_Workflow_Example.ipynb](Multi_Phase_Workflow_Example.ipynb) - Detailed pattern demonstration
+
+**Utility Scripts:**
+- [git-auto-push.sh](git-auto-push.sh) - Automated git workflow (stage, commit, pull with rebase, push)
+- [run_backend.py](run_backend.py) - Backend server launcher
+- [run_frontend.py](run_frontend.py) - Frontend server launcher
+
 ---
 
 **Last Updated:** January 2025
 **Version:** 2.0.0 (Modular Architecture)
+**Previous Versions:** 1.4.0 (Context-Aware Code Gen), 1.3.0 (Session Notepad), 1.2.0 (Tool Unification)
