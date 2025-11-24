@@ -39,7 +39,7 @@ Current User Query: {query}
 Available Tools:
 {available_tools}
 
-Create a MINIMAL step-by-step execution plan with ONLY the work steps needed to answer the query. For EACH step, provide:
+Create a DETAILED step-by-step execution plan with ONLY the work steps needed to answer the query. For EACH step, provide:
 1. Goal: What this step aims to accomplish (be specific and detailed)
 2. Primary Tools: Main tools to use
 3. Success Criteria: How to verify the step succeeded (be concrete and measurable)
