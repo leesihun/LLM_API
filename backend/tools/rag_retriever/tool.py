@@ -125,15 +125,65 @@ class RAGRetrieverTool(BaseTool):
     async def index_document(self, file_path: Path) -> str:
         """
         Index a document for later retrieval.
-        
+
         Args:
             file_path: Path to document
-            
+
         Returns:
             Document ID
         """
         return await self.retriever.index_document(file_path)
-    
+
+    async def retrieve(
+        self,
+        query: str,
+        document_ids: Optional[List[str]] = None,
+        top_k: int = 5
+    ) -> List[RAGDocument]:
+        """
+        Backward compatibility method for direct retrieval.
+
+        This method bypasses the BaseTool interface and directly calls
+        the core retriever, returning raw RAGDocument objects.
+
+        Args:
+            query: Search query
+            document_ids: Optional list of document IDs to search
+            top_k: Number of results to return
+
+        Returns:
+            List of RAGDocument objects
+        """
+        return await self.retriever.retrieve(
+            query=query,
+            document_ids=document_ids,
+            top_k=top_k
+        )
+
+    def format_results(self, results: List[RAGDocument]) -> str:
+        """
+        Backward compatibility method for formatting results.
+
+        Args:
+            results: List of RAGDocument objects
+
+        Returns:
+            Formatted string representation
+        """
+        if not results:
+            return "No relevant information found in documents."
+
+        formatted = "Retrieved Information:\n\n"
+
+        for i, result in enumerate(results, 1):
+            formatted += f"--- Excerpt {i} ---\n"
+            formatted += f"{result.content}\n"
+            if result.source:
+                formatted += f"Source: {result.source}\n"
+            formatted += "\n"
+
+        return formatted
+
     def validate_inputs(self, **kwargs) -> bool:
         """
         Validate tool inputs.

@@ -47,6 +47,7 @@ RULES:
 5. Add current date/year if query asks for "latest", "recent", "current", "new"
 6. Keep proper nouns and technical terms
 7. Use keywords that a search engine would match against
+8. Unless specified otherwise, use the current date/year in the output
 
 EXAMPLES:
 

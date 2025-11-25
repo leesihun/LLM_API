@@ -461,25 +461,9 @@ class PlanAdapter:
             Tuple of (needs_replan, reason)
         """
         # Trigger 1: Step failed after multiple attempts
-        if not current_step_result.success and current_step_result.attempts >= 3:
+        if not current_step_result.success and current_step_result.attempts >= 2:
             logger.warning(f"[PlanAdapter] Trigger 1: Step failed after {current_step_result.attempts} attempts")
             return True, f"Step '{current_step_result.goal}' failed after {current_step_result.attempts} attempts"
-
-        # Trigger 2: Observation reveals additional work needed
-        observation_lower = current_step_result.observation.lower() if current_step_result.observation else ""
-        replan_keywords = [
-            "additional analysis needed",
-            "more information required",
-            "cannot complete without",
-            "missing prerequisite",
-            "unexpected result",
-            "requires further"
-        ]
-
-        for keyword in replan_keywords:
-            if keyword in observation_lower:
-                logger.warning(f"[PlanAdapter] Trigger 2: Observation indicates '{keyword}'")
-                return True, f"Observation indicates additional work: '{keyword}'"
 
         # Trigger 3: LLM-based viability assessment
         if remaining_steps and len(remaining_steps) > 0:
