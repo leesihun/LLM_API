@@ -83,7 +83,7 @@ class Settings(BaseSettings):
 
     agentic_classifier_model: str = 'qwen3:8b'
     ollama_coder_model: str = 'qwen3:8b'
-    ollama_coder_model_temperature: float = 1.0
+    ollama_coder_model_temperature: float = 0.5
 
     # Available tools
     available_tools: list[str] = ['web_search', 'rag', 'python_coder']

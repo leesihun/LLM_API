@@ -45,9 +45,6 @@ def get_task_guidance(query: str) -> str:
         Task-specific guidance section
     """
     query_lower = query.lower()
-    is_aggregation = any(word in query_lower for word in ['sum', 'total', 'count', 'average', 'mean', 'median', 'calculate'])
-    is_visualization = any(word in query_lower for word in ['plot', 'graph', 'chart', 'visualize', 'draw'])
-    is_analysis = any(word in query_lower for word in ['analyze', 'report', 'summary', 'summarize', 'insights'])
 
     lines = [
         "="*80,
@@ -56,46 +53,42 @@ def get_task_guidance(query: str) -> str:
         ""
     ]
 
-    if is_visualization:
-        lines.extend([
-            "[TASK TYPE] Visualization/Plotting",
-            "",
-            "Workflow:",
-            "  1. Import matplotlib: import matplotlib.pyplot as plt",
-            "  2. Load file data (use access patterns from METADATA below)",
-            "  3. Extract x, y values",
-            "  4. Create plot",
-            "  5. Save: plt.savefig('output.png')",
-            ""
+    lines.extend([
+        "[IF TASK TYPE] Visualization/Plotting",
+        "",
+        "Workflow:",
+        "  1. Import matplotlib: import matplotlib.pyplot as plt",
+        "  2. Load file data (use access patterns from METADATA below)",
+        "  3. Extract various data values",
+        "  4. Create various plots",
+        "  5. Save: plt.savefig('output.png')",
+        ""
+    ])
+    lines.extend([
+        "[IF TASK TYPE] Calculation/Aggregation",
+        "",
+        "Workflow:",
+        "  1. Load file data (use access patterns from METADATA below)",
+        "  2. Extract various data values",
+        "  3. Calculate various results",
+        "  4. Print result with label",
+        ""
         ])
-    elif is_aggregation:
-        lines.extend([
-            "[TASK TYPE] Calculation/Aggregation",
-            "",
-            "Workflow:",
-            "  1. Load file data (use access patterns from METADATA below)",
-            "  2. Extract relevant field",
-            "  3. Calculate result",
-            "  4. Print result with label",
-            ""
-        ])
-    elif is_analysis:
-        lines.extend([
-            "[TASK TYPE] Analysis/Reporting",
-            "",
-            "Workflow:",
-            "  1. Load file data once",
-            "  2. Calculate multiple metrics",
-            "  3. Print results clearly",
-            ""
-        ])
-    else:
-        lines.extend([
-            "[TASK TYPE] General",
-            "",
-            "Generate Python code to complete the task above.",
-            ""
-        ])
+    lines.extend([
+        "[IF TASK TYPE] Analysis/Reporting",
+        "",
+        "Workflow:",
+        "  1. Load file data (use access patterns from METADATA below)",
+        "  2. Calculate multiple metrics",
+        "  3. Print results clearly",
+        ""
+    ])
+    lines.extend([
+        "[TASK TYPE] General",
+        "",
+        "Generate Python code to complete the task above.",
+        ""
+    ])
 
     lines.extend([
         "="*80,
