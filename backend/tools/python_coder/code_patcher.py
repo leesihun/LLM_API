@@ -21,9 +21,9 @@ Architecture:
 from typing import Dict, List, Optional, Any, Tuple
 from langchain_core.messages import HumanMessage
 import re
-import json
 
 from backend.utils.logging_utils import get_logger
+from .utils import extract_code_from_markdown
 
 logger = get_logger(__name__)
 
@@ -37,14 +37,20 @@ class CodePatcher:
     and generates targeted patches while preserving sections that executed successfully.
     """
 
-    def __init__(self, llm):
+    def __init__(self, llm, code_generator=None, code_verifier=None, max_verification_iterations: int = 3):
         """
         Initialize CodePatcher.
 
         Args:
             llm: LangChain LLM instance for code generation
+            code_generator: Optional CodeGenerator instance (for code generation)
+            code_verifier: Optional CodeVerifier instance (for verification)
+            max_verification_iterations: Maximum verification attempts
         """
         self.llm = llm
+        self.code_generator = code_generator
+        self.code_verifier = code_verifier
+        self.max_verification_iterations = max_verification_iterations
 
     def analyze_execution_error(
         self,
@@ -121,9 +127,10 @@ class CodePatcher:
         """
         Generate patched code preserving working sections.
 
-        This method extracts the failed section, generates a fix using LLM,
-        and rebuilds the complete code with the fixed section while preserving
-        all working sections.
+        This method uses the same generate-verify workflow as CodeGenerator:
+        1. Generate fixed section code
+        2. Verify it with CodeVerifier (if available)
+        3. Iterate if needed (up to max_verification_iterations)
 
         Args:
             original_code: Original code that failed
@@ -155,12 +162,107 @@ class CodePatcher:
             for s in working_sections_code
         ])
 
+        # Generate-verify loop
+        fixed_section = None
+        verification_iteration = 0
+
+        while verification_iteration < self.max_verification_iterations:
+            verification_iteration += 1
+
+            # Generate fixed section
+            fixed_section = await self._generate_fixed_section(
+                query=query,
+                file_context=file_context,
+                working_summary=working_summary,
+                failed_section_code=failed_section_code,
+                error_analysis=error_analysis,
+                attempt_num=attempt_num,
+                verification_iteration=verification_iteration,
+                previous_issues=[] if verification_iteration == 1 else issues
+            )
+
+            if not fixed_section or len(fixed_section) < 10:
+                logger.warning("[CodePatcher] Generated code too short, falling back to original")
+                return original_code
+
+            # If no verifier available, use the generated code
+            if not self.code_verifier:
+                logger.info("[CodePatcher] No verifier available, skipping verification")
+                break
+
+            # Verify the fixed section
+            is_verified, issues = await self.code_verifier.verify_code_answers_question(
+                code=fixed_section,
+                query=query,
+                context=f"This is a patch for: {error_analysis['error_location']} section",
+                file_context=file_context
+            )
+
+            if is_verified:
+                logger.info(f"[CodePatcher] Patch verified successfully (iteration {verification_iteration})")
+                break
+            else:
+                logger.warning(f"[CodePatcher] Verification failed (iteration {verification_iteration})")
+                for issue in issues:
+                    logger.warning(f"[CodePatcher]   - {issue}")
+
+                if verification_iteration >= self.max_verification_iterations:
+                    logger.warning("[CodePatcher] Max verification iterations reached, using last generated code")
+
+        # Rebuild code with fixed section
+        try:
+            patched_code = self._rebuild_code(
+                original_code,
+                error_analysis["line_range"],
+                fixed_section
+            )
+            return patched_code
+
+        except Exception as e:
+            logger.error(f"[CodePatcher] Failed to rebuild code: {e}")
+            logger.warning("[CodePatcher] Returning original code as fallback")
+            return original_code
+
+    async def _generate_fixed_section(
+        self,
+        query: str,
+        file_context: str,
+        working_summary: str,
+        failed_section_code: str,
+        error_analysis: Dict[str, Any],
+        attempt_num: int,
+        verification_iteration: int,
+        previous_issues: List[str]
+    ) -> str:
+        """
+        Generate fixed code section using LLM.
+
+        Args:
+            query: User's original query
+            file_context: File metadata and context
+            working_summary: Summary of working code sections
+            failed_section_code: The section that failed
+            error_analysis: Error analysis results
+            attempt_num: Current execution attempt number
+            verification_iteration: Current verification iteration
+            previous_issues: Issues from previous verification attempt
+
+        Returns:
+            Fixed code section
+        """
+        # Build issues context if this is a re-generation
+        issues_context = ""
+        if previous_issues:
+            issues_context = "\n\nPREVIOUS VERIFICATION ISSUES:\n" + "\n".join([
+                f"- {issue}" for issue in previous_issues
+            ])
+
         prompt = f"""Fix the failed section of Python code while preserving working sections.
 
 Task: {query}
 
 File Context:
-{file_context[:500]}
+{file_context}
 
 WORKING CODE SECTIONS (DO NOT MODIFY - these executed successfully):
 {working_summary if working_summary else "No working sections identified"}
@@ -172,57 +274,33 @@ FAILED CODE SECTION (FIX THIS ONLY):
 
 Error Type: {error_analysis["error_type"]}
 Error Location: {error_analysis["error_location"]} section
-Attempt: {attempt_num}
+Execution Attempt: {attempt_num}
+Verification Iteration: {verification_iteration}{issues_context}
 
-Guidelines:
+INSTRUCTIONS:
 1. Fix ONLY the failed section above
 2. The working sections will be automatically preserved
 3. Maintain compatibility with working sections (variable names, data structures)
 4. Focus on the specific error type: {error_analysis["error_type"]}
 5. Keep the same structure/purpose as the original failed section
 
-Respond with JSON:
-{{
-  "fixed_section": "<complete fixed code for this section>",
-  "explanation": "what was fixed and why",
-  "changes_made": ["list", "of", "specific", "changes"]
-}}
+Respond ONLY with the fixed Python code (no explanations, no markdown):
 """
 
         try:
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
             response_text = response.content.strip()
 
-            # Parse JSON response
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0]
+            # Extract code from markdown blocks if present
+            fixed_section = extract_code_from_markdown(response_text)
 
-            result = json.loads(response_text.strip())
+            logger.info(f"[CodePatcher] Generated fix ({len(fixed_section)} chars, iteration {verification_iteration})")
 
-            fixed_section = result.get("fixed_section", "")
-            explanation = result.get("explanation", "No explanation provided")
-            changes = result.get("changes_made", [])
-
-            logger.info(f"[CodePatcher] Fix explanation: {explanation}")
-            for i, change in enumerate(changes, 1):
-                logger.info(f"[CodePatcher]   {i}. {change}")
-
-            # Rebuild code with fixed section
-            patched_code = self._rebuild_code(
-                original_code,
-                error_analysis["line_range"],
-                fixed_section
-            )
-
-            return patched_code
+            return fixed_section
 
         except Exception as e:
-            logger.error(f"[CodePatcher] Patch generation failed: {e}")
-            # Fallback: return original code
-            logger.warning("[CodePatcher] Returning original code as fallback")
-            return original_code
+            logger.error(f"[CodePatcher] Failed to generate fix: {e}")
+            return ""
 
     def _extract_error_line(self, error_message: str) -> int:
         """

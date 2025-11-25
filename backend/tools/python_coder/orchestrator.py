@@ -74,7 +74,12 @@ class PythonCoderTool:
         self.code_verifier = CodeVerifier(self.llm, self.executor)
         self.code_fixer = CodeFixer(self.llm)
         self.auto_fixer = AutoFixer()
-        self.code_patcher = CodePatcher(self.llm)  # New: Incremental code building
+        self.code_patcher = CodePatcher(
+            llm=self.llm,
+            code_generator=self.code_generator,
+            code_verifier=self.code_verifier,
+            max_verification_iterations=settings.python_code_max_iterations
+        )  # New: Incremental code building with verification
         self.file_handler_factory = FileHandlerFactory()
         self.context_builder = FileContextBuilder()
 
