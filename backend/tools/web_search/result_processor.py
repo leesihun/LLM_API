@@ -231,7 +231,7 @@ class ResultProcessor:
 
     def extract_key_info(self, result: SearchResult) -> Dict[str, Any]:
         """Extract important fields from a single search result."""
-        return {"title": result.title, "url": result.url, "content_preview": result.content[:200] if result.content else "",
+        return {"title": result.title, "url": result.url, "content_preview": result.content if result.content else "",
                 "score": result.score, "has_content": bool(result.content)}
 
     def get_summary(self, results: List[SearchResult]) -> Dict[str, Any]:

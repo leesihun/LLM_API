@@ -131,10 +131,10 @@ class ToolExecutor:
         plan_context: Optional[dict] = None
     ) -> str:
         """Execute python_coder tool."""
-        # Build context from execution history
-        context = self._build_context_for_python_coder(steps, session_id)
+        # Build context from execution history (high-level summary only)
+        context = self._build_context_for_python_coder(steps)
 
-        # Build react_context with failed attempts
+        # Build react_context with ALL code attempts and session history
         react_context = self._build_react_context(steps, session_id)
 
         # Load conversation history
@@ -237,66 +237,90 @@ class ToolExecutor:
         session_id: Optional[str] = None
     ) -> Optional[dict]:
         """
-        Build structured react_context with failed attempts for python_coder.
+        Build structured react_context with ALL code attempts across the entire session.
+
+        NEW BEHAVIOR: Captures complete code execution history from the session,
+        not just the current ReAct execution. This includes:
+        - All attempts from ALL ReAct steps in current execution
+        - All code from previous ReAct executions in the same session
+        - Full error messages and observations
 
         Returns:
-            Dict with iteration history including failed code and errors
+            Dict with iteration history including all code versions and errors
         """
-        if not steps:
+        if not steps and not session_id:
             return None
 
-        current_iteration = len(steps) + 1
+        current_iteration = len(steps) + 1 if steps else 1
         history = []
 
-        # Extract failed python_coder attempts
-        for step in steps:
-            step_info = {
-                'thought': step.thought,
-                'action': str(step.action),
-                'tool_input': step.action_input
-            }
+        # First, load ALL code history from session (across all executions)
+        all_session_code = self._load_all_session_code(session_id)
 
-            if step.action == ToolName.PYTHON_CODER:
-                step_info['observation'] = step.observation
+        # Extract failed python_coder attempts from current ReAct execution
+        if steps:
+            for step in steps:
+                step_info = {
+                    'thought': step.thought,
+                    'action': str(step.action),
+                    'tool_input': step.action_input
+                }
 
-                # Try to load code from session directory
-                code = self._load_code_for_step(session_id, step.step_num)
-                if code:
-                    step_info['code'] = code
-
-                # Determine status
-                if "failed" in step.observation.lower() or "error" in step.observation.lower():
-                    step_info['status'] = 'error'
-                    if "error:" in step.observation.lower():
-                        error_parts = step.observation.split("error:", 1)
-                        if len(error_parts) > 1:
-                            step_info['error_reason'] = error_parts[1].strip()
-                    else:
-                        step_info['error_reason'] = step.observation
-                else:
-                    step_info['status'] = 'success'
+                if step.action == ToolName.PYTHON_CODER:
                     step_info['observation'] = step.observation
 
-                history.append(step_info)
-            elif "error" in step.observation.lower() or "failed" in step.observation.lower():
-                step_info['observation'] = step.observation
-                step_info['status'] = 'error'
-                history.append(step_info)
+                    # Load ALL code attempts for this step (not just latest)
+                    code_attempts = self._load_all_attempts_for_step(session_id, step.step_num)
+                    if code_attempts:
+                        if len(code_attempts) == 1:
+                            step_info['code'] = code_attempts[0]['code']
+                        else:
+                            # Multiple attempts - include all
+                            step_info['code_attempts'] = code_attempts
 
-        if not history:
-            return None
+                    # Determine status
+                    if "failed" in step.observation.lower() or "error" in step.observation.lower():
+                        step_info['status'] = 'error'
+                        if "error:" in step.observation.lower():
+                            error_parts = step.observation.split("error:", 1)
+                            if len(error_parts) > 1:
+                                step_info['error_reason'] = error_parts[1].strip()
+                        else:
+                            step_info['error_reason'] = step.observation
+                    else:
+                        step_info['status'] = 'success'
+                        step_info['observation'] = step.observation
 
-        return {
+                    history.append(step_info)
+                elif "error" in step.observation.lower() or "failed" in step.observation.lower():
+                    step_info['observation'] = step.observation
+                    step_info['status'] = 'error'
+                    history.append(step_info)
+
+        # Add session-wide code history if available
+        context = {
             'iteration': current_iteration,
-            'history': history
+            'history': history if history else []
         }
 
-    def _load_code_for_step(
+        if all_session_code:
+            context['session_code_history'] = all_session_code
+
+        return context if (history or all_session_code) else None
+
+    def _load_all_session_code(
         self,
-        session_id: Optional[str],
-        step_num: int
-    ) -> Optional[str]:
-        """Load saved code for a specific ReAct step."""
+        session_id: Optional[str]
+    ) -> Optional[List[dict]]:
+        """
+        Load ALL code files from the entire session (across all executions).
+
+        This captures the complete code execution history for the session,
+        including code from previous ReAct executions.
+
+        Returns:
+            List of dicts with code, filename, timestamp, organized by recency
+        """
         if not session_id:
             return None
 
@@ -308,56 +332,125 @@ class ToolExecutor:
             if not session_dir.exists():
                 return None
 
-            # Look for code files matching this step
+            # Find ALL script_*.py files in session
+            all_code_files = list(session_dir.glob("script_*.py"))
+
+            if not all_code_files:
+                return None
+
+            # Sort by modification time (most recent first)
+            all_code_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            code_history = []
+            for code_file in all_code_files:
+                try:
+                    code = code_file.read_text(encoding='utf-8')
+                    stage_name = code_file.stem.replace('script_', '')
+                    timestamp = code_file.stat().st_mtime
+
+                    code_history.append({
+                        'code': code,
+                        'filename': code_file.name,
+                        'stage_name': stage_name,
+                        'timestamp': timestamp
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to read {code_file.name}: {e}")
+
+            if code_history:
+                logger.info(f"Loaded {len(code_history)} code file(s) from session history")
+
+            return code_history if code_history else None
+
+        except Exception as e:
+            logger.warning(f"Failed to load session code history: {e}")
+            return None
+
+    def _load_all_attempts_for_step(
+        self,
+        session_id: Optional[str],
+        step_num: int
+    ) -> Optional[List[dict]]:
+        """
+        Load ALL code attempts for a specific ReAct step.
+
+        This captures multiple retry attempts within the same step
+        (e.g., step1_attempt1.py, step1_attempt2.py, step1_attempt3.py).
+
+        Returns:
+            List of dicts with code, attempt_num, timestamp, sorted by attempt number
+        """
+        if not session_id:
+            return None
+
+        try:
+            from pathlib import Path
+            from backend.config.settings import settings
+            import re
+
+            session_dir = Path(settings.python_code_execution_dir) / session_id
+            if not session_dir.exists():
+                return None
+
+            # Look for all code files matching this step
             pattern = f"script_step{step_num}_*.py"
             matching_files = list(session_dir.glob(pattern))
 
             if not matching_files:
                 return None
 
-            # Get most recent file
-            latest_file = max(matching_files, key=lambda p: p.stat().st_mtime)
-            code = latest_file.read_text(encoding='utf-8')
-            logger.info(f"Loaded code for step {step_num} from {latest_file.name}")
-            return code
+            # Parse attempt numbers and sort
+            attempts = []
+            for file_path in matching_files:
+                try:
+                    code = file_path.read_text(encoding='utf-8')
+
+                    # Extract attempt number from filename
+                    # Format: script_step{N}_attempt{M}.py or script_step{N}_{stage}.py
+                    match = re.search(r'step\d+_attempt(\d+)', file_path.name)
+                    if match:
+                        attempt_num = int(match.group(1))
+                    else:
+                        # No attempt number - treat as attempt 1
+                        attempt_num = 1
+
+                    attempts.append({
+                        'code': code,
+                        'attempt_num': attempt_num,
+                        'filename': file_path.name,
+                        'timestamp': file_path.stat().st_mtime
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to read {file_path.name}: {e}")
+
+            if not attempts:
+                return None
+
+            # Sort by attempt number
+            attempts.sort(key=lambda x: x['attempt_num'])
+
+            logger.info(f"Loaded {len(attempts)} attempt(s) for step {step_num}")
+            return attempts
 
         except Exception as e:
-            logger.warning(f"Failed to load code for step {step_num}: {e}")
+            logger.warning(f"Failed to load attempts for step {step_num}: {e}")
             return None
 
     def _build_context_for_python_coder(
         self,
-        steps: Optional[List[Any]],
-        session_id: Optional[str]
+        steps: Optional[List[Any]]
     ) -> str:
-        """Build context string from ReAct execution history."""
-        context_parts = []
+        """
+        Build context string from ReAct execution history.
 
-        # Load previous code history
-        code_history = python_coder_tool.get_previous_code_history(session_id, max_versions=3)
-        if code_history:
-            context_parts.append("=== Previous Code Versions ===\n")
-            for idx, code_entry in enumerate(code_history, 1):
-                stage_name = code_entry.get('stage_name', 'unknown')
-                code = code_entry.get('code', '')
-
-                # Show code preview (first 20 lines)
-                code_lines = code.split('\n')
-                code_preview = '\n'.join(code_lines[:20])
-                if len(code_lines) > 20:
-                    code_preview += f"\n... ({len(code_lines) - 20} more lines)"
-
-                context_parts.append(f"Version {idx} ({stage_name}):")
-                context_parts.append("```python")
-                context_parts.append(code_preview)
-                context_parts.append("```")
-                context_parts.append("")
-
-            context_parts.append("You can reference and build upon these previous code versions.\n")
-
+        NOTE: Code history is now fully handled by react_context parameter,
+        which includes ALL code from session (via _load_all_session_code).
+        This method only provides high-level agent activity summary.
+        """
         if not steps:
-            return "\n".join(context_parts) if context_parts else ""
+            return ""
 
+        context_parts = []
         context_parts.append("=== Previous Agent Activity ===\n")
 
         # Include recent steps (last 3)
@@ -367,10 +460,10 @@ class ToolExecutor:
             context_parts.append(f"Step {step.step_num}:")
             context_parts.append(f"  Thought: {step.thought}")
             context_parts.append(f"  Action: {step.action}")
-            context_parts.append(f"  Result: {step.observation}")
+            context_parts.append(f"  Result: {step.observation[:200]}...")  # Truncate long observations
 
             if "error" in step.observation.lower() or "failed" in step.observation.lower():
-                context_parts.append(f"  ⚠ Note: This action encountered errors")
+                context_parts.append(f"  Status: FAILED")
 
             context_parts.append("")
 
@@ -383,8 +476,6 @@ class ToolExecutor:
         context_parts.append("- Avoid repeating failed approaches")
         context_parts.append("- Build upon partial results from previous steps")
         context_parts.append("- Generate more targeted code based on what's already known")
-        if code_history:
-            context_parts.append("- Reference the previous code versions shown above")
 
         return "\n".join(context_parts)
 
@@ -479,10 +570,10 @@ User Query:
 {user_query}
 
 Latest Observation:
-{observation[:]}
+{observation}
 
 Previous Steps Context:
-{steps_context[:]}
+{steps_context}
 
 Question: Does the observation contain enough information to FULLY and ACCURATELY answer the user's query?
 

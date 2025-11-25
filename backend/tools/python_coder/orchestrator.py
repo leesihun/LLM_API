@@ -464,63 +464,6 @@ class PythonCoderTool:
         except Exception as e:
             logger.warning(f"[PythonCoderTool] Failed to save stage code: {e}")
 
-    def get_previous_code_history(
-        self,
-        session_id: Optional[str],
-        max_versions: int = 3
-    ) -> List[Dict[str, str]]:
-        """
-        Load previous code versions from session directory.
-
-        Args:
-            session_id: Session ID for directory path
-            max_versions: Maximum number of previous versions to return
-
-        Returns:
-            List of dicts with keys: stage_name, code, timestamp
-        """
-        if not session_id:
-            return []
-
-        try:
-            execution_dir = Path(settings.python_code_execution_dir) / session_id
-            if not execution_dir.exists():
-                return []
-
-            # Find all script_*.py files (excluding main script.py)
-            script_files = list(execution_dir.glob("script_*.py"))
-            if not script_files:
-                return []
-
-            # Sort by modification time (most recent first)
-            script_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
-            # Load up to max_versions files
-            code_history = []
-            for script_path in script_files[:max_versions]:
-                try:
-                    code = script_path.read_text(encoding='utf-8')
-                    stage_name = script_path.stem.replace('script_', '')  # Extract stage name
-                    timestamp = script_path.stat().st_mtime
-
-                    code_history.append({
-                        "stage_name": stage_name,
-                        "code": code,
-                        "timestamp": timestamp,
-                        "filename": script_path.name
-                    })
-                except Exception as e:
-                    logger.warning(f"[PythonCoderTool] Failed to read {script_path.name}: {e}")
-
-            if code_history:
-                logger.info(f"[PythonCoderTool] Loaded {len(code_history)} previous code version(s)")
-
-            return code_history
-
-        except Exception as e:
-            logger.warning(f"[PythonCoderTool] Failed to load code history: {e}")
-            return []
-
     def get_saved_file_context(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """
         Load previously saved file context from session directory.

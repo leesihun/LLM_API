@@ -44,15 +44,15 @@ RULES:
 2. Remove unnecessary words (the, a, an, is, are, about, for)
 3. Use 3-10 specific, concrete keywords
 4. Include important entities (names, places, products, dates)
-5. Add current date/year if query asks for "latest", "recent", "current", "new"
+5. ALWAYS add current year ({year}) and month ({month}) when query contains ANY of these words: "latest", "recent", "current", "new", "today", "now", "updated", "breaking", "this week", "this month", "this year"
 6. Keep proper nouns and technical terms
 7. Use keywords that a search engine would match against
-8. Unless specified otherwise, use the current date/year in the output
+8. For temporal queries, ALWAYS include the full date context: {month} {year}
 
-EXAMPLES:
+EXAMPLES (Notice how temporal queries ALWAYS get year and month):
 
 Input: "what is the latest news about artificial intelligence"
-Output: AI artificial intelligence latest news November 2025
+Output: artificial intelligence latest news {month} {year}
 
 Input: "how does machine learning work"
 Output: machine learning explanation tutorial how it works
@@ -67,10 +67,16 @@ Input: "what's the weather like tomorrow"
 Output: weather forecast tomorrow {current_date}
 
 Input: "best restaurants near me"
-Output: best restaurants {location_example} 2025
+Output: best restaurants {location_example} {year}
 
 Input: "Python vs JavaScript which is better"
-Output: Python vs JavaScript comparison pros cons 2025
+Output: Python vs JavaScript comparison pros cons {year}
+
+Input: "current trends in software development"
+Output: software development trends current {month} {year}
+
+Input: "recent breakthroughs in quantum computing"
+Output: quantum computing breakthroughs recent {month} {year}
 
 Now optimize this query:
 
@@ -113,6 +119,22 @@ def get_search_answer_generation_system_prompt(
 CURRENT CONTEXT:
 {context_section}
 
+⚠️ CRITICAL TEMPORAL OVERRIDE - READ CAREFULLY:
+- Your training data is OUTDATED (knowledge cutoff: 2023 or earlier)
+- The search results below contain CURRENT information from {year}
+- When answering temporal queries ("latest", "recent", "current", "new", "today"):
+  * COMPLETELY IGNORE your training knowledge
+  * Use ONLY information from the search results
+  * TRUST THE SEARCH RESULTS over your internal knowledge
+- If search results conflict with what you were trained on, the search results are CORRECT
+- All dates mentioned in your answer MUST align with the current date: {current_date}
+
+STRICT PROHIBITIONS:
+❌ DO NOT use information from your pre-2024 training data when user asks for current/latest information
+❌ DO NOT mention dates before 2024 unless EXPLICITLY stated in the search results
+❌ DO NOT fill gaps with outdated training knowledge - only use the search results
+❌ DO NOT assume your training data is accurate for current events
+
 Your task is to:
 1. Read the provided search results carefully
 2. Synthesize information from multiple sources
@@ -153,4 +175,14 @@ def get_search_answer_generation_user_prompt(
 Search Results:
 {search_context}
 
-Based on these search results and the context provided above (current date/time{location_text}), please provide a comprehensive answer to the question. Remember to cite sources using "Source 1", "Source 2", etc."""
+MANDATORY PRE-ANSWER VERIFICATION CHECKLIST:
+Before generating your answer, verify each of these points:
+✓ 1. Am I citing ONLY the search results, NOT my training data?
+✓ 2. Do all dates in my answer align with the current date context provided?
+✓ 3. If the query asks for "latest" or "current" information, am I providing 2024-2025 information?
+✓ 4. Have I avoided using ANY information from before 2024 unless it's explicitly in the search results?
+✓ 5. Am I citing sources ("Source 1", "Source 2") for all factual claims?
+
+Based on these search results and the context provided above (current date/time{location_text}), please provide a comprehensive answer to the question.
+
+IMPORTANT: If the search results don't contain current information but your training data does, explicitly state: "The search results don't contain current information. Based on the sources provided [cite sources], the most recent available information is from [date]." Do NOT supplement with your outdated training knowledge."""

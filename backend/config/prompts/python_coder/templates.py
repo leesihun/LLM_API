@@ -125,75 +125,118 @@ def get_plan_section(plan_context: Dict[str, Any]) -> str:
 
 def get_react_section(react_context: Dict[str, Any]) -> str:
     """
-    Format ReAct iteration history with failed attempts.
+    Format ReAct iteration history with ALL code attempts (current + session-wide).
+
+    NEW BEHAVIOR: Shows complete code execution history including:
+    - All attempts from current ReAct execution (with multiple retries per step)
+    - All code from previous executions in the same session
 
     Args:
-        react_context: Dict with 'iteration', 'history' containing failed attempts
+        react_context: Dict with 'iteration', 'history', and 'session_code_history'
 
     Returns:
-        Formatted ReAct section
+        Formatted ReAct section with complete code history
     """
-    if not react_context or 'history' not in react_context:
+    if not react_context:
+        return ""
+
+    has_current_history = react_context.get('history')
+    has_session_history = react_context.get('session_code_history')
+
+    if not has_current_history and not has_session_history:
         return ""
 
     lines = [
         "="*80,
-        "REACTS".center(80),
+        "REACTS (CODE EXECUTION HISTORY)".center(80),
         "="*80,
-        "",
-        "[ReAct Iteration History]",
         ""
     ]
 
-    current_iteration = react_context.get('iteration', 1)
-
-    for idx, iteration in enumerate(react_context['history'], 1):
-        lines.append(f"=== Iteration {idx} ===")
-
-        # Thought
-        if 'thought' in iteration:
-            lines.append(f"Thought: {iteration['thought']}")
-
-        # Action
-        if 'action' in iteration:
-            lines.append(f"Action: {iteration['action']}")
-
-        # Tool Input
-        if 'tool_input' in iteration:
-            lines.append(f"Tool Input: {iteration['tool_input']}")
-
-        # Generated Code (if failed)
-        if 'code' in iteration:
-            lines.append("")
-            lines.append("Generated Code:")
-            lines.append("```python")
-            # Show first 30 lines of code
-            code_lines = iteration['code'].split('\n')
-            for line in code_lines[:30]:
-                lines.append(line)
-            if len(code_lines) > 30:
-                lines.append(f"... [{len(code_lines) - 30} more lines]")
-            lines.append("```")
-
-        # Observation (error/result)
-        if 'observation' in iteration:
-            obs = iteration['observation']
-            lines.append("")
-            if iteration.get('status') == 'error':
-                lines.append(f"Observation: [ERROR] {obs}")
-
-                # Add error reason if available
-                if 'error_reason' in iteration:
-                    lines.append(f"Error Reason: {iteration['error_reason']}")
-            else:
-                lines.append(f"Observation: {obs}")
-
+    # Section 1: Current ReAct Iteration History
+    if has_current_history:
+        lines.append("[CURRENT REACT EXECUTION]")
         lines.append("")
 
-    # Current iteration marker
-    lines.append(f"=== Iteration {current_iteration} (CURRENT) ===")
-    lines.append("Awaiting code generation...")
-    lines.append("")
+        current_iteration = react_context.get('iteration', 1)
+
+        for idx, iteration in enumerate(react_context['history'], 1):
+            lines.append(f"=== Iteration {idx} ===")
+
+            # Thought
+            if 'thought' in iteration:
+                lines.append(f"Thought: {iteration['thought']}")
+
+            # Action
+            if 'action' in iteration:
+                lines.append(f"Action: {iteration['action']}")
+
+            # Tool Input
+            if 'tool_input' in iteration:
+                lines.append(f"Tool Input: {iteration['tool_input']}")
+
+            # Generated Code - handle both single code and multiple attempts
+            if 'code_attempts' in iteration:
+                # Multiple attempts for this step
+                lines.append("")
+                lines.append(f"Code Attempts ({len(iteration['code_attempts'])} total):")
+                for attempt in iteration['code_attempts']:
+                    attempt_num = attempt.get('attempt_num', '?')
+                    filename = attempt.get('filename', 'unknown')
+                    lines.append(f"\n--- Attempt {attempt_num} ({filename}) ---")
+                    lines.append("```python")
+                    code_lines = attempt['code'].split('\n')
+                    for line in code_lines:
+                        lines.append(line)
+                    lines.append("```")
+            elif 'code' in iteration:
+                # Single code version
+                lines.append("")
+                lines.append("Generated Code:")
+                lines.append("```python")
+                code_lines = iteration['code'].split('\n')
+                for line in code_lines:
+                    lines.append(line)
+                lines.append("```")
+
+            # Observation (error/result)
+            if 'observation' in iteration:
+                obs = iteration['observation']
+                lines.append("")
+                if iteration.get('status') == 'error':
+                    lines.append(f"Observation: [ERROR] {obs}")
+
+                    # Add error reason if available
+                    if 'error_reason' in iteration:
+                        lines.append(f"Error Reason: {iteration['error_reason']}")
+                else:
+                    lines.append(f"Observation: {obs}")
+
+            lines.append("")
+
+        # Current iteration marker
+        lines.append(f"=== Iteration {current_iteration} (CURRENT) ===")
+        lines.append("Awaiting code generation...")
+        lines.append("")
+
+    # Section 2: Session-Wide Code History
+    if has_session_history:
+        lines.append("")
+        lines.append("[PREVIOUS SESSION CODE HISTORY]")
+        lines.append(f"({len(react_context['session_code_history'])} code file(s) from this session)")
+        lines.append("")
+
+        for idx, code_entry in enumerate(react_context['session_code_history'], 1):
+            filename = code_entry.get('filename', 'unknown')
+            stage_name = code_entry.get('stage_name', 'unknown')
+
+            lines.append(f"--- Code {idx}: {filename} (stage: {stage_name}) ---")
+            lines.append("```python")
+            code_lines = code_entry['code'].split('\n')
+            for line in code_lines:
+                lines.append(line)
+            lines.append("```")
+            lines.append("")
 
     lines.extend([
         "="*80,
@@ -238,12 +281,8 @@ def get_conversation_history_section(conversation_history: List[Dict]) -> str:
         if timestamp:
             lines.append(f"Time: {timestamp}")
 
-        # Truncate very long content
-        if len(content) > 500:
-            lines.append(f"{content[:500]}...")
-            lines.append(f"[Content truncated - {len(content)} chars total]")
-        else:
-            lines.append(content)
+        # Show ALL content - no truncation
+        lines.append(content)
 
         lines.append("")
 

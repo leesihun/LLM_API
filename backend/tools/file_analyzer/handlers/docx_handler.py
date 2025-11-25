@@ -173,7 +173,7 @@ class DOCXHandler(BaseFileHandler):
             if para.style.name.startswith('Heading'):
                 headings.append({
                     "level": para.style.name,
-                    "text": para.text[:100]  # Truncate long headings
+                    "text": para.text  # Show full heading text
                 })
 
         return headings

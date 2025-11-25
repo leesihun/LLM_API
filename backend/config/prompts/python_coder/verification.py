@@ -211,7 +211,7 @@ Generated Code:
 
 Execution Output:
 ```
-{output[:200000]}  # First 2000 chars
+{output[:]}
 ```
 
 [CHECK] EVALUATION CRITERIA:

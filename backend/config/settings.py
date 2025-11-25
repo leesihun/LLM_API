@@ -83,7 +83,7 @@ class Settings(BaseSettings):
 
     agentic_classifier_model: str = 'qwen3:8b'
     ollama_coder_model: str = 'qwen3:8b'
-    ollama_coder_model_temperature: float = 0.1
+    ollama_coder_model_temperature: float = 1.0
 
     # Available tools
     available_tools: list[str] = ['web_search', 'rag', 'python_coder']
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     python_code_timeout: int = 3000
     python_code_max_memory: int = 5120
     python_code_execution_dir: str = './data/scratch'
-    python_code_max_iterations: int = 5
+    python_code_max_iterations: int = 3
     python_code_allow_partial_execution: bool = False
     python_code_max_file_size: int = 500
     python_code_use_persistent_repl: bool = True

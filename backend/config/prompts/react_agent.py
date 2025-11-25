@@ -39,10 +39,6 @@ ACTION INPUT: [The input for the selected action]
 Available Actions:
 
 1. web_search - Search the web for current information
-   - Use 3-10 specific keywords
-   - Include names, dates, places, products
-   - Examples: "latest AI developments 2025", "Python vs JavaScript performance"
-   - Avoid single words or vague queries
 
 2. rag_retrieval - Retrieve relevant documents from uploaded files
 
@@ -110,7 +106,7 @@ Step Goal: {plan_step_goal}
 Success Criteria: {success_criteria}
 
 Tool Used: {tool_used}
-Observation: {observation[:1000]}
+Observation: {observation[:100000]}
 
 Based on the observation, was the step goal achieved according to the success criteria?
 Answer with "YES" or "NO" and brief reasoning:"""

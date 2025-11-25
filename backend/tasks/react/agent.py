@@ -6,7 +6,6 @@ from .planning import PlanExecutor
 from backend.models.schemas import ChatMessage, PlanStep
 from backend.utils.llm_factory import LLMFactory
 from backend.utils.logging_utils import get_logger
-from backend.tools.file_analyzer import file_analyzer
 
 logger = get_logger(__name__)
 
@@ -80,11 +79,16 @@ class ReActAgent:
         self.steps = []
         iteration = 0
         final_answer = ""
-        
-        # Pre-step: Analyze files if attached
-        if self.file_paths:
-            await self._analyze_files_pre_step(user_query)  
-            # Generated file summary, with access patterns...
+
+        # NOTE: File analysis pre-step REMOVED!
+        # Reason: python_coder tool already performs comprehensive file analysis
+        # during its _prepare_files() phase, including metadata extraction and
+        # context building. This avoids:
+        # - Duplicate file analysis work
+        # - File path mismatches (temp files vs scratch directory files)
+        # - Extra LLM calls
+        # The python_coder will analyze files from scratch directory where they're
+        # actually used, ensuring consistency.
 
         # ReAct loop
         while iteration < self.max_iterations:
@@ -233,46 +237,6 @@ class ReActAgent:
                 logger.info(f"[ReActAgent] Loaded {len(var_metadata)} saved variables")
         except Exception as exc:
             logger.warning(f"[ReActAgent] Failed to load variables: {exc}")
-
-    async def _analyze_files_pre_step(self, user_query: str) -> None:
-        """
-        Pre-step: Analyze file metadata before starting ReAct loop.
-
-        Args:
-            user_query: User's query for context
-        """
-        logger.subsection("PRE-STEP: File Analysis")
-        try:
-            analyzer_result = file_analyzer.analyze(
-                file_paths=self.file_paths,
-                user_query=user_query
-            )
-
-            pre_step = ReActStep(0)
-            pre_step.thought = "Files attached; analyzing file metadata and structure first."
-            pre_step.action = ToolName.FILE_ANALYZER
-            pre_step.action_input = user_query
-
-            if analyzer_result.get("success"):
-                obs_parts = [f"File analysis completed:\n{analyzer_result.get('summary','')}"]
-
-                # Add structure details
-                for file_result in analyzer_result.get("results", []):
-                    if file_result.get("structure_summary"):
-                        obs_parts.append(f"\nDetailed structure for {file_result.get('file', 'file')}:")
-                        obs_parts.append(file_result["structure_summary"])
-
-                obs = "\n".join(obs_parts)
-                logger.success(f"File analysis completed", f"{analyzer_result.get('files_analyzed', 0)} files")
-            else:
-                obs = f"File analysis failed: {analyzer_result.get('error','Unknown error')}"
-                logger.failure("File analysis failed", analyzer_result.get('error','Unknown error'))
-
-            pre_step.observation = obs
-            self.steps.append(pre_step)
-
-        except Exception as e:
-            logger.warning(f"Pre-step file analysis error: {e}; continuing")
 
     def _build_metadata(self) -> Dict[str, Any]:
         """Build execution metadata dictionary."""

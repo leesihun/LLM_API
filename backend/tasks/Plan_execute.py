@@ -264,7 +264,7 @@ class PlanExecuteTask:
                 "success": result.success,
                 "tool_used": result.tool_used,
                 "attempts": result.attempts,
-                "observation": result.observation[:500] if result.observation else "",  # Truncate for metadata
+                "observation": result.observation if result.observation else "",  # Show full observation
                 "error": result.error
             }
             for result in step_results

@@ -171,9 +171,8 @@ class WebSearchTool(BaseTool):
                 output += f"{i}. {result.title}\n"
                 output += f"   {result.url}\n"
                 if result.content:
-                    # Truncate content for readability
-                    content = result.content[:200] + "..." if len(result.content) > 200 else result.content
-                    output += f"   {content}\n"
+                    # Show full content
+                    output += f"   {result.content}\n"
                 output += "\n"
         else:
             output = "No results found for the query."
@@ -193,7 +192,7 @@ class WebSearchTool(BaseTool):
                 {
                     "title": r.title,
                     "url": r.url,
-                    "content": r.content[:300] if r.content else "",
+                    "content": r.content if r.content else "",
                     "score": r.score
                 }
                 for r in results

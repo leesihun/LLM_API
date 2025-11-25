@@ -211,9 +211,8 @@ class LLMResponseError(LLMAPIException):
         self.response = response
         details = details or {}
         if response:
-            # Truncate response for logging
-            truncated = response[:500] + "..." if len(response) > 500 else response
-            details["response_preview"] = truncated
+            # Show full response
+            details["response_preview"] = response
 
         super().__init__(message, details, error_code or "LLM_RESPONSE_ERROR")
 
@@ -298,11 +297,11 @@ class CodeExecutionError(ToolExecutionError):
         """
         details = details or {}
         if code:
-            truncated = code[:500] + "..." if len(code) > 500 else code
-            details["code_preview"] = truncated
+            # Show full code
+            details["code_preview"] = code
         if stderr:
-            truncated_stderr = stderr[:500] + "..." if len(stderr) > 500 else stderr
-            details["stderr"] = truncated_stderr
+            # Show full stderr
+            details["stderr"] = stderr
 
         super().__init__(
             message,

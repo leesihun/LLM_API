@@ -260,19 +260,33 @@ class WebSearchTool:
         query_lower = query.lower()
         enhanced_parts = [query]
 
-        # Temporal and location keywords
-        temporal_keywords = ["today", "now", "current", "latest", "recent", "this week", "this month", "this year", "updated", "new", "breaking"]
+        # Temporal and location keywords (expanded list)
+        temporal_keywords = [
+            "today", "now", "current", "latest", "recent",
+            "this week", "this month", "this year",
+            "updated", "new", "breaking", "nowadays",
+            "currently", "modern", "contemporary", "2025", "2024"
+        ]
         location_keywords = ["near me", "nearby", "local", "in my area", "around here", "weather", "restaurants", "stores", "events"]
 
         has_temporal_intent = any(keyword in query_lower for keyword in temporal_keywords)
         has_location_intent = any(keyword in query_lower for keyword in location_keywords)
 
-        # Enhance with temporal context if relevant
+        # AGGRESSIVE temporal enhancement - always add month and year for temporal queries
         if has_temporal_intent:
-            # Avoid adding date if already present
-            if not any(context["year"] in query for context in [context]):
-                enhanced_parts.append(context['current_date'])
-                logger.info(f"[WebSearchTool] Added temporal context: {context['current_date']}")
+            # FORCE add current month and year, even if year already present
+            # This helps override LLM's outdated knowledge
+            temporal_suffix = f"{context['month']} {context['year']}"
+
+            # Check if we already have year in the enhanced parts
+            if context['year'] not in " ".join(enhanced_parts):
+                enhanced_parts.append(temporal_suffix)
+                logger.info(f"[WebSearchTool] FORCED temporal context: {temporal_suffix}")
+            else:
+                # Even if year exists, ensure month is also there
+                if context['month'] not in " ".join(enhanced_parts):
+                    enhanced_parts.append(context['month'])
+                    logger.info(f"[WebSearchTool] Added month for temporal precision: {context['month']}")
 
         # Enhance with location context if relevant and provided
         if has_location_intent and user_location:
