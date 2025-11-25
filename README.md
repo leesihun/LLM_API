@@ -168,6 +168,134 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 1.9.0 (November 25, 2025)
+
+**Enhancement: Prompt System Overhaul**
+
+Major restructuring of the prompt system to improve output quality, reduce token usage, and establish maintainable architecture.
+
+**Key Changes:**
+
+1. **New Base Utilities** (`backend/config/prompts/base.py`)
+   - Standardized ASCII markers: `[OK]`, `[X]`, `[!!!]`, `[WARNING]`
+   - `get_current_time_context()` - Temporal awareness for all prompts
+   - `section_border()` - Consistent visual separators
+   - Reusable rule blocks: `FILENAME_RULES`, `NO_ARGS_RULES`, `JSON_SAFETY_RULES`
+
+2. **Token Optimization**
+   - `plan_execute.py`: Reduced from 242 to ~130 lines (~45% reduction)
+   - `task_classification.py`: Removed 60 lines of commented examples
+   - `python_coder/*.py`: Consolidated duplicate rules across files
+
+3. **Temporal Awareness**
+   - All relevant prompts now include current time context
+   - Format: `Current Time: {date} ({day_of_week}) {time} {timezone}`
+   - Helps LLM understand time-sensitive queries
+
+4. **Expanded File Analyzer** (`backend/config/prompts/file_analyzer.py`)
+   - New specialized prompts:
+     - `get_json_analysis_prompt()` - JSON structure analysis
+     - `get_csv_analysis_prompt()` - CSV column/type analysis
+     - `get_excel_analysis_prompt()` - Multi-sheet Excel analysis
+     - `get_structure_comparison_prompt()` - Compare two files
+     - `get_anomaly_detection_prompt()` - Data quality issues
+
+5. **Improved Plan Context Passing** (`backend/tasks/react/planning.py`)
+   - Changed generic "Instructions" to structured "Execution Guidance"
+   - Now includes both approach and success criteria
+   - Better context for tool execution
+
+6. **Enhanced Plan Section** (`backend/config/prompts/python_coder/templates.py`)
+   - Clearer step relationships with status markers
+   - Data flow visualization from previous steps
+   - Truncated summaries for token efficiency
+
+**Modified Files:**
+- `backend/config/prompts/base.py` (new)
+- `backend/config/prompts/__init__.py`
+- `backend/config/prompts/task_classification.py`
+- `backend/config/prompts/plan_execute.py`
+- `backend/config/prompts/file_analyzer.py`
+- `backend/config/prompts/python_coder/*.py`
+- `backend/tasks/react/planning.py`
+
+**Benefits:**
+- ~25-35% average token reduction across prompts
+- Consistent structure and formatting
+- Better temporal awareness for time-sensitive queries
+- Improved code generation context
+- More specialized file analysis capabilities
+
+---
+
+### Version 1.8.0 (November 25, 2025)
+
+**Enhancement: Structured LLM Prompt Logging**
+
+Completely redesigned the `LLMInterceptor` class for much more readable and structured prompt/response logging.
+
+**Key Changes:**
+
+1. **Three Log Formats**
+   - `STRUCTURED` (default): Human-readable with clear visual sections, box-drawing characters, and hierarchical layout
+   - `JSON`: JSON Lines format for programmatic parsing and analysis
+   - `COMPACT`: Minimal single-line format for quick scanning
+
+2. **Request/Response Pairing**
+   - Each request now gets a unique `call_id` (UUID)
+   - Responses are linked to their originating requests via the same `call_id`
+   - Makes it easy to trace conversation flow
+
+3. **Enhanced Metadata**
+   - Token estimation for tracking approximate usage
+   - Duration tracking (in ms) for performance analysis
+   - Clear role labels (SYSTEM, HUMAN, ASSISTANT, etc.)
+
+4. **Improved Visual Structure**
+   - Box-drawing header with log metadata
+   - Clear visual separation between requests (📤) and responses (📥)
+   - Content properly indented and wrapped for readability
+   - No more repetitive `====` lines cluttering the log
+
+5. **Streaming Response Logging**
+   - Stream methods now aggregate chunks and log the complete response after streaming completes
+   - Previously, streaming responses were not logged at all
+
+**New Classes:**
+- `LogFormat` - Enum for output format selection
+- `LogMessage` - Dataclass for structured message representation
+- `LogEntry` - Dataclass for complete log entries with metadata
+
+**Factory Method Updates:**
+- `create_llm()`, `create_classifier_llm()`, `create_coder_llm()` now accept:
+  - `log_format: LogFormat` - Select output format
+  - `log_file: Path` - Custom log file path
+
+**Example Structured Output:**
+```
+════════════════════════════════════════════════════════════════════════════════
+  📤 REQUEST   │  ID: a1b2c3d4  │  2025-11-25 14:30:45.123
+────────────────────────────────────────────────────────────────────────────────
+  Model: qwen3:8b                        User: admin
+  Tokens: ~125                           Duration: 
+────────────────────────────────────────────────────────────────────────────────
+
+  [SYSTEM]
+  ········································
+    You are a helpful assistant.
+
+  [HUMAN]
+  ········································
+    What is the capital of France?
+
+════════════════════════════════════════════════════════════════════════════════
+```
+
+**Modified Files:**
+- `backend/utils/llm_factory.py` - Complete rewrite of `LLMInterceptor` class (v1.0.0 → v1.1.0)
+
+---
+
 ### Version 1.7.5 (November 24, 2025)
 
 **Refactor: Prompt registry cleanup**
@@ -665,6 +793,6 @@ jupyter notebook API_examples.ipynb
 
 ---
 
-**Last Updated**: November 24, 2025
-**Version**: 1.7.5
+**Last Updated**: November 25, 2025
+**Version**: 1.9.0
 

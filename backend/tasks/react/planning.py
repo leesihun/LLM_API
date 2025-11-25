@@ -379,7 +379,7 @@ class PlanExecutor:
         user_query: str,
         context: str
     ) -> str:
-        """Build action input directly from plan step."""
+        """Build action input directly from plan step with structured guidance."""
         parts = []
 
         # Add original user query
@@ -388,9 +388,13 @@ class PlanExecutor:
         # Add step goal
         parts.append(f"\nTask for this step: {plan_step.goal}")
 
-        # Add step-specific context
-        if plan_step.context:
-            parts.append(f"\nInstructions: {plan_step.context}")
+        # Add structured execution guidance
+        if plan_step.context or plan_step.success_criteria:
+            parts.append("\nExecution Guidance:")
+            if plan_step.context:
+                parts.append(f"  - Approach: {plan_step.context}")
+            if plan_step.success_criteria:
+                parts.append(f"  - Success Criteria: {plan_step.success_criteria}")
 
         # Add context from previous steps
         if context and context.strip() != "This is the first step.":

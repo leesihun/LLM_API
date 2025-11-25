@@ -6,10 +6,22 @@ This module provides a centralized PromptRegistry for accessing all prompts with
 - Caching for performance
 - Easy access pattern: PromptRegistry.get('prompt_name', **kwargs)
 - Enhanced registry with parameter introspection
+- Standardized structure via base.py utilities
 """
 
 # Import the enhanced registry
 from .registry import PromptRegistry, PromptRegistryMeta
+
+# Import base utilities
+from .base import (
+    get_current_time_context,
+    get_time_context_dict,
+    section_border,
+    MARKER_OK,
+    MARKER_ERROR,
+    MARKER_CRITICAL,
+    MARKER_WARNING
+)
 
 # Import all prompt functions
 from .task_classification import get_agent_type_classifier_prompt
@@ -37,7 +49,14 @@ from .web_search import (
 from .plan_execute import (
     get_execution_plan_prompt
 )
-from .file_analyzer import get_deep_analysis_prompt
+from .file_analyzer import (
+    get_deep_analysis_prompt,
+    get_json_analysis_prompt,
+    get_csv_analysis_prompt,
+    get_excel_analysis_prompt,
+    get_structure_comparison_prompt,
+    get_anomaly_detection_prompt
+)
 
 
 # Register all prompts in the enhanced registry
@@ -73,6 +92,11 @@ def _register_all_prompts():
 
     # File Analyzer prompts
     PromptRegistry.register('file_analyzer_deep_analysis', get_deep_analysis_prompt)
+    PromptRegistry.register('file_analyzer_json', get_json_analysis_prompt)
+    PromptRegistry.register('file_analyzer_csv', get_csv_analysis_prompt)
+    PromptRegistry.register('file_analyzer_excel', get_excel_analysis_prompt)
+    PromptRegistry.register('file_analyzer_comparison', get_structure_comparison_prompt)
+    PromptRegistry.register('file_analyzer_anomaly', get_anomaly_detection_prompt)
 
 
 # Auto-register all prompts on module import
@@ -83,6 +107,15 @@ __all__ = [
     # Main Registry
     'PromptRegistry',
     'PromptRegistryMeta',
+
+    # Base utilities
+    'get_current_time_context',
+    'get_time_context_dict',
+    'section_border',
+    'MARKER_OK',
+    'MARKER_ERROR',
+    'MARKER_CRITICAL',
+    'MARKER_WARNING',
 
     # Task Classification
     'get_agent_type_classifier_prompt',
@@ -113,4 +146,9 @@ __all__ = [
 
     # File Analyzer
     'get_deep_analysis_prompt',
+    'get_json_analysis_prompt',
+    'get_csv_analysis_prompt',
+    'get_excel_analysis_prompt',
+    'get_structure_comparison_prompt',
+    'get_anomaly_detection_prompt',
 ]
