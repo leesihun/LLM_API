@@ -168,6 +168,33 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 2.0.1 (November 26, 2025)
+
+**Bugfix: Temp File Cleanup in Uploads Folder**
+
+Fixed an issue where temporary files in `uploads/{user_id}` were never deleted after being copied to the scratch folder for execution.
+
+**Problem:**
+When files were uploaded via `/v1/chat/completions`, they were:
+1. Saved as `temp_{id}_{filename}` in `uploads/{user_id}/`
+2. Copied to `data/scratch/{session_id}/` for code execution
+3. **Never deleted** from the uploads folder if any exception occurred during agent execution
+
+The cleanup code was inside the `try` block, so any exception during chat/agent execution would skip the cleanup, leaving orphaned temp files.
+
+**Fix:**
+Moved the temp file cleanup to a `finally` block, ensuring files are always deleted regardless of success or failure.
+
+**Modified Files:**
+- `backend/api/routes/chat.py` - Moved `_cleanup_files()` call from `try` block to `finally` block
+
+**Impact:**
+- Temp files in `uploads/` folder are now properly cleaned up after processing
+- Reduces disk usage from accumulated orphan files
+- No functional change to file handling - files are still copied (not moved) to scratch
+
+---
+
 ### Version 2.0.0 (November 26, 2025)
 
 **Enhancement: Intelligent Retry System for Python Coder**
@@ -881,5 +908,5 @@ jupyter notebook API_examples.ipynb
 ---
 
 **Last Updated**: November 26, 2025
-**Version**: 2.0.0
+**Version**: 2.0.1
 

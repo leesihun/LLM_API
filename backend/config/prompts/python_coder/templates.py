@@ -147,8 +147,8 @@ def get_conversation_history_section(conversation_history: List[Dict]) -> str:
         content = turn.get('content', '')
         
         # Truncate long content
-        if len(content) > 500:
-            content = content[:500] + "..."
+        if len(content) > 5000000:
+            content = content[:5000000] + "..."
         
         role_label = "User" if role == 'user' else "AI"
         lines.append(f"[{role_label}]: {content}")

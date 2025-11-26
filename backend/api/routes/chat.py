@@ -336,7 +336,7 @@ async def chat_completions(
         else:
             raise ValueError(f"Unknown agent type: {classified_agent_type}")
 
-        # ====== PHASE 4: STORAGE & CLEANUP ======
+        # ====== PHASE 4: STORAGE ======
         # Save to conversation history
         _save_conversation(
             session_id, 
@@ -346,10 +346,6 @@ async def chat_completions(
             classified_agent_type, 
             agent_metadata
         )
-
-        # Cleanup temp files (only clean up newly uploaded files)
-        if new_files_uploaded:
-            _cleanup_files(file_paths)
 
         # Build OpenAI-compatible response
         return ChatCompletionResponse(
@@ -388,6 +384,13 @@ async def chat_completions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating response: {str(e)}"
         )
+
+    finally:
+        # ====== CLEANUP: Always delete temp files from uploads folder ======
+        # Files have been copied to scratch folder, so temp files in uploads are no longer needed
+        if new_files_uploaded:
+            _cleanup_files(file_paths)
+            logger.info(f"[Chat] Cleaned up {len(file_paths)} temp files from uploads folder")
 
 
 # Chat Management Endpoints
