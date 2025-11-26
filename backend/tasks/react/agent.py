@@ -138,7 +138,7 @@ class ReActAgent:
             )
 
             step.observation = observation
-            logger.multiline(observation, title="Observation", max_lines=300)
+            logger.multiline(observation, title="Observation", max_lines=5000000)
 
             # Store step
             self.steps.append(step)
