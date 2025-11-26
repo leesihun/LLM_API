@@ -31,9 +31,9 @@ class Settings(BaseSettings):
 
     # Ollama service endpoint
     ollama_host: str = 'http://127.0.0.1:11434'
-    ollama_model: str = 'gemma3:12b-it-q8_0'#'gpt-oss:20b'
-    agentic_classifier_model: str = 'gemma3:12b-it-q8_0'#'qwen3:8b'
-    ollama_coder_model: str = 'gemma3:12b-it-q8_0'#'gpt-oss:20b'
+    ollama_model: str = 'qwen3:8b-q8_0'#'gpt-oss:20b'
+    agentic_classifier_model: str = 'qwen3:8b-q8_0'#'qwen3:8b'
+    ollama_coder_model: str = 'qwen3:8b-q8_0'#'gpt-oss:20b'
     ollama_timeout: int = 3000000
     ollama_num_ctx: int = 16384
     # Sampling parameters - optimized for coherent responses
