@@ -201,9 +201,19 @@ while True:
                 print(stderr_val, file=old_stderr, end="", flush=True)
 
         except Exception as e:
+            # Capture namespace BEFORE signaling error (for debugging)
+            error_namespace = _extract_namespace_info(namespace)
+            
             # Signal error
             print("<<<EXEC_ERROR>>>", file=old_stdout, flush=True)
             traceback.print_exc(file=old_stdout)
+            
+            # Send namespace info even on error (helps LLM understand what went wrong)
+            if error_namespace:
+                print("<<<ERROR_NAMESPACE_START>>>", file=old_stdout, flush=True)
+                print(json.dumps(error_namespace), file=old_stdout, flush=True)
+                print("<<<ERROR_NAMESPACE_END>>>", file=old_stdout, flush=True)
+            
             print("<<<EXEC_END>>>", file=old_stdout, flush=True)
 
         finally:
@@ -320,6 +330,7 @@ while True:
         success = None
         namespace_info = {}
         in_namespace = False
+        in_error_namespace = False
         namespace_lines = []
 
         while time.time() - start_time < timeout:
@@ -334,14 +345,29 @@ while True:
                         success = False
                     elif "<<<NAMESPACE_START>>>" in line:
                         in_namespace = True
+                        in_error_namespace = False
                     elif "<<<NAMESPACE_END>>>" in line:
                         in_namespace = False
-                        # Parse namespace JSON
+                        # Parse namespace JSON (success case)
                         try:
                             namespace_json = "".join(namespace_lines)
                             namespace_info = json.loads(namespace_json)
                         except Exception as e:
                             logger.warning(f"[PersistentREPL] Failed to parse namespace: {e}")
+                        namespace_lines = []
+                    elif "<<<ERROR_NAMESPACE_START>>>" in line:
+                        # Namespace captured on error (for debugging)
+                        in_error_namespace = True
+                        in_namespace = False
+                    elif "<<<ERROR_NAMESPACE_END>>>" in line:
+                        in_error_namespace = False
+                        # Parse error namespace JSON
+                        try:
+                            namespace_json = "".join(namespace_lines)
+                            namespace_info = json.loads(namespace_json)
+                            logger.debug(f"[PersistentREPL] Captured error namespace: {len(namespace_info)} vars")
+                        except Exception as e:
+                            logger.warning(f"[PersistentREPL] Failed to parse error namespace: {e}")
                         namespace_lines = []
                     elif "<<<EXEC_END>>>" in line:
                         # Execution finished
@@ -362,7 +388,7 @@ while True:
                         }
                     else:
                         # Collect lines
-                        if in_namespace:
+                        if in_namespace or in_error_namespace:
                             namespace_lines.append(line)
                         else:
                             output_lines.append(line)

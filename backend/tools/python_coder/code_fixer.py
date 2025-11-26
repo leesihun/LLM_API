@@ -7,7 +7,7 @@ Automatic fixes have been moved to auto_fixer.py (separate pre-processor).
 Extracted from python_coder_tool.py for better modularity.
 """
 
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
 
 from langchain_core.messages import HumanMessage
 
@@ -23,6 +23,7 @@ class CodeFixer:
 
     Features:
     - LLM-based execution error fixing
+    - Runtime variable context for better debugging
 
     Note: Automatic fixes (filenames, imports, etc.) are handled by AutoFixer
     """
@@ -42,7 +43,8 @@ class CodeFixer:
         code: str,
         query: str,
         error_message: str,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        error_namespace: Optional[Dict[str, Any]] = None
     ) -> Tuple[str, List[str]]:
         """
         Fix code based on execution error.
@@ -52,16 +54,18 @@ class CodeFixer:
             query: Original user query
             error_message: Error from execution
             context: Optional additional context from agent execution history
+            error_namespace: Optional dict of variable states at error time (for debugging)
 
         Returns:
             Tuple of (fixed_code, list of changes made)
         """
-        # Use centralized prompt from prompts module
+        # Use centralized prompt from prompts module (now with error_namespace support)
         prompt = prompts.get_python_code_execution_fix_prompt(
             query=query,
             context=context,
             code=code,
-            error_message=error_message
+            error_message=error_message,
+            error_namespace=error_namespace
         )
 
         try:
@@ -76,6 +80,8 @@ class CodeFixer:
             fixed_code = fixed_code.strip()
 
             changes = [f"Fixed execution error: {error_message[:100]}"]
+            if error_namespace:
+                changes.append(f"Used debug context with {len(error_namespace)} captured variables")
             logger.info(f"[CodeFixer] Fixed code after execution error")
 
             return fixed_code, changes

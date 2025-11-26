@@ -34,7 +34,8 @@ from .verification import (
 # Import fixing functions
 from .fixing import (
     get_modification_prompt,
-    get_execution_fix_prompt
+    get_execution_fix_prompt,
+    get_retry_prompt_with_history
 )
 
 
@@ -115,10 +116,11 @@ def get_python_code_execution_fix_prompt(
     query: str,
     context: Optional[str],
     code: str,
-    error_message: str
+    error_message: str,
+    error_namespace: Optional[dict] = None
 ) -> str:
     """Prompt for fixing Python code after execution error."""
-    return get_execution_fix_prompt(query, context, code, error_message)
+    return get_execution_fix_prompt(query, context, code, error_message, error_namespace)
 
 
 def get_code_generation_with_self_verification_prompt(
@@ -195,4 +197,5 @@ __all__ = [
     # Fixing functions
     'get_modification_prompt',
     'get_execution_fix_prompt',
+    'get_retry_prompt_with_history',
 ]

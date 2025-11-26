@@ -168,6 +168,82 @@ The system can generate and execute Python code safely:
 
 ## Version History
 
+### Version 2.0.0 (November 26, 2025)
+
+**Enhancement: Intelligent Retry System for Python Coder**
+
+Major overhaul of the Python coder's error recovery mechanism to prevent the model from getting "stuck" on repeated errors. The system now learns from previous failed attempts and adapts its approach.
+
+**Problem Solved:**
+When code failed with errors like `IndexError: list index out of range`, the model would often repeat the same mistake because:
+- It didn't see its previous failed code
+- It didn't know what variables actually contained at failure time
+- Retry prompts were identical, producing identical wrong outputs
+
+**Key Changes:**
+
+1. **Full Attempt History Tracking** (`orchestrator.py`)
+   - `attempt_history` now stores: full code, error message, error type, and variable namespace
+   - Error classification with specific guidance for each error type
+   - New `_classify_error()` method categorizes 15+ error types with actionable guidance
+
+2. **Runtime Variable Capture on Error** (`repl_manager.py`)
+   - Namespace is now captured even when execution fails
+   - New `<<<ERROR_NAMESPACE_*>>>` markers for error-state variables
+   - LLM can see: "data: list (EMPTY - length=0)" - explaining WHY IndexError occurred
+
+3. **Enhanced Retry Prompts** (`fixing.py`)
+   - New `get_retry_prompt_with_history()` shows all previous failed attempts
+   - Escalating strategy: Attempt 2 suggests different approach, Attempt 3+ forces complete rethink
+   - `get_execution_fix_prompt()` now includes debug context section with variable states
+
+4. **Forced Different Approach on Repeated Errors** (`orchestrator.py`)
+   - Detects when same error type repeats (e.g., KeyError twice in a row)
+   - Skips incremental patching, forces full regeneration with "COMPLETELY RETHINK" prompt
+   - Prevents stuck loops where model keeps trying the same broken approach
+
+5. **Improved Error Context Building** (`orchestrator.py`)
+   - `_build_retry_context()` enhanced with attempt_history, force_different_approach flags
+   - `_format_namespace_for_prompt()` formats variable states for LLM consumption
+   - Clearly shows empty lists, dict keys, DataFrame shapes at failure point
+
+**Error Type Classifications:**
+- IndexError, KeyError, TypeError, NoneType, FileNotFound, JSONDecode
+- ValueError, AttributeError, NameError, ImportError, ZeroDivision
+- EncodingError, PermissionError, MemoryError, Timeout, RuntimeError
+
+**Example Improvement:**
+
+Before (stuck loop):
+```
+Attempt 1: data[0] → IndexError
+Attempt 2: data[0] → IndexError (same mistake)
+Attempt 3: data[0] → IndexError (still same)
+```
+
+After (learns from failures):
+```
+Attempt 1: data[0] → IndexError
+Attempt 2: (sees "data: list (EMPTY - length=0)") → adds len() check → still fails
+Attempt 3: (forced different approach) → uses data.get() pattern → SUCCESS
+```
+
+**Modified Files:**
+- `backend/tools/python_coder/orchestrator.py` - Major retry logic overhaul
+- `backend/tools/python_coder/executor/repl_manager.py` - Error namespace capture
+- `backend/config/prompts/python_coder/fixing.py` - New retry prompts with history
+- `backend/config/prompts/python_coder/__init__.py` - New exports
+- `backend/config/prompts/__init__.py` - Registry updates
+- `backend/tools/python_coder/code_fixer.py` - Error namespace parameter
+
+**Benefits:**
+- Dramatically reduced "stuck" scenarios where model repeats same error
+- Better error understanding through runtime variable inspection
+- Escalating retry strategies prevent repetitive failures
+- 15+ classified error types with specific fix guidance
+
+---
+
 ### Version 1.9.0 (November 25, 2025)
 
 **Enhancement: Prompt System Overhaul + Output File Handling**
@@ -804,6 +880,6 @@ jupyter notebook API_examples.ipynb
 
 ---
 
-**Last Updated**: November 25, 2025
-**Version**: 1.9.0
+**Last Updated**: November 26, 2025
+**Version**: 2.0.0
 

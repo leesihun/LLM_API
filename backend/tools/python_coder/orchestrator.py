@@ -218,21 +218,39 @@ class PythonCoderTool:
                 stage_name=stage_name
             )
 
+            # Classify error for better retry guidance
+            error_type = self._classify_error(execution_result.get("error", "")) if not execution_result["success"] else ("Success", "")
+            
             attempt_history.append({
                 "attempt": attempt + 1,
+                "code": code,  # Store full code for retry context
                 "self_verified": self_verified,
                 "issues_found": issues,
                 "execution_success": execution_result["success"],
                 "execution_error": execution_result.get("error"),
-                "execution_time": execution_result["execution_time"]
+                "error_type": error_type,  # Classified error type + guidance
+                "execution_time": execution_result["execution_time"],
+                "namespace": execution_result.get("namespace", {})  # Variable state at failure
             })
 
             # If execution failed, prepare for retry
             if not execution_result["success"]:
                 logger.error(f"[PythonCoderTool] [X] Execution failed: {execution_result.get('error', 'Unknown')[:100]}")
+                logger.info(f"[PythonCoderTool] Error type: {error_type[0]} - {error_type[1][:80]}")
+                
                 if attempt < self.max_retry_attempts - 1:
+                    # Check if same error type is repeating
+                    prev_error_types = [h.get("error_type", ("Unknown", ""))[0] for h in attempt_history[:-1]]  # Exclude current
+                    current_error_type = error_type[0]
+                    same_error_count = prev_error_types.count(current_error_type)
+                    force_different = same_error_count >= 1
+                    
+                    if force_different:
+                        logger.warning(f"[PythonCoderTool] Same error type '{current_error_type}' repeated {same_error_count + 1} times - forcing different approach")
+                    
                     # Use INCREMENTAL PATCHING for attempts 2+ (preserve working sections)
-                    if attempt > 0 and code:
+                    # BUT if same error keeps repeating, skip patching and do full regeneration
+                    if attempt > 0 and code and not force_different:
                         logger.info("[PythonCoderTool] Using INCREMENTAL patching (preserving working sections)...")
 
                         # Analyze error to identify failed section
@@ -256,9 +274,20 @@ class PythonCoderTool:
                         # Skip LLM code generation - go directly to execution with patched code
                         continue
                     else:
-                        # First attempt - use traditional retry with error feedback
-                        logger.info("[PythonCoderTool] First attempt failed - will retry with full regeneration...")
-                        context = self._build_retry_context(context, execution_result.get("error"), issues)
+                        # Full regeneration with attempt history context
+                        if force_different:
+                            logger.info("[PythonCoderTool] Forcing FULL REGENERATION with different approach...")
+                        else:
+                            logger.info("[PythonCoderTool] First attempt failed - will retry with full regeneration...")
+                        
+                        context = self._build_retry_context(
+                            original_context=context,
+                            error=execution_result.get("error"),
+                            suggestions=issues,
+                            attempt_history=attempt_history,
+                            force_different_approach=force_different,
+                            repeated_error_type=current_error_type if force_different else None
+                        )
                         continue
                 else:
                     logger.error(f"[PythonCoderTool] Max attempts ({self.max_retry_attempts}) reached")
@@ -313,7 +342,12 @@ class PythonCoderTool:
                 logger.warning(f"[PythonCoderTool] [WARNING] Output not adequate: {adequacy_reason}")
                 if attempt < self.max_retry_attempts - 1:
                     logger.info(f"[PythonCoderTool] Suggestion: {suggestion}")
-                    context = self._build_retry_context(context, None, [suggestion])
+                    context = self._build_retry_context(
+                        original_context=context,
+                        error=None,
+                        suggestions=[suggestion],
+                        attempt_history=attempt_history
+                    )
                     continue
                 else:
                     logger.warning(f"[PythonCoderTool] Max attempts reached, returning current result")
@@ -747,23 +781,190 @@ class PythonCoderTool:
             logger.error(f"[PythonCoderTool] Failed to check output adequacy: {e}")
             raise
 
+    def _classify_error(self, error_message: str) -> Tuple[str, str]:
+        """
+        Classify error and return (error_type, specific_guidance).
+        
+        This helps the LLM understand the nature of the error and provides
+        actionable guidance for fixing it.
+        
+        Args:
+            error_message: The error message from execution
+            
+        Returns:
+            Tuple of (error_type, guidance_text)
+        """
+        if not error_message:
+            return ("Unknown", "No error message provided.")
+            
+        error_lower = error_message.lower()
+        
+        if "indexerror" in error_lower or "list index out of range" in error_lower:
+            return ("IndexError", "Data structure is empty or smaller than expected. Check data loading first. Use len() to verify size before accessing indices.")
+        elif "keyerror" in error_lower:
+            return ("KeyError", "Dictionary key doesn't exist. Use .get('key', default) for safe access or print available keys first: print(data.keys())")
+        elif "typeerror" in error_lower and "nonetype" in error_lower:
+            return ("NoneType", "A variable is None when it shouldn't be. Check if data loading or a function call returned None.")
+        elif "typeerror" in error_lower:
+            return ("TypeError", "Wrong data type used. Check types with type() and convert if needed (str(), int(), list(), etc.)")
+        elif "filenotfounderror" in error_lower or "no such file" in error_lower:
+            return ("FileNotFound", "Check exact filename spelling and path. Use os.listdir('.') to see available files.")
+        elif "json" in error_lower and ("decode" in error_lower or "expecting" in error_lower):
+            return ("JSONDecode", "File is not valid JSON or has unexpected format. Check file content, encoding, or use try/except.")
+        elif "valueerror" in error_lower:
+            return ("ValueError", "Wrong value type or format. Check data types and content before operations.")
+        elif "attributeerror" in error_lower:
+            return ("AttributeError", "Object doesn't have this attribute/method. Check the object type and available methods.")
+        elif "nameerror" in error_lower:
+            return ("NameError", "Variable not defined. Check for typos or ensure variable is created before use.")
+        elif "importerror" in error_lower or "modulenotfounderror" in error_lower:
+            return ("ImportError", "Module not available. Check module name or use alternative approach.")
+        elif "zerodivisionerror" in error_lower:
+            return ("ZeroDivision", "Division by zero. Add check: if denominator != 0 before dividing.")
+        elif "unicodedecodeerror" in error_lower or "codec" in error_lower:
+            return ("EncodingError", "File encoding issue. Try: open(file, 'r', encoding='utf-8') or encoding='latin-1'")
+        elif "permissionerror" in error_lower:
+            return ("PermissionError", "No permission to access file. Check file path and permissions.")
+        elif "memoryerror" in error_lower:
+            return ("MemoryError", "Data too large. Process in chunks or use more efficient data structures.")
+        elif "timeout" in error_lower:
+            return ("Timeout", "Execution took too long. Optimize the algorithm or reduce data size.")
+        else:
+            return ("RuntimeError", "Unexpected error. Add print statements to debug intermediate values.")
+    
+    def _format_namespace_for_prompt(self, namespace: Dict[str, Any], max_items: int = 10) -> str:
+        """
+        Format namespace dict for inclusion in LLM prompt.
+        
+        Args:
+            namespace: Variable namespace from execution
+            max_items: Maximum number of variables to include
+            
+        Returns:
+            Formatted string showing variable states
+        """
+        if not namespace:
+            return "No variables captured."
+        
+        lines = []
+        for i, (name, info) in enumerate(namespace.items()):
+            if i >= max_items:
+                lines.append(f"  ... and {len(namespace) - max_items} more variables")
+                break
+                
+            var_type = info.get("type", "unknown")
+            
+            # Format based on type
+            if "shape" in info:
+                # DataFrame or ndarray
+                shape = info.get("shape", [])
+                if "columns" in info:
+                    cols = info.get("columns", [])[:5]
+                    cols_str = ", ".join(cols) + ("..." if len(info.get("columns", [])) > 5 else "")
+                    lines.append(f"  - {name}: {var_type} (shape={shape}, columns=[{cols_str}])")
+                else:
+                    lines.append(f"  - {name}: {var_type} (shape={shape})")
+            elif "length" in info:
+                # List
+                length = info.get("length", 0)
+                if length == 0:
+                    lines.append(f"  - {name}: {var_type} (EMPTY - length=0)")
+                else:
+                    lines.append(f"  - {name}: {var_type} (length={length})")
+            elif "keys" in info:
+                # Dict
+                keys = info.get("keys", [])[:5]
+                keys_str = ", ".join(f"'{k}'" for k in keys) + ("..." if len(info.get("keys", [])) > 5 else "")
+                lines.append(f"  - {name}: {var_type} (keys=[{keys_str}])")
+            elif "value" in info:
+                # Simple type
+                val = info.get("value", "")[:50]
+                lines.append(f"  - {name}: {var_type} = {val}")
+            else:
+                lines.append(f"  - {name}: {var_type}")
+        
+        return "\n".join(lines) if lines else "No variables captured."
+
     def _build_retry_context(
         self,
         original_context: Optional[str],
         error: Optional[str],
-        suggestions: List[str]
+        suggestions: List[str],
+        attempt_history: Optional[List[Dict]] = None,
+        force_different_approach: bool = False,
+        repeated_error_type: Optional[str] = None
     ) -> str:
-        """Build context for retry attempt with error/suggestion feedback."""
+        """
+        Build context for retry attempt with error/suggestion feedback.
+        
+        Enhanced to include previous attempt history and escalating guidance.
+        
+        Args:
+            original_context: Original context string
+            error: Current error message
+            suggestions: List of suggestions for improvement
+            attempt_history: List of previous failed attempts with code and errors
+            force_different_approach: If True, strongly encourage different approach
+            repeated_error_type: Error type that keeps repeating (if any)
+        """
         parts = []
 
         if original_context:
             parts.append(original_context)
 
+        # Add previous attempt history if available
+        if attempt_history and len(attempt_history) > 0:
+            parts.append("\n\n" + "="*60)
+            parts.append("PREVIOUS FAILED ATTEMPTS (DO NOT REPEAT THESE MISTAKES)")
+            parts.append("="*60)
+            
+            for prev in attempt_history:
+                attempt_num = prev.get("attempt", "?")
+                error_type = prev.get("error_type", ("Unknown", ""))[0]
+                error_msg = prev.get("error", "")[:500]
+                prev_code = prev.get("code", "")
+                namespace = prev.get("namespace", {})
+                
+                parts.append(f"\n--- Attempt {attempt_num} FAILED ---")
+                parts.append(f"Error Type: {error_type}")
+                parts.append(f"Error: {error_msg}")
+                
+                if prev_code:
+                    # Show first 800 chars of code to avoid token explosion
+                    code_preview = prev_code[:800]
+                    if len(prev_code) > 800:
+                        code_preview += "\n... (code truncated)"
+                    parts.append(f"Code that failed:\n```python\n{code_preview}\n```")
+                
+                if namespace:
+                    ns_formatted = self._format_namespace_for_prompt(namespace, max_items=5)
+                    parts.append(f"Variables at failure:\n{ns_formatted}")
+        
+        # Add current error
         if error:
-            parts.append(f"\n\nPrevious execution error:\n{error}")
-
+            parts.append(f"\n\nCurrent execution error:\n{error}")
+        
+        # Add suggestions
         if suggestions:
             parts.append(f"\n\nSuggestions for improvement:\n" + "\n".join(f"- {s}" for s in suggestions))
+        
+        # Add escalating guidance based on attempt count
+        if attempt_history:
+            attempt_count = len(attempt_history) + 1
+            
+            if force_different_approach or (repeated_error_type and attempt_count >= 2):
+                parts.append(f"\n\n{'!'*60}")
+                parts.append(f"CRITICAL: {repeated_error_type} error keeps repeating!")
+                parts.append("You MUST try a FUNDAMENTALLY DIFFERENT approach:")
+                parts.append("- If using pandas, try pure Python")
+                parts.append("- If accessing data one way, try a completely different access pattern")
+                parts.append("- Add debugging prints to understand the actual data structure")
+                parts.append("- Consider the data might be in a different format than expected")
+                parts.append("!"*60)
+            elif attempt_count == 2:
+                parts.append("\n\nNOTE: This is attempt 2. Try a DIFFERENT approach than before.")
+            elif attempt_count >= 3:
+                parts.append("\n\nWARNING: This is attempt 3+. Previous methods don't work. RETHINK the approach entirely.")
 
         return "\n".join(parts)
 

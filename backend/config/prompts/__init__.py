@@ -39,7 +39,8 @@ from .python_coder import (
     get_python_code_modification_prompt,
     get_python_code_execution_fix_prompt,
     get_code_generation_with_self_verification_prompt,
-    get_output_adequacy_check_prompt
+    get_output_adequacy_check_prompt,
+    get_retry_prompt_with_history
 )
 from .web_search import (
     get_search_query_refinement_prompt,
@@ -81,6 +82,7 @@ def _register_all_prompts():
     PromptRegistry.register('python_code_execution_fix', get_python_code_execution_fix_prompt)
     PromptRegistry.register('python_code_generation_with_self_verification', get_code_generation_with_self_verification_prompt)
     PromptRegistry.register('python_code_output_adequacy_check', get_output_adequacy_check_prompt)
+    PromptRegistry.register('python_code_retry_with_history', get_retry_prompt_with_history)
 
     # Web Search
     PromptRegistry.register('search_query_refinement', get_search_query_refinement_prompt)
@@ -135,6 +137,7 @@ __all__ = [
     'get_python_code_execution_fix_prompt',
     'get_code_generation_with_self_verification_prompt',
     'get_output_adequacy_check_prompt',
+    'get_retry_prompt_with_history',
 
     # Web Search
     'get_search_query_refinement_prompt',
