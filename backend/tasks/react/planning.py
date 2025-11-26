@@ -577,7 +577,7 @@ Format: Respond with JSON array of plan steps:
   ...
 ]
 
-Available tools: web_search, rag_retrieval, python_coder, file_analyzer
+Available tools: web_search, rag_retrieval, python_coder
 """
 
         try:

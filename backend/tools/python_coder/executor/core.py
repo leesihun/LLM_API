@@ -115,6 +115,9 @@ class CodeExecutor:
         try:
             logger.info(f"[CodeExecutor] Using execution directory: {execution_dir}")
 
+            # Snapshot files BEFORE execution
+            files_before = self._get_user_files(execution_dir)
+
             # Copy input files to execution directory (with caching)
             if input_files:
                 utils.prepare_input_files(
@@ -129,9 +132,19 @@ class CodeExecutor:
 
             # Choose execution mode based on configuration and session
             if self.use_persistent_repl and session_id:
-                return self._execute_with_repl(code, execution_dir, session_id)
+                result = self._execute_with_repl(code, execution_dir, session_id)
             else:
-                return self._execute_with_subprocess(code, execution_dir, session_id)
+                result = self._execute_with_subprocess(code, execution_dir, session_id)
+
+            # Snapshot files AFTER execution and find created files
+            files_after = self._get_user_files(execution_dir)
+            created_files = list(files_after - files_before)
+            result["created_files"] = created_files
+
+            if created_files:
+                logger.info(f"[CodeExecutor] Code created {len(created_files)} new file(s): {', '.join(created_files)}")
+
+            return result
 
         except Exception as e:
             logger.error(f"[CodeExecutor] Execution setup failed: {e}")
@@ -258,6 +271,44 @@ class CodeExecutor:
         finally:
             # Cleanup execution directory (only if temporary)
             utils.cleanup_execution_dir(execution_dir, session_id)
+
+    def _get_user_files(self, execution_dir: Path) -> set:
+        """
+        Get set of user-created files in execution directory.
+        Excludes system files, scripts, and infrastructure files.
+
+        Args:
+            execution_dir: Directory to scan
+
+        Returns:
+            Set of relative file paths (basenames only)
+        """
+        if not execution_dir.exists():
+            return set()
+
+        exclude_patterns = {
+            'script.py',          # Main execution script
+            'notepad.json',       # Session notepad
+            '__pycache__',        # Python cache
+            'variables',          # Variable storage directory
+            'prompts',            # Saved prompts directory
+        }
+
+        user_files = set()
+        for item in execution_dir.iterdir():
+            # Skip directories (except we track them by name)
+            if item.is_dir():
+                if item.name not in exclude_patterns:
+                    # Note directory existence but don't recurse
+                    continue
+            else:
+                # Skip excluded files and script_*.py files
+                if item.name in exclude_patterns or item.name.startswith('script_'):
+                    continue
+
+                user_files.add(item.name)
+
+        return user_files
 
     def cleanup_session(self, session_id: str):
         """

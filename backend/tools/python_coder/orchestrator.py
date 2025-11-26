@@ -296,13 +296,15 @@ class PythonCoderTool:
             # Phase 3: Check output adequacy (1 LLM call, only if execution succeeded)
             logger.info("[PythonCoderTool] [OK] Execution succeeded, checking output adequacy...")
 
-            # Load result files from execution directory (result.txt, result.csv, etc.)
+            # Load files created by the code execution
             execution_dir = Path(settings.python_code_execution_dir) / session_id if session_id else None
             result_content = None
-            if execution_dir and execution_dir.exists():
+            created_files = execution_result.get("created_files", [])
+
+            if execution_dir and execution_dir.exists() and created_files:
                 result_content = self._load_result_files(
                     execution_dir,
-                    max_chars=settings.python_code_output_max_llm_chars
+                    created_files=created_files
                 )
 
             # Combine: file content (primary) + stdout (secondary/confirmation)
@@ -552,48 +554,94 @@ class PythonCoderTool:
     def _load_result_files(
         self,
         execution_dir: Path,
-        max_chars: int = 8000
+        created_files: Optional[List[str]] = None
     ) -> Optional[str]:
         """
-        Load result files saved by generated code.
-
-        Looks for result.txt, result.csv, result.json in execution directory.
-        These files are created by the generated Python code following prompts
-        that instruct saving output to files instead of printing large data.
+        Load FULL contents of files created by generated code.
 
         Args:
             execution_dir: Path to execution directory
-            max_chars: Maximum characters to load (truncates if exceeded)
+            created_files: List of filenames created during execution (from CodeExecutor)
 
         Returns:
-            Combined content from result files, or None if no files found
+            Combined content from all created files, or None if no files found
         """
-        result_files = ['result.txt', 'result.csv', 'result.json']
+        if not created_files:
+            logger.debug("[PythonCoderTool] No created files to load")
+            return None
+
         content_parts = []
 
-        for filename in result_files:
+        for filename in created_files:
             file_path = execution_dir / filename
-            if file_path.exists():
-                try:
+            if not file_path.exists():
+                logger.warning(f"[PythonCoderTool] Created file not found: {filename}")
+                continue
+
+            try:
+                # Get file extension for type-specific handling
+                file_ext = file_path.suffix.lower()
+                file_size = file_path.stat().st_size
+
+                # Handle different file types
+                if file_ext in {'.txt', '.csv', '.json', '.md', '.log', '.tsv'}:
+                    # Text-based files: Load full content
                     content = file_path.read_text(encoding='utf-8')
-                    file_size = len(content)
+                    content_parts.append(f"=== {filename} ({file_size} bytes) ===\n{content}")
+                    logger.info(f"[PythonCoderTool] Loaded text file: {filename} ({file_size} bytes)")
 
-                    # Truncate if too large, keeping head + tail
-                    if file_size > max_chars:
-                        head_size = max_chars // 2
-                        tail_size = max_chars // 2
-                        head = content[:head_size]
-                        tail = content[-tail_size:]
-                        truncated_chars = file_size - max_chars
-                        content = f"{head}\n\n... [{truncated_chars} chars truncated] ...\n\n{tail}"
-                        logger.info(f"[PythonCoderTool] Loaded {filename} ({file_size} chars, truncated to {max_chars})")
-                    else:
-                        logger.info(f"[PythonCoderTool] Loaded {filename} ({file_size} chars)")
+                elif file_ext in {'.xlsx', '.xls', '.parquet', '.feather'}:
+                    # Structured data files: Load with pandas and show FULL contents
+                    import pandas as pd
 
-                    content_parts.append(f"=== {filename} ({file_size} chars) ===\n{content}")
+                    if file_ext in {'.xlsx', '.xls'}:
+                        # Excel: Load all sheets
+                        excel_file = pd.ExcelFile(file_path)
+                        sheet_contents = []
+                        for sheet_name in excel_file.sheet_names:
+                            df = pd.read_excel(file_path, sheet_name=sheet_name)
+                            sheet_contents.append(f"Sheet '{sheet_name}':\n{df.to_string()}")
+                        content = "\n\n".join(sheet_contents)
+                    elif file_ext == '.parquet':
+                        df = pd.read_parquet(file_path)
+                        content = df.to_string()
+                    elif file_ext == '.feather':
+                        df = pd.read_feather(file_path)
+                        content = df.to_string()
 
-                except Exception as e:
-                    logger.warning(f"[PythonCoderTool] Failed to read {filename}: {e}")
+                    content_parts.append(f"=== {filename} ({file_size} bytes) ===\n{content}")
+                    logger.info(f"[PythonCoderTool] Loaded structured data file: {filename}")
+
+                elif file_ext in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp'}:
+                    # Image files: Report metadata
+                    try:
+                        from PIL import Image
+                        with Image.open(file_path) as img:
+                            width, height = img.size
+                            mode = img.mode
+                            format_name = img.format
+                        content = f"Image file: {format_name}, {width}x{height} pixels, mode={mode}, size={file_size} bytes"
+                    except:
+                        content = f"Image file: size={file_size} bytes (metadata unavailable)"
+
+                    content_parts.append(f"=== {filename} ===\n{content}")
+                    logger.info(f"[PythonCoderTool] Loaded image metadata: {filename}")
+
+                elif file_ext == '.pdf':
+                    # PDF files: Report basic info
+                    content = f"PDF file: size={file_size} bytes"
+                    content_parts.append(f"=== {filename} ===\n{content}")
+                    logger.info(f"[PythonCoderTool] Loaded PDF metadata: {filename}")
+
+                else:
+                    # Other files: Report size only
+                    content = f"Binary file: size={file_size} bytes"
+                    content_parts.append(f"=== {filename} ===\n{content}")
+                    logger.info(f"[PythonCoderTool] Loaded file metadata: {filename}")
+
+            except Exception as e:
+                logger.warning(f"[PythonCoderTool] Failed to load {filename}: {e}")
+                content_parts.append(f"=== {filename} ===\nError loading file: {e}")
 
         if content_parts:
             return "\n\n".join(content_parts)
