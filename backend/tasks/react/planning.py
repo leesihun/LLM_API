@@ -14,6 +14,7 @@ import json
 
 from .models import ToolName
 from backend.config.prompts import PromptRegistry
+from backend.config.settings import settings
 from backend.models.schemas import PlanStep, StepResult
 from backend.utils.logging_utils import get_logger
 
@@ -190,7 +191,7 @@ class PlanExecutor:
         step_results: Optional[List[StepResult]] = None
     ) -> StepResult:
         """
-        Execute a single plan step with single tool (no fallback).
+        Execute a single plan step with retry mechanism.
 
         Args:
             plan_step: The plan step to execute
@@ -225,46 +226,68 @@ class PlanExecutor:
                 metadata={}
             )
 
-        logger.info(f"[PlanExecutor Step {plan_step.step_num}] Executing with primary tool '{tool_name}'")
+        max_retries = settings.react_step_max_retries
+        logger.info(f"[PlanExecutor Step {plan_step.step_num}] Executing with primary tool '{tool_name}' (max retries: {max_retries})")
 
-        # Execute the tool once
-        try:
-            observation, success = await self._execute_tool_for_step(
-                tool_name=tool_name,
-                plan_step=plan_step,
-                user_query=user_query,
-                context=context,
-                file_paths=file_paths,
-                session_id=session_id,
-                all_plan_steps=all_plan_steps,
-                step_results=step_results
-            )
+        # Retry loop
+        last_observation = ""
+        last_error = None
+        attempts = 0
 
-            logger.info(f"[PlanExecutor Step {plan_step.step_num}] {'SUCCESS' if success else 'FAILED'} with tool '{tool_name}'")
+        for attempt in range(1, max_retries + 1):
+            attempts = attempt
+            logger.info(f"[PlanExecutor Step {plan_step.step_num}] Attempt {attempt}/{max_retries}")
 
-            return StepResult(
-                step_num=plan_step.step_num,
-                goal=plan_step.goal,
-                success=success,
-                tool_used=tool_name,
-                attempts=1,
-                observation=observation,
-                error=None if success else "Tool did not achieve goal",
-                metadata={"tool_type": "primary"}
-            )
+            try:
+                observation, success = await self._execute_tool_for_step(
+                    tool_name=tool_name,
+                    plan_step=plan_step,
+                    user_query=user_query,
+                    context=context,
+                    file_paths=file_paths,
+                    session_id=session_id,
+                    all_plan_steps=all_plan_steps,
+                    step_results=step_results,
+                    previous_attempt_context=last_observation if attempt > 1 else None
+                )
 
-        except Exception as e:
-            logger.error(f"[PlanExecutor Step {plan_step.step_num}] Tool '{tool_name}' failed: {e}")
-            return StepResult(
-                step_num=plan_step.step_num,
-                goal=plan_step.goal,
-                success=False,
-                tool_used=tool_name,
-                attempts=1,
-                observation=f"Error executing {tool_name}: {str(e)}",
-                error=str(e),
-                metadata={"tool_type": "primary"}
-            )
+                last_observation = observation
+
+                if success:
+                    logger.info(f"[PlanExecutor Step {plan_step.step_num}] SUCCESS on attempt {attempt}/{max_retries}")
+                    return StepResult(
+                        step_num=plan_step.step_num,
+                        goal=plan_step.goal,
+                        success=True,
+                        tool_used=tool_name,
+                        attempts=attempt,
+                        observation=observation,
+                        error=None,
+                        metadata={"tool_type": "primary", "succeeded_on_attempt": attempt}
+                    )
+                else:
+                    logger.warning(f"[PlanExecutor Step {plan_step.step_num}] FAILED on attempt {attempt}/{max_retries}")
+                    if attempt < max_retries:
+                        logger.info(f"[PlanExecutor Step {plan_step.step_num}] Retrying...")
+
+            except Exception as e:
+                last_error = str(e)
+                logger.error(f"[PlanExecutor Step {plan_step.step_num}] Exception on attempt {attempt}/{max_retries}: {e}")
+                if attempt < max_retries:
+                    logger.info(f"[PlanExecutor Step {plan_step.step_num}] Retrying after exception...")
+
+        # All attempts exhausted
+        logger.error(f"[PlanExecutor Step {plan_step.step_num}] FAILED after {attempts} attempts")
+        return StepResult(
+            step_num=plan_step.step_num,
+            goal=plan_step.goal,
+            success=False,
+            tool_used=tool_name,
+            attempts=attempts,
+            observation=last_observation or f"Error executing {tool_name}: {last_error}",
+            error=last_error or "Tool did not achieve goal after all attempts",
+            metadata={"tool_type": "primary", "all_attempts_failed": True}
+        )
 
     async def _execute_tool_for_step(
         self,
@@ -275,10 +298,14 @@ class PlanExecutor:
         file_paths: Optional[List[str]],
         session_id: Optional[str],
         all_plan_steps: Optional[List[PlanStep]] = None,
-        step_results: Optional[List[StepResult]] = None
+        step_results: Optional[List[StepResult]] = None,
+        previous_attempt_context: Optional[str] = None
     ) -> Tuple[str, bool]:
         """
         Execute a specific tool to achieve the step goal.
+
+        Args:
+            previous_attempt_context: Observation from previous failed attempt (for retry context)
 
         Returns:
             Tuple of (observation, success)
@@ -287,7 +314,8 @@ class PlanExecutor:
         action_input = self._build_action_input_from_plan(
             plan_step=plan_step,
             user_query=user_query,
-            context=context
+            context=context,
+            previous_attempt_context=previous_attempt_context
         )
 
         # Build plan_context for python_coder
@@ -377,7 +405,8 @@ class PlanExecutor:
         self,
         plan_step: PlanStep,
         user_query: str,
-        context: str
+        context: str,
+        previous_attempt_context: Optional[str] = None
     ) -> str:
         """Build action input directly from plan step with structured guidance."""
         parts = []
@@ -387,6 +416,12 @@ class PlanExecutor:
 
         # Add step goal
         parts.append(f"\nTask for this step: {plan_step.goal}")
+
+        # Add retry context if this is a retry attempt
+        if previous_attempt_context:
+            parts.append("\n⚠️ RETRY ATTEMPT - Previous attempt failed:")
+            parts.append(f"{previous_attempt_context}")
+            parts.append("\nPlease adjust your approach to address the issues from the previous attempt.")
 
         # Add structured execution guidance
         if plan_step.context or plan_step.success_criteria:

@@ -66,8 +66,8 @@ class PersistentREPL:
             # Start reader threads for stdout/stderr
             self._start_reader_threads()
 
-            # Wait for ready signal
-            ready = self._wait_for_ready(timeout=5)
+            # Wait for ready signal (longer timeout for library pre-loading)
+            ready = self._wait_for_ready(timeout=60)
 
             if ready:
                 self._is_healthy = True
@@ -97,8 +97,35 @@ if sys.platform == 'win32':
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'backslashreplace')
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'backslashreplace')
 
+# Pre-import common heavy libraries to cache them in memory
+# This reduces first-time import overhead from 20-30s to <1s
+import time as _warmup_timer
+_warmup_start = _warmup_timer.time()
+try:
+    import pandas as pd
+    import numpy as np
+    import matplotlib
+    import matplotlib.pyplot as plt
+    # Configure matplotlib for non-interactive backend (faster)
+    matplotlib.use('Agg')
+    _warmup_time = _warmup_timer.time() - _warmup_start
+    print(f"<<<WARMUP_COMPLETE>>> Preloaded libraries in {_warmup_time:.2f}s", flush=True)
+except ImportError as e:
+    print(f"<<<WARMUP_WARNING>>> Some libraries not available: {e}", flush=True)
+
 # Signal ready
 print("<<<REPL_READY>>>", flush=True)
+
+# Create persistent namespace with pre-imported libraries
+# This allows code to reuse imports without re-loading
+_persistent_namespace = {
+    "__name__": "__main__",
+    "pd": pd if 'pd' in dir() else None,
+    "np": np if 'np' in dir() else None,
+    "plt": plt if 'plt' in dir() else None,
+}
+# Remove None values
+_persistent_namespace = {k: v for k, v in _persistent_namespace.items() if v is not None}
 
 def _extract_namespace_info(namespace):
     """Extract variable information from namespace."""
@@ -174,8 +201,9 @@ while True:
         sys.stderr = io.StringIO()
 
         try:
-            # Execute code in clean namespace
-            namespace = {"__name__": "__main__"}
+            # Execute code in persistent namespace (preserves imports and variables)
+            # Make a copy to avoid polluting the global persistent namespace
+            namespace = _persistent_namespace.copy()
             exec(code, namespace)
 
             # Get captured output
@@ -256,10 +284,16 @@ while True:
     def _wait_for_ready(self, timeout: float) -> bool:
         """Wait for REPL ready signal."""
         start_time = time.time()
+        warmup_logged = False
         while time.time() - start_time < timeout:
             try:
                 line = self.stdout_queue.get(timeout=0.1)
-                if "<<<REPL_READY>>>" in line:
+                if "<<<WARMUP_COMPLETE>>>" in line and not warmup_logged:
+                    logger.success(f"[PersistentREPL] {line.strip()}")
+                    warmup_logged = True
+                elif "<<<WARMUP_WARNING>>>" in line:
+                    logger.warning(f"[PersistentREPL] {line.strip()}")
+                elif "<<<REPL_READY>>>" in line:
                     return True
             except queue.Empty:
                 continue

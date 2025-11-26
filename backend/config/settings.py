@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     ollama_top_p: float = 0.9      # Nucleus sampling
     ollama_top_k: int = 100          # Top-k sampling
 
+    react_max_iterations: int = 5  # Maximum iterations for ReAct loop
+    react_step_max_retries: int = 5  # Maximum retries per step in plan execution
+    python_code_max_iterations: int = 5
+
     # ============================================================================
     # API Keys - SECURE THESE IN PRODUCTION
     # ============================================================================
@@ -85,6 +89,10 @@ class Settings(BaseSettings):
 
     ollama_coder_model_temperature: float = 0.5
 
+    # ============================================================================
+    # ReAct Agent Configuration
+    # ============================================================================
+
     # Available tools
     available_tools: list[str] = ['web_search', 'rag', 'python_coder']
 
@@ -96,11 +104,19 @@ class Settings(BaseSettings):
     python_code_timeout: int = 3000
     python_code_max_memory: int = 5120
     python_code_execution_dir: str = './data/scratch'
-    python_code_max_iterations: int = 3
     python_code_allow_partial_execution: bool = False
     python_code_max_file_size: int = 500
     python_code_use_persistent_repl: bool = True
-    python_code_output_max_llm_chars: int = 8000  # Max chars from result files to send to LLM
+    python_code_output_max_llm_chars: int = 800000  # Max chars from result files to send to LLM
+
+    # Pre-import libraries in REPL for faster execution (reduces 20-30s import time to <1s)
+    # Libraries are imported once when REPL starts, then reused across all executions
+    python_code_preload_libraries: list[str] = [
+        'pandas as pd',
+        'numpy as np',
+        'matplotlib.pyplot as plt',
+        'matplotlib',  # For matplotlib.use('Agg') configuration
+    ]
 
     model_config = SettingsConfigDict(
         # DO NOT read from system environment variables - only use defaults from this file
