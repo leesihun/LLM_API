@@ -34,26 +34,32 @@ def get_task_guidance(query: str) -> str:
 
 [Visualization] Import matplotlib -> Load data -> Extract values -> Create plot -> Save: plt.savefig('output.png')
 
-[Calculation] Load data -> Extract values -> Calculate -> Save to result.txt -> Print confirmation
+[Calculation] Load data -> Extract values -> Calculate -> Print results directly
 
-[Analysis] Load data -> Calculate metrics -> Save to result.csv/result.txt -> Print confirmation
+[Analysis] Load data -> Calculate metrics -> Print results directly
 
 [General] Generate Python code to complete the task above.
 
 {section_border("OUTPUT REQUIREMENTS")}
 
-{MARKER_CRITICAL} ALWAYS save final results to file (DO NOT just print large data):
-- Tabular data (DataFrames, tables): df.to_csv('result.csv', index=False)
-- Text results/summaries: write to 'result.txt'
-- After saving, print a brief confirmation: print("Results saved to result.csv")
+{MARKER_OK} PRINT RESULTS DIRECTLY (pandas display options are pre-configured):
+- DataFrames: print(df) will show ALL rows and columns (no truncation)
+- Calculation results: print(result) for numeric/text results
+- Summaries: print(summary_text) for analysis results
+
+{MARKER_CRITICAL} ONLY save to files when necessary:
+- Images/plots: plt.savefig('output.png')
+- PowerPoint: prs.save('output.pptx')
+- Excel reports: df.to_excel('report.xlsx') (when explicitly requested)
+- PDF documents: Save as PDF when explicitly requested
 
 {MARKER_OK} CORRECT:
-  df.to_csv('result.csv', index=False)
-  print(f"Saved {{len(df)}} rows to result.csv")
+  print(df)  # Shows complete DataFrame, no truncation
+  print(f"Total: {{result}}")
 
 {MARKER_ERROR} WRONG:
-  print(df)  # Large DataFrame will be truncated!
-  print(df.to_string())  # Too long for console!
+  df.to_csv('result.csv', index=False)  # Don't save unless necessary
+  with open('result.txt', 'w') as f: f.write(text)  # Don't save text files
 """
 
 
@@ -104,9 +110,10 @@ def get_prestep_generation_prompt(
     prompt_parts.extend([
         "",
         f"{MARKER_CRITICAL} OUTPUT REQUIREMENT:",
-        "- Save results to file: df.to_csv('result.csv', index=False) or write to 'result.txt'",
-        "- Print ONLY a brief confirmation, NOT the full data",
-        f"- {MARKER_ERROR} DO NOT print(df) - large data will be truncated!"
+        "- Print results directly: print(df) or print(result)",
+        "- Pandas display is pre-configured to show ALL rows/columns",
+        f"- {MARKER_OK} print(df) will show complete data, no truncation",
+        "- ONLY save files when necessary (images, pptx, excel reports)"
     ])
     
     prompt_parts.append("\nGenerate ONLY Python code, no markdown:")

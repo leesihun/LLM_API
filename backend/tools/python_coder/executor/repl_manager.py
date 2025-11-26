@@ -108,6 +108,13 @@ try:
     import matplotlib.pyplot as plt
     # Configure matplotlib for non-interactive backend (faster)
     matplotlib.use('Agg')
+
+    # Configure pandas to display ALL rows/columns (no truncation)
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+
     _warmup_time = _warmup_timer.time() - _warmup_start
     print(f"<<<WARMUP_COMPLETE>>> Preloaded libraries in {_warmup_time:.2f}s", flush=True)
 except ImportError as e:

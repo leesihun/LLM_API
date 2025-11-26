@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Ollama service endpoint
     ollama_host: str = 'http://127.0.0.1:11434'
     ollama_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
-    agentic_classifier_model: str = 'qwen3:8b-q8_0'#'qwen3:8b'
+    agentic_classifier_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
     ollama_coder_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
     ollama_timeout: int = 3000000
     ollama_num_ctx: int = 16384
@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     python_code_allow_partial_execution: bool = False
     python_code_max_file_size: int = 500
     python_code_use_persistent_repl: bool = True
-    python_code_output_max_llm_chars: int = 800000  # Max chars from result files to send to LLM
+    python_code_output_max_llm_chars: int = 8000000  # Max chars from result files to send to LLM
 
     # Pre-import libraries in REPL for faster execution (reduces 20-30s import time to <1s)
     # Libraries are imported once when REPL starts, then reused across all executions

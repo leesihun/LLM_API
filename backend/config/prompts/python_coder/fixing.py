@@ -264,14 +264,14 @@ You MUST:
 {MARKER_OK} CORRECT approach:
 - Verify data loaded correctly before processing
 - Use defensive access patterns (.get(), len() checks, isinstance())
-- Save results to file: df.to_csv('result.csv') or write to 'result.txt'
-- Print brief confirmation, NOT full data
+- Print results directly: print(df) or print(result)
+- Pandas will show ALL data (display options pre-configured)
 
 {MARKER_ERROR} WRONG approach:
 - Assuming data structure without checking
 - Direct indexing without length check: data[0]
 - Direct dict access without .get(): data['key']
-- Printing large DataFrames: print(df)
+- Saving ordinary results to files (CSV, TXT) - just print them
 
 Generate ONLY executable Python code (no markdown, no explanations):
 """)

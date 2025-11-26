@@ -296,30 +296,26 @@ class PythonCoderTool:
             # Phase 3: Check output adequacy (1 LLM call, only if execution succeeded)
             logger.info("[PythonCoderTool] [OK] Execution succeeded, checking output adequacy...")
 
+            # COMMENTED OUT: File content injection (now using stdout only)
             # Load files created by the code execution
-            execution_dir = Path(settings.python_code_execution_dir) / session_id if session_id else None
-            result_content = None
-            created_files = execution_result.get("created_files", [])
+            # execution_dir = Path(settings.python_code_execution_dir) / session_id if session_id else None
+            # result_content = None
+            # created_files = execution_result.get("created_files", [])
 
-            if execution_dir and execution_dir.exists() and created_files:
-                result_content = self._load_result_files(
-                    execution_dir,
-                    created_files=created_files
-                )
+            # if execution_dir and execution_dir.exists() and created_files:
+            #     result_content = self._load_result_files(
+            #         execution_dir,
+            #         created_files=created_files
+            #     )
 
-            # Combine: file content (primary) + stdout (secondary/confirmation)
-            output_for_llm = ""
-            if result_content:
-                output_for_llm = result_content
-                logger.info("[PythonCoderTool] Using result files for adequacy check")
-            # Append stdout (limited) as secondary info
-            stdout_output = execution_result.get("output", "")
-            if stdout_output:
-                stdout_preview = stdout_output[:1000] if len(stdout_output) > 1000 else stdout_output
-                if output_for_llm:
-                    output_for_llm += f"\n\n=== stdout ===\n{stdout_preview}"
-                else:
-                    output_for_llm = stdout_output
+            # Use stdout output directly (no file concatenation)
+            output_for_llm = execution_result.get("output", "")
+
+            # Optional: Limit stdout to reasonable size for LLM
+            max_output_chars = settings.python_code_output_max_llm_chars
+            if len(output_for_llm) > max_output_chars:
+                logger.info(f"[PythonCoderTool] Truncating stdout from {len(output_for_llm)} to {max_output_chars} chars")
+                output_for_llm = output_for_llm[:max_output_chars] + f"\n... (truncated, showing {max_output_chars} of {len(output_for_llm)} chars)"
 
             is_adequate, adequacy_reason, suggestion = await self._check_output_adequacy(
                 query=query,
@@ -557,26 +553,37 @@ class PythonCoderTool:
         created_files: Optional[List[str]] = None
     ) -> Optional[str]:
         """
-        Load FULL contents of files created by generated code.
+        Load contents of files created by generated code with size limit.
+
+        Respects settings.python_code_output_max_llm_chars to prevent token overflow.
 
         Args:
             execution_dir: Path to execution directory
             created_files: List of filenames created during execution (from CodeExecutor)
 
         Returns:
-            Combined content from all created files, or None if no files found
+            Combined content from all created files (truncated if needed), or None if no files found
         """
         if not created_files:
             logger.debug("[PythonCoderTool] No created files to load")
             return None
 
         content_parts = []
+        total_chars = 0
+        max_chars = settings.python_code_output_max_llm_chars
 
         for filename in created_files:
             file_path = execution_dir / filename
             if not file_path.exists():
                 logger.warning(f"[PythonCoderTool] Created file not found: {filename}")
                 continue
+
+            # Check if we've reached the limit
+            if total_chars >= max_chars:
+                remaining_files = len(created_files) - len(content_parts)
+                content_parts.append(f"\n... and {remaining_files} more file(s) (truncated due to size limit)")
+                logger.info(f"[PythonCoderTool] Truncated output - reached {max_chars} char limit")
+                break
 
             try:
                 # Get file extension for type-specific handling
@@ -585,13 +592,26 @@ class PythonCoderTool:
 
                 # Handle different file types
                 if file_ext in {'.txt', '.csv', '.json', '.md', '.log', '.tsv'}:
-                    # Text-based files: Load full content
+                    # Text-based files: Load content (with truncation)
                     content = file_path.read_text(encoding='utf-8')
-                    content_parts.append(f"=== {filename} ({file_size} bytes) ===\n{content}")
-                    logger.info(f"[PythonCoderTool] Loaded text file: {filename} ({file_size} bytes)")
+                    file_header = f"=== {filename} ({file_size} bytes) ===\n"
+
+                    # Calculate remaining space
+                    remaining_chars = max_chars - total_chars - len(file_header)
+                    if remaining_chars <= 0:
+                        break
+
+                    # Truncate content if needed
+                    if len(content) > remaining_chars:
+                        content = content[:remaining_chars] + f"\n... (truncated, showing {remaining_chars} of {len(content)} chars)"
+                        logger.info(f"[PythonCoderTool] Truncated {filename} content")
+
+                    content_parts.append(file_header + content)
+                    total_chars += len(file_header) + len(content)
+                    logger.info(f"[PythonCoderTool] Loaded text file: {filename} ({file_size} bytes, {len(content)} chars)")
 
                 elif file_ext in {'.xlsx', '.xls', '.parquet', '.feather'}:
-                    # Structured data files: Load with pandas and show FULL contents
+                    # Structured data files: Load with pandas (with truncation)
                     import pandas as pd
 
                     if file_ext in {'.xlsx', '.xls'}:
@@ -609,8 +629,21 @@ class PythonCoderTool:
                         df = pd.read_feather(file_path)
                         content = df.to_string()
 
-                    content_parts.append(f"=== {filename} ({file_size} bytes) ===\n{content}")
-                    logger.info(f"[PythonCoderTool] Loaded structured data file: {filename}")
+                    file_header = f"=== {filename} ({file_size} bytes) ===\n"
+
+                    # Calculate remaining space
+                    remaining_chars = max_chars - total_chars - len(file_header)
+                    if remaining_chars <= 0:
+                        break
+
+                    # Truncate content if needed
+                    if len(content) > remaining_chars:
+                        content = content[:remaining_chars] + f"\n... (truncated, showing {remaining_chars} of {len(content)} chars)"
+                        logger.info(f"[PythonCoderTool] Truncated {filename} content")
+
+                    content_parts.append(file_header + content)
+                    total_chars += len(file_header) + len(content)
+                    logger.info(f"[PythonCoderTool] Loaded structured data file: {filename} ({len(content)} chars)")
 
                 elif file_ext in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp'}:
                     # Image files: Report metadata
@@ -624,27 +657,37 @@ class PythonCoderTool:
                     except:
                         content = f"Image file: size={file_size} bytes (metadata unavailable)"
 
-                    content_parts.append(f"=== {filename} ===\n{content}")
+                    file_entry = f"=== {filename} ===\n{content}"
+                    content_parts.append(file_entry)
+                    total_chars += len(file_entry)
                     logger.info(f"[PythonCoderTool] Loaded image metadata: {filename}")
 
                 elif file_ext == '.pdf':
                     # PDF files: Report basic info
                     content = f"PDF file: size={file_size} bytes"
-                    content_parts.append(f"=== {filename} ===\n{content}")
+                    file_entry = f"=== {filename} ===\n{content}"
+                    content_parts.append(file_entry)
+                    total_chars += len(file_entry)
                     logger.info(f"[PythonCoderTool] Loaded PDF metadata: {filename}")
 
                 else:
                     # Other files: Report size only
                     content = f"Binary file: size={file_size} bytes"
-                    content_parts.append(f"=== {filename} ===\n{content}")
+                    file_entry = f"=== {filename} ===\n{content}"
+                    content_parts.append(file_entry)
+                    total_chars += len(file_entry)
                     logger.info(f"[PythonCoderTool] Loaded file metadata: {filename}")
 
             except Exception as e:
                 logger.warning(f"[PythonCoderTool] Failed to load {filename}: {e}")
-                content_parts.append(f"=== {filename} ===\nError loading file: {e}")
+                error_entry = f"=== {filename} ===\nError loading file: {e}"
+                content_parts.append(error_entry)
+                total_chars += len(error_entry)
 
         if content_parts:
-            return "\n\n".join(content_parts)
+            result = "\n\n".join(content_parts)
+            logger.info(f"[PythonCoderTool] Total output for LLM: {total_chars} chars (limit: {max_chars})")
+            return result
         return None
 
     def _prepare_files(

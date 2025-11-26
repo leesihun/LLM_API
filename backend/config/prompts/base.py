@@ -203,13 +203,16 @@ ACCESS_PATTERN_RULES = f"""
 """
 
 OUTPUT_FILE_RULES = f"""
-{MARKER_RULE} SAVE OUTPUT TO FILES
-   - {MARKER_CRITICAL} Save results to files, don't just print large data
-   - DataFrame/tables: df.to_csv('result.csv', index=False)
-   - Text summaries: write to 'result.txt'
-   - Print ONLY a brief confirmation message
-   - {MARKER_ERROR} DO NOT print(df) - large output will be truncated!
-   - {MARKER_OK} df.to_csv('result.csv', index=False); print(f"Saved {{len(df)}} rows")
+{MARKER_RULE} OUTPUT DISPLAY
+   - {MARKER_OK} Use print() to display results directly in stdout
+   - DataFrames will show ALL rows/columns (pandas display options are pre-configured)
+   - {MARKER_CRITICAL} ONLY save to files when necessary:
+     * Images/plots: plt.savefig('output.png')
+     * PowerPoint: prs.save('output.pptx')
+     * Excel reports: df.to_excel('report.xlsx')
+     * PDF documents: Save as PDF when explicitly requested
+   - {MARKER_ERROR} DO NOT save ordinary results (CSV, TXT) to files - just print them
+   - {MARKER_OK} print(df) will show complete data, no truncation
 """
 
 
