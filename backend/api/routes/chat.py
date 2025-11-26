@@ -4,7 +4,9 @@ Handles chat completions, conversation management, and OpenAI-compatible endpoin
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from typing import Dict, Any, List, Optional
+import mimetypes
 import time
 import uuid
 from pathlib import Path
@@ -459,3 +461,66 @@ async def get_session_artifacts(session_id: str, current_user: Dict[str, Any] = 
         "artifact_count": len(artifacts),
         "artifacts": artifacts
     }
+
+
+@chat_router.get("/sessions/{session_id}/artifacts/{filename:path}")
+async def download_artifact(
+    session_id: str,
+    filename: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Download a specific artifact file from a session.
+    
+    Args:
+        session_id: The session identifier
+        filename: Name of the file to download (can include subdirectory path)
+    
+    Returns:
+        FileResponse: The file for download
+    
+    Example:
+        GET /api/chat/sessions/abc123/artifacts/chart.png
+        GET /api/chat/sessions/abc123/artifacts/temp_charts/analysis.png
+    """
+    user_id = current_user["username"]
+
+    # Verify session belongs to user
+    conv = conversation_store.load_conversation(session_id)
+    if conv is None or conv.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Build the file path
+    session_dir = Path(settings.python_code_execution_dir) / session_id
+    file_path = session_dir / filename
+
+    # Security: Prevent path traversal attacks
+    # Resolve to absolute path and ensure it's within session directory
+    try:
+        resolved_path = file_path.resolve()
+        session_dir_resolved = session_dir.resolve()
+        
+        # Check that the resolved path is within the session directory
+        if not str(resolved_path).startswith(str(session_dir_resolved)):
+            logger.warning(f"[Artifacts] Path traversal attempt blocked: {filename}")
+            raise HTTPException(status_code=403, detail="Access denied")
+    except Exception as e:
+        logger.error(f"[Artifacts] Path resolution error: {e}")
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Check if file exists
+    if not resolved_path.exists() or not resolved_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Determine content type
+    content_type, _ = mimetypes.guess_type(str(resolved_path))
+    if content_type is None:
+        content_type = "application/octet-stream"
+
+    logger.info(f"[Artifacts] Downloading {filename} for session {session_id}")
+
+    return FileResponse(
+        path=resolved_path,
+        filename=resolved_path.name,
+        media_type=content_type
+    )

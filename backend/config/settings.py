@@ -37,9 +37,10 @@ class Settings(BaseSettings):
     ollama_timeout: int = 3000000
     ollama_num_ctx: int = 16384
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.7  # 0.1=conservative, 1.0=creative
-    ollama_top_p: float = 0.9      # Nucleus sampling
-    ollama_top_k: int = 100          # Top-k sampling
+    ollama_temperature: float = 0.6  # 0.1=conservative, 1.0=creative
+    ollama_top_p: float = 0.95      # Nucleus sampling
+    ollama_top_k: int = 20          # Top-k sampling (higher = more diverse)
+    ollama_coder_model_temperature: float = 0.6
 
     react_max_iterations: int = 5  # Maximum iterations for ReAct loop
     react_step_max_retries: int = 5  # Maximum retries per step in plan execution
@@ -87,7 +88,6 @@ class Settings(BaseSettings):
     # AGENTIC FLOW - Model Selection
     # ============================================================================
 
-    ollama_coder_model_temperature: float = 0.5
 
     # ============================================================================
     # ReAct Agent Configuration

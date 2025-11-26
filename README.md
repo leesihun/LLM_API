@@ -102,10 +102,12 @@ Default server runs at: `http://0.0.0.0:1007`
 
 ### API Endpoints
 
-- `POST /api/chat` - Send chat message with agentic capabilities
-- `POST /api/upload` - Upload files for processing
+- `POST /v1/chat/completions` - Chat completion with agentic capabilities (OpenAI-compatible)
+- `POST /api/files/upload` - Upload files for processing
 - `POST /api/auth/login` - User authentication
-- `GET /api/conversations` - Retrieve conversation history
+- `GET /api/chat/sessions` - List user's chat sessions
+- `GET /api/chat/sessions/{session_id}/artifacts` - List generated files in a session
+- `GET /api/chat/sessions/{session_id}/artifacts/{filename}` - Download a generated file
 
 ### Example Request
 
@@ -167,6 +169,50 @@ The system can generate and execute Python code safely:
 - Static code analysis before execution
 
 ## Version History
+
+### Version 2.1.0 (November 26, 2025)
+
+**Feature: Artifact Download Endpoint**
+
+Added a new API endpoint to download files generated during chat sessions (charts, reports, PowerPoint files, etc.) directly to the client.
+
+**New Endpoint:**
+- `GET /api/chat/sessions/{session_id}/artifacts/{filename}` - Download a specific artifact file
+
+**Usage Example (Python):**
+```python
+import httpx
+
+# List available artifacts
+artifacts = httpx.get(
+    f"{base_url}/api/chat/sessions/{session_id}/artifacts",
+    headers={"Authorization": f"Bearer {token}"}
+).json()
+
+# Download a specific file
+response = httpx.get(
+    f"{base_url}/api/chat/sessions/{session_id}/artifacts/chart.png",
+    headers={"Authorization": f"Bearer {token}"}
+)
+with open("chart.png", "wb") as f:
+    f.write(response.content)
+```
+
+**Security:**
+- Validates session ownership (user can only download from their own sessions)
+- Path traversal protection (blocks `../` attacks)
+- Only serves files from session scratch directory
+
+**Modified Files:**
+- `backend/api/routes/chat.py` - Added `download_artifact` endpoint with FileResponse
+- `PPTX_Report_Generator_Agent_v2.ipynb` - Added `download_artifact()` method to LLMApiClient
+
+**Benefits:**
+- Programmatic file retrieval for Jupyter notebooks and scripts
+- No need for separate file server or manual file copying
+- Secure access control tied to session ownership
+
+---
 
 ### Version 2.0.1 (November 26, 2025)
 
@@ -908,5 +954,5 @@ jupyter notebook API_examples.ipynb
 ---
 
 **Last Updated**: November 26, 2025
-**Version**: 2.0.1
+**Version**: 2.1.0
 
