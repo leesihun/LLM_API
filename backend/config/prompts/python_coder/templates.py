@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from ..base import (
     section_border, MARKER_OK, MARKER_ERROR, MARKER_CRITICAL,
     FILENAME_RULES, NO_ARGS_RULES, JSON_SAFETY_RULES, ACCESS_PATTERN_RULES,
-    get_current_time_context
+    OUTPUT_FILE_RULES, get_current_time_context
 )
 
 
@@ -24,6 +24,7 @@ def get_rules_section(has_json_files: bool = False) -> str:
 {FILENAME_RULES}
 {NO_ARGS_RULES}
 {ACCESS_PATTERN_RULES}
+{OUTPUT_FILE_RULES}
 """
     if has_json_files:
         rules += JSON_SAFETY_RULES

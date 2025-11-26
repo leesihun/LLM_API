@@ -34,11 +34,26 @@ def get_task_guidance(query: str) -> str:
 
 [Visualization] Import matplotlib -> Load data -> Extract values -> Create plot -> Save: plt.savefig('output.png')
 
-[Calculation] Load data -> Extract values -> Calculate -> Print results with labels
+[Calculation] Load data -> Extract values -> Calculate -> Save to result.txt -> Print confirmation
 
-[Analysis] Load data -> Calculate metrics -> Print formatted results
+[Analysis] Load data -> Calculate metrics -> Save to result.csv/result.txt -> Print confirmation
 
 [General] Generate Python code to complete the task above.
+
+{section_border("OUTPUT REQUIREMENTS")}
+
+{MARKER_CRITICAL} ALWAYS save final results to file (DO NOT just print large data):
+- Tabular data (DataFrames, tables): df.to_csv('result.csv', index=False)
+- Text results/summaries: write to 'result.txt'
+- After saving, print a brief confirmation: print("Results saved to result.csv")
+
+{MARKER_OK} CORRECT:
+  df.to_csv('result.csv', index=False)
+  print(f"Saved {{len(df)}} rows to result.csv")
+
+{MARKER_ERROR} WRONG:
+  print(df)  # Large DataFrame will be truncated!
+  print(df.to_string())  # Too long for console!
 """
 
 
@@ -85,6 +100,14 @@ def get_prestep_generation_prompt(
             "- Safe access: data.get('key', default)",
             "- ONLY use keys from Access Patterns section"
         ])
+    
+    prompt_parts.extend([
+        "",
+        f"{MARKER_CRITICAL} OUTPUT REQUIREMENT:",
+        "- Save results to file: df.to_csv('result.csv', index=False) or write to 'result.txt'",
+        "- Print ONLY a brief confirmation, NOT the full data",
+        f"- {MARKER_ERROR} DO NOT print(df) - large data will be truncated!"
+    ])
     
     prompt_parts.append("\nGenerate ONLY Python code, no markdown:")
     return "\n".join(prompt_parts)

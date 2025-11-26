@@ -173,11 +173,13 @@ class LLMInterceptor:
         lines.append(f"  {type_icon} {type_color}  │  ID: {entry.call_id[:8]}  │  {entry.timestamp}")
         lines.append(f"{'─'*80}")
         lines.append(f"  Model: {entry.model:<30}  User: {entry.user_id}")
-        lines.append(f"  Tokens: ~{entry.token_estimate:<25}", end="")
-        
+
+        # Build the tokens/duration line
+        tokens_line = f"  Tokens: ~{entry.token_estimate:<25}"
         if entry.duration_ms:
-            lines[-1] += f"  Duration: {entry.duration_ms:.0f}ms"
-        
+            tokens_line += f"  Duration: {entry.duration_ms:.0f}ms"
+        lines.append(tokens_line)
+
         lines.append(f"{'─'*80}")
         
         # Messages section

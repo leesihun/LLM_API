@@ -202,6 +202,16 @@ ACCESS_PATTERN_RULES = f"""
    - {MARKER_OK} Use .get() for safe dict access
 """
 
+OUTPUT_FILE_RULES = f"""
+{MARKER_RULE} SAVE OUTPUT TO FILES
+   - {MARKER_CRITICAL} Save results to files, don't just print large data
+   - DataFrame/tables: df.to_csv('result.csv', index=False)
+   - Text summaries: write to 'result.txt'
+   - Print ONLY a brief confirmation message
+   - {MARKER_ERROR} DO NOT print(df) - large output will be truncated!
+   - {MARKER_OK} df.to_csv('result.csv', index=False); print(f"Saved {{len(df)}} rows")
+"""
+
 
 __all__ = [
     # Markers
@@ -233,5 +243,6 @@ __all__ = [
     'NO_ARGS_RULES',
     'JSON_SAFETY_RULES',
     'ACCESS_PATTERN_RULES',
+    'OUTPUT_FILE_RULES',
 ]
 

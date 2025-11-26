@@ -170,17 +170,24 @@ The system can generate and execute Python code safely:
 
 ### Version 1.9.0 (November 25, 2025)
 
-**Enhancement: Prompt System Overhaul**
+**Enhancement: Prompt System Overhaul + Output File Handling**
 
-Major restructuring of the prompt system to improve output quality, reduce token usage, and establish maintainable architecture.
+Major restructuring of the prompt system to improve output quality, reduce token usage, and establish maintainable architecture. Also added file-based output handling to prevent CMD window truncation issues.
 
 **Key Changes:**
 
-1. **New Base Utilities** (`backend/config/prompts/base.py`)
+1. **Output File Handling for Python Coder** (NEW)
+   - Prompts now instruct LLM to save results to files (`result.csv`, `result.txt`) instead of printing large data
+   - System automatically loads result files after execution for adequacy checking
+   - Solves CMD window truncation issues with large pandas DataFrames
+   - New setting: `python_code_output_max_llm_chars` (default: 8000)
+   - New rule block: `OUTPUT_FILE_RULES` in `base.py`
+
+2. **New Base Utilities** (`backend/config/prompts/base.py`)
    - Standardized ASCII markers: `[OK]`, `[X]`, `[!!!]`, `[WARNING]`
    - `get_current_time_context()` - Temporal awareness for all prompts
    - `section_border()` - Consistent visual separators
-   - Reusable rule blocks: `FILENAME_RULES`, `NO_ARGS_RULES`, `JSON_SAFETY_RULES`
+   - Reusable rule blocks: `FILENAME_RULES`, `NO_ARGS_RULES`, `JSON_SAFETY_RULES`, `OUTPUT_FILE_RULES`
 
 2. **Token Optimization**
    - `plan_execute.py`: Reduced from 242 to ~130 lines (~45% reduction)
@@ -211,12 +218,15 @@ Major restructuring of the prompt system to improve output quality, reduce token
    - Truncated summaries for token efficiency
 
 **Modified Files:**
-- `backend/config/prompts/base.py` (new)
+- `backend/config/prompts/base.py` - Added `OUTPUT_FILE_RULES`
 - `backend/config/prompts/__init__.py`
 - `backend/config/prompts/task_classification.py`
 - `backend/config/prompts/plan_execute.py`
 - `backend/config/prompts/file_analyzer.py`
-- `backend/config/prompts/python_coder/*.py`
+- `backend/config/prompts/python_coder/generation.py` - Added output file instructions
+- `backend/config/prompts/python_coder/templates.py` - Added output file rules
+- `backend/tools/python_coder/orchestrator.py` - Added `_load_result_files()` method
+- `backend/config/settings.py` - Added `python_code_output_max_llm_chars`
 - `backend/tasks/react/planning.py`
 
 **Benefits:**
@@ -225,6 +235,7 @@ Major restructuring of the prompt system to improve output quality, reduce token
 - Better temporal awareness for time-sensitive queries
 - Improved code generation context
 - More specialized file analysis capabilities
+- Reliable output handling for large data (no CMD truncation)
 
 ---
 

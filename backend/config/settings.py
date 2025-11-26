@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     python_code_allow_partial_execution: bool = False
     python_code_max_file_size: int = 500
     python_code_use_persistent_repl: bool = True
+    python_code_output_max_llm_chars: int = 8000  # Max chars from result files to send to LLM
 
     model_config = SettingsConfigDict(
         # DO NOT read from system environment variables - only use defaults from this file

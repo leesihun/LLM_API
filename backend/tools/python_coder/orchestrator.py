@@ -266,10 +266,34 @@ class PythonCoderTool:
 
             # Phase 3: Check output adequacy (1 LLM call, only if execution succeeded)
             logger.info("[PythonCoderTool] [OK] Execution succeeded, checking output adequacy...")
+
+            # Load result files from execution directory (result.txt, result.csv, etc.)
+            execution_dir = Path(settings.python_code_execution_dir) / session_id if session_id else None
+            result_content = None
+            if execution_dir and execution_dir.exists():
+                result_content = self._load_result_files(
+                    execution_dir,
+                    max_chars=settings.python_code_output_max_llm_chars
+                )
+
+            # Combine: file content (primary) + stdout (secondary/confirmation)
+            output_for_llm = ""
+            if result_content:
+                output_for_llm = result_content
+                logger.info("[PythonCoderTool] Using result files for adequacy check")
+            # Append stdout (limited) as secondary info
+            stdout_output = execution_result.get("output", "")
+            if stdout_output:
+                stdout_preview = stdout_output[:1000] if len(stdout_output) > 1000 else stdout_output
+                if output_for_llm:
+                    output_for_llm += f"\n\n=== stdout ===\n{stdout_preview}"
+                else:
+                    output_for_llm = stdout_output
+
             is_adequate, adequacy_reason, suggestion = await self._check_output_adequacy(
                 query=query,
                 code=code,
-                output=execution_result["output"],
+                output=output_for_llm,
                 context=context
             )
 
@@ -490,6 +514,56 @@ class PythonCoderTool:
             True if context file exists, False otherwise
         """
         return FileContextStorage.has_file_context(session_id)
+
+    def _load_result_files(
+        self,
+        execution_dir: Path,
+        max_chars: int = 8000
+    ) -> Optional[str]:
+        """
+        Load result files saved by generated code.
+
+        Looks for result.txt, result.csv, result.json in execution directory.
+        These files are created by the generated Python code following prompts
+        that instruct saving output to files instead of printing large data.
+
+        Args:
+            execution_dir: Path to execution directory
+            max_chars: Maximum characters to load (truncates if exceeded)
+
+        Returns:
+            Combined content from result files, or None if no files found
+        """
+        result_files = ['result.txt', 'result.csv', 'result.json']
+        content_parts = []
+
+        for filename in result_files:
+            file_path = execution_dir / filename
+            if file_path.exists():
+                try:
+                    content = file_path.read_text(encoding='utf-8')
+                    file_size = len(content)
+
+                    # Truncate if too large, keeping head + tail
+                    if file_size > max_chars:
+                        head_size = max_chars // 2
+                        tail_size = max_chars // 2
+                        head = content[:head_size]
+                        tail = content[-tail_size:]
+                        truncated_chars = file_size - max_chars
+                        content = f"{head}\n\n... [{truncated_chars} chars truncated] ...\n\n{tail}"
+                        logger.info(f"[PythonCoderTool] Loaded {filename} ({file_size} chars, truncated to {max_chars})")
+                    else:
+                        logger.info(f"[PythonCoderTool] Loaded {filename} ({file_size} chars)")
+
+                    content_parts.append(f"=== {filename} ({file_size} chars) ===\n{content}")
+
+                except Exception as e:
+                    logger.warning(f"[PythonCoderTool] Failed to read {filename}: {e}")
+
+        if content_parts:
+            return "\n\n".join(content_parts)
+        return None
 
     def _prepare_files(
         self,
