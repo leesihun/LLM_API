@@ -192,8 +192,8 @@ class LLMInterceptor:
             content_lines = msg.content.split('\n')
             for line in content_lines:
                 # Wrap long lines
-                if len(line) > 74:
-                    wrapped = [line[i:i+74] for i in range(0, len(line), 74)]
+                if len(line) > 100:
+                    wrapped = [line[i:i+100] for i in range(0, len(line), 100)]
                     for w in wrapped:
                         lines.append(f"    {w}")
                 else:
