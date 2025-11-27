@@ -875,18 +875,18 @@ class PythonCoderTool:
     def _classify_error(self, error_message: str) -> Tuple[str, str]:
         """
         Classify error and return (error_type, specific_guidance).
-        
+
         This helps the LLM understand the nature of the error and provides
         actionable guidance for fixing it.
-        
+
         Args:
             error_message: The error message from execution
-            
+
         Returns:
             Tuple of (error_type, guidance_text)
         """
-        if not error_message:
-            return ("Unknown", "No error message provided.")
+        if not error_message or error_message.strip() == "":
+            return ("Unknown", "Code execution failed but no error message was captured. This often means: 1) Missing library (check imports, install with pip), 2) Silent exception caught without logging, 3) Process terminated without error output. Add print() statements to debug.")
             
         error_lower = error_message.lower()
         
@@ -909,7 +909,14 @@ class PythonCoderTool:
         elif "nameerror" in error_lower:
             return ("NameError", "Variable not defined. Check for typos or ensure variable is created before use.")
         elif "importerror" in error_lower or "modulenotfounderror" in error_lower:
-            return ("ImportError", "Module not available. Check module name or use alternative approach.")
+            # Extract module name if possible for better guidance
+            import re
+            if "no module named" in error_lower:
+                match = re.search(r"no module named ['\"]?(\w+)['\"]?", error_lower)
+                if match:
+                    module = match.group(1)
+                    return ("ImportError", f"Module '{module}' not installed. Install with: pip install {module}. If it's a standard library, check Python version compatibility.")
+            return ("ImportError", "Required module not available. Check module name, install missing dependency with pip, or use alternative approach.")
         elif "zerodivisionerror" in error_lower:
             return ("ZeroDivision", "Division by zero. Add check: if denominator != 0 before dividing.")
         elif "unicodedecodeerror" in error_lower or "codec" in error_lower:

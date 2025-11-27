@@ -231,10 +231,18 @@ class CodeExecutor:
             )
             execution_time = time.time() - start_time
 
+            # Provide descriptive error message when stderr is empty
+            error_msg = None
+            if result.returncode != 0:
+                if result.stderr and result.stderr.strip():
+                    error_msg = result.stderr
+                else:
+                    error_msg = "Code execution failed without error message (check for missing imports or silent failures)"
+
             result_dict = {
                 "success": result.returncode == 0,
                 "output": result.stdout,
-                "error": result.stderr if result.returncode != 0 else None,
+                "error": error_msg,
                 "execution_time": execution_time,
                 "return_code": result.returncode,
                 "namespace": {}  # Subprocess mode doesn't capture namespace
