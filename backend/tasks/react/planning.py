@@ -12,7 +12,7 @@ from typing import List, Tuple, Optional
 from langchain_core.messages import HumanMessage
 import json
 
-from .models import ToolName
+from .models import ToolName, ReActStep
 from backend.config.prompts import PromptRegistry
 from backend.config.settings import settings
 from backend.models.schemas import PlanStep, StepResult
@@ -86,6 +86,9 @@ class PlanExecutor:
 
         step_results: List[StepResult] = []
         accumulated_observations = []
+        # FIX #1 & #2: Track ReActStep objects for iteration context
+        accumulated_react_steps: List[ReActStep] = []
+        global_iteration_counter = 0  # Track across all plan steps
 
         # Execute each plan step
         for step_idx, plan_step in enumerate(plan_steps):
@@ -96,17 +99,25 @@ class PlanExecutor:
             logger.info("#" * 100 + "\n")
 
             # Execute this step
-            step_result = await self.execute_step(
+            step_result, new_react_steps = await self.execute_step(
                 plan_step=plan_step,
                 user_query=user_query,
                 accumulated_observations=accumulated_observations,
                 file_paths=file_paths,
                 session_id=session_id,
                 all_plan_steps=plan_steps,
-                step_results=step_results
+                step_results=step_results,
+                accumulated_react_steps=accumulated_react_steps,
+                global_iteration_counter=global_iteration_counter
             )
 
             step_results.append(step_result)
+
+            # FIX #2: Update iteration tracking
+            if new_react_steps:
+                accumulated_react_steps.extend(new_react_steps)
+                global_iteration_counter += len(new_react_steps)
+                logger.info(f"[PlanExecutor] Added {len(new_react_steps)} ReAct iterations (total: {global_iteration_counter})")
 
             # Add observation to accumulated context
             if step_result.observation:
@@ -188,8 +199,10 @@ class PlanExecutor:
         file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
         all_plan_steps: Optional[List[PlanStep]] = None,
-        step_results: Optional[List[StepResult]] = None
-    ) -> StepResult:
+        step_results: Optional[List[StepResult]] = None,
+        accumulated_react_steps: Optional[List[ReActStep]] = None,
+        global_iteration_counter: int = 0
+    ) -> Tuple[StepResult, List[ReActStep]]:
         """
         Execute a single plan step with retry mechanism.
 
@@ -201,9 +214,11 @@ class PlanExecutor:
             session_id: Optional session ID
             all_plan_steps: Optional list of all plan steps
             step_results: Optional list of completed step results
+            accumulated_react_steps: ReActStep objects from previous plan steps
+            global_iteration_counter: Global iteration counter across all steps
 
         Returns:
-            StepResult with execution details
+            Tuple of (StepResult, List[ReActStep]) - step result and new react steps
         """
         logger.info(f"[PlanExecutor Step {plan_step.step_num}] Starting execution...")
 
@@ -224,22 +239,32 @@ class PlanExecutor:
                 observation="No tool specified for this step",
                 error="No primary tool specified",
                 metadata={}
-            )
+            ), []
 
         max_retries = settings.react_step_max_retries
         logger.info(f"[PlanExecutor Step {plan_step.step_num}] Executing with primary tool '{tool_name}' (max retries: {max_retries})")
+
+        # FIX #2 & #4: Track ReActStep objects for each attempt
+        step_react_steps: List[ReActStep] = []
+        accumulated_react_steps = accumulated_react_steps or []
 
         # Retry loop
         last_observation = ""
         last_error = None
         attempts = 0
+        retry_history = []  # FIX #4: Track all retry attempts
 
         for attempt in range(1, max_retries + 1):
             attempts = attempt
             logger.info(f"[PlanExecutor Step {plan_step.step_num}] Attempt {attempt}/{max_retries}")
 
             try:
-                observation, success = await self._execute_tool_for_step(
+                # FIX #4: Build retry context with all previous attempts
+                retry_context = None
+                if retry_history:
+                    retry_context = self._build_retry_context(retry_history)
+
+                observation, success, react_step = await self._execute_tool_for_step(
                     tool_name=tool_name,
                     plan_step=plan_step,
                     user_query=user_query,
@@ -248,10 +273,25 @@ class PlanExecutor:
                     session_id=session_id,
                     all_plan_steps=all_plan_steps,
                     step_results=step_results,
-                    previous_attempt_context=last_observation if attempt > 1 else None
+                    accumulated_react_steps=accumulated_react_steps + step_react_steps,
+                    global_iteration_counter=global_iteration_counter + len(step_react_steps),
+                    attempt_num=attempt,
+                    retry_context=retry_context
                 )
 
                 last_observation = observation
+
+                # FIX #2: Store ReActStep object
+                if react_step:
+                    step_react_steps.append(react_step)
+
+                # FIX #4: Add to retry history
+                retry_history.append({
+                    'attempt': attempt,
+                    'observation': observation,
+                    'success': success,
+                    'error': None if success else observation
+                })
 
                 if success:
                     logger.info(f"[PlanExecutor Step {plan_step.step_num}] SUCCESS on attempt {attempt}/{max_retries}")
@@ -264,7 +304,7 @@ class PlanExecutor:
                         observation=observation,
                         error=None,
                         metadata={"tool_type": "primary", "succeeded_on_attempt": attempt}
-                    )
+                    ), step_react_steps
                 else:
                     logger.warning(f"[PlanExecutor Step {plan_step.step_num}] FAILED on attempt {attempt}/{max_retries}")
                     if attempt < max_retries:
@@ -273,6 +313,15 @@ class PlanExecutor:
             except Exception as e:
                 last_error = str(e)
                 logger.error(f"[PlanExecutor Step {plan_step.step_num}] Exception on attempt {attempt}/{max_retries}: {e}")
+
+                # FIX #4: Add exception to retry history
+                retry_history.append({
+                    'attempt': attempt,
+                    'observation': f"Exception: {str(e)}",
+                    'success': False,
+                    'error': str(e)
+                })
+
                 if attempt < max_retries:
                     logger.info(f"[PlanExecutor Step {plan_step.step_num}] Retrying after exception...")
 
@@ -287,7 +336,7 @@ class PlanExecutor:
             observation=last_observation or f"Error executing {tool_name}: {last_error}",
             error=last_error or "Tool did not achieve goal after all attempts",
             metadata={"tool_type": "primary", "all_attempts_failed": True}
-        )
+        ), step_react_steps
 
     async def _execute_tool_for_step(
         self,
@@ -299,32 +348,39 @@ class PlanExecutor:
         session_id: Optional[str],
         all_plan_steps: Optional[List[PlanStep]] = None,
         step_results: Optional[List[StepResult]] = None,
-        previous_attempt_context: Optional[str] = None
-    ) -> Tuple[str, bool]:
+        accumulated_react_steps: Optional[List[ReActStep]] = None,
+        global_iteration_counter: int = 0,
+        attempt_num: int = 1,
+        retry_context: Optional[str] = None
+    ) -> Tuple[str, bool, Optional[ReActStep]]:
         """
         Execute a specific tool to achieve the step goal.
 
         Args:
-            previous_attempt_context: Observation from previous failed attempt (for retry context)
+            accumulated_react_steps: ReActStep objects from previous executions
+            global_iteration_counter: Global iteration counter
+            attempt_num: Current attempt number (for retry tracking)
+            retry_context: Full retry context from all previous attempts
 
         Returns:
-            Tuple of (observation, success)
+            Tuple of (observation, success, react_step)
         """
         # Build action input from plan step
         action_input = self._build_action_input_from_plan(
             plan_step=plan_step,
             user_query=user_query,
             context=context,
-            previous_attempt_context=previous_attempt_context
+            retry_context=retry_context
         )
 
-        # Build plan_context for python_coder
+        # FIX #3: Build enhanced plan_context with failed code history
         plan_context = None
         if tool_name in ["python_code", "python_coder"] and all_plan_steps:
-            plan_context = self._build_plan_context(
+            plan_context = self._build_enhanced_plan_context(
                 current_step=plan_step,
                 all_plan_steps=all_plan_steps,
-                step_results=step_results or []
+                step_results=step_results or [],
+                accumulated_react_steps=accumulated_react_steps or []
             )
 
         # Map tool name to ToolName enum
@@ -337,22 +393,32 @@ class PlanExecutor:
 
         tool_enum = tool_mapping.get(tool_name)
         if not tool_enum:
-            return f"Unknown tool: {tool_name}", False
+            return f"Unknown tool: {tool_name}", False, None
 
-        # Execute the tool
+        # FIX #1: Create ReActStep object BEFORE execution
+        current_iteration = global_iteration_counter + 1
+        react_step = ReActStep(iteration=current_iteration)
+        react_step.thought = f"Plan Step {plan_step.step_num} (Attempt {attempt_num}): {plan_step.goal}"
+        react_step.action = tool_enum
+        react_step.action_input = action_input
+
+        # FIX #1: Pass accumulated_react_steps to tool executor
         observation = await self.tool_executor.execute(
             action=tool_enum,
             action_input=action_input,
             file_paths=file_paths,
             session_id=session_id,
-            steps=None,
+            steps=accumulated_react_steps,  # FIX: Now passing steps!
             plan_context=plan_context
         )
+
+        # Complete the ReActStep with observation
+        react_step.observation = observation
 
         # Determine success
         success = bool(observation and len(observation.strip()) > 0 and "error" not in observation.lower()[:100])
 
-        return observation, success
+        return observation, success, react_step
 
     def _build_plan_context(
         self,
@@ -406,7 +472,7 @@ class PlanExecutor:
         plan_step: PlanStep,
         user_query: str,
         context: str,
-        previous_attempt_context: Optional[str] = None
+        retry_context: Optional[str] = None
     ) -> str:
         """Build action input directly from plan step with structured guidance."""
         parts = []
@@ -417,11 +483,14 @@ class PlanExecutor:
         # Add step goal
         parts.append(f"\nTask for this step: {plan_step.goal}")
 
-        # Add retry context if this is a retry attempt
-        if previous_attempt_context:
-            parts.append("\n⚠️ RETRY ATTEMPT - Previous attempt failed:")
-            parts.append(f"{previous_attempt_context}")
-            parts.append("\nPlease adjust your approach to address the issues from the previous attempt.")
+        # FIX #4: Add full retry context if this is a retry attempt
+        if retry_context:
+            parts.append("\n" + "="*60)
+            parts.append("⚠️ RETRY ATTEMPT - Learning from Previous Failures:")
+            parts.append("="*60)
+            parts.append(retry_context)
+            parts.append("="*60)
+            parts.append("\nPlease analyze ALL previous failures and adjust your approach accordingly.")
 
         # Add structured execution guidance
         if plan_step.context or plan_step.success_criteria:
@@ -436,6 +505,73 @@ class PlanExecutor:
             parts.append(f"\nPrevious step results:\n{context}")
 
         return "\n".join(parts)
+
+    def _build_retry_context(self, retry_history: List[dict]) -> str:
+        """
+        FIX #4: Build comprehensive retry context from all previous attempts.
+
+        Args:
+            retry_history: List of dicts with attempt, observation, success, error
+
+        Returns:
+            Formatted string with all retry attempts
+        """
+        if not retry_history:
+            return ""
+
+        parts = []
+        for entry in retry_history:
+            attempt = entry['attempt']
+            success = entry['success']
+            observation = entry['observation']
+            error = entry.get('error')
+
+            parts.append(f"\nAttempt {attempt}: {'SUCCESS' if success else 'FAILED'}")
+            if error:
+                parts.append(f"  Error: {error}")
+            if observation:
+                # Limit observation length for readability
+                obs_preview = observation[:500] + "..." if len(observation) > 500 else observation
+                parts.append(f"  Result: {obs_preview}")
+
+        return "\n".join(parts)
+
+    def _build_enhanced_plan_context(
+        self,
+        current_step: PlanStep,
+        all_plan_steps: List[PlanStep],
+        step_results: List[StepResult],
+        accumulated_react_steps: List[ReActStep]
+    ) -> dict:
+        """
+        FIX #3: Build enhanced plan_context with failed code history.
+
+        Includes:
+        - Plan structure with status
+        - Previous results summary
+        - Failed code attempts from previous steps (extracted from ReActStep objects)
+        """
+        # Start with basic plan context
+        plan_context = self._build_plan_context(current_step, all_plan_steps, step_results)
+
+        # FIX #3: Extract failed code attempts from accumulated_react_steps
+        failed_code_attempts = []
+        for react_step in accumulated_react_steps:
+            if react_step.action == ToolName.PYTHON_CODER:
+                # Check if this was a failure
+                if "failed" in react_step.observation.lower() or "error" in react_step.observation.lower():
+                    failed_code_attempts.append({
+                        'iteration': react_step.iteration,
+                        'thought': react_step.thought,
+                        'observation': react_step.observation[:1000]  # Limit length
+                    })
+
+        # Add failed code attempts to context
+        if failed_code_attempts:
+            plan_context['failed_code_attempts'] = failed_code_attempts
+            logger.info(f"[PlanExecutor] Added {len(failed_code_attempts)} failed code attempts to plan context")
+
+        return plan_context
 
     async def _generate_final_answer_from_steps(
         self,

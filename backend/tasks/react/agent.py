@@ -201,13 +201,40 @@ class ReActAgent:
         Returns:
             Tuple of (final_answer, step_results)
         """
+        # Update user_id if different from initialization
+        if user_id != self.user_id:
+            self.user_id = user_id
+            # Recreate LLM with new user_id for proper logging
+            self.llm = LLMFactory.create_llm(user_id=user_id)
+            self.verifier = StepVerifier(self.llm)
+            self.answer_generator = AnswerGenerator(self.llm)
+            self.tool_executor = ToolExecutor(self.llm, user_id=user_id)
+            self.plan_executor.llm = self.llm
+            self.plan_executor.tool_executor = self.tool_executor
+
+        # FIX #5: Initialize steps for plan execution
+        self.steps = []
+
         # Store context
         self.file_paths = file_paths
         self.session_id = session_id
         self.context_formatter.session_id = session_id
+        self.thought_action_generator = ThoughtActionGenerator(self.llm, file_paths)
 
         # Extract user query
         user_query = messages[-1].content
+
+        # Log execution start
+        logger.header("REACT AGENT EXECUTION (PLAN MODE)", "heavy")
+        exec_params = {
+            "User ID": user_id,
+            "Session ID": session_id,
+            "Attached Files": f"{len(file_paths)} files" if file_paths else "None",
+            "Plan Steps": len(plan_steps),
+            "Max Iterations Per Step": max_iterations_per_step
+        }
+        logger.key_values(exec_params, title="Execution Parameters")
+        logger.multiline(user_query, title="User Query", max_lines=100)
 
         # Load persisted variables for context-aware execution
         if self.session_id:
@@ -221,6 +248,17 @@ class ReActAgent:
             session_id=session_id,
             max_iterations_per_step=max_iterations_per_step
         )
+
+        # Log completion
+        logger.header("EXECUTION COMPLETED", "heavy")
+        summary = {
+            "Total Plan Steps": len(step_results),
+            "Successful Steps": sum(1 for r in step_results if r.success),
+            "Failed Steps": sum(1 for r in step_results if not r.success),
+            "Status": "Success"
+        }
+        logger.key_values(summary, title="Execution Summary")
+        logger.multiline(final_answer, title="Final Answer", max_lines=50)
 
         return final_answer, step_results
 
