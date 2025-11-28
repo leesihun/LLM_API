@@ -397,7 +397,7 @@ class PlanExecutor:
 
         # FIX #1: Create ReActStep object BEFORE execution
         current_iteration = global_iteration_counter + 1
-        react_step = ReActStep(iteration=current_iteration)
+        react_step = ReActStep(step_num=current_iteration)
         react_step.thought = f"Plan Step {plan_step.step_num} (Attempt {attempt_num}): {plan_step.goal}"
         react_step.action = tool_enum
         react_step.action_input = action_input
