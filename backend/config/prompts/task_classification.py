@@ -38,4 +38,4 @@ Respond with exactly one word: chat, react, or plan_execute
 
 No explanation, no punctuation.
 
-Think hard about the complexity and tool requirements."""
+Classify by evaluating: (1) does this require external data or tools, (2) how many distinct sub-goals are present, (3) is coordination between multiple steps needed."""

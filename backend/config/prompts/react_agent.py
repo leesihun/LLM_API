@@ -51,7 +51,7 @@ ACTION: [Tool name]
 
 ACTION INPUT: [Input for the selected tool]
 
-Think hard about which tool best addresses the immediate need."""
+Select the single most appropriate tool based on: (1) whether you need current/real-time data, (2) whether files are attached, (3) what type of processing is required."""
 
 
 def get_react_final_answer_prompt(
@@ -80,7 +80,7 @@ def get_react_final_answer_prompt(
 ## Your Task
 Synthesize the observations above into a clear, complete answer. Include specific details, numbers, and facts from the observations. Ensure your answer directly addresses the query.
 
-Think harder about how to present the information most effectively."""
+Present information clearly by: (1) directly answering the question first, (2) supporting with specific facts and numbers, (3) organizing details logically."""
 
 
 def get_react_step_verification_prompt(
@@ -121,7 +121,7 @@ Compare the observation against the success criteria. Answer "YES" if criteria m
 
 Provide brief reasoning for your decision.
 
-Think hard about whether the success criteria are truly satisfied."""
+Verify success by checking: (1) does the observation contain the expected data type, (2) are all required elements present, (3) are there any error indicators in the output."""
 
 
 def get_react_final_answer_from_steps_prompt(
@@ -155,7 +155,7 @@ def get_react_final_answer_from_steps_prompt(
 ## Your Task
 Synthesize all steps and observations into a clear, complete answer. Include specific details, numbers, and facts from the observations.
 
-Think harder about the connections between steps and how they build toward the answer."""
+Connect the steps by: (1) identifying how each observation builds on previous ones, (2) noting which steps provide which pieces of the final answer, (3) ensuring no contradictions between steps."""
 
 
 def get_react_thought_prompt(

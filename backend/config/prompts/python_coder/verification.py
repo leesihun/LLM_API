@@ -90,7 +90,7 @@ Return JSON:
 
 Focus on execution errors, not style.
 
-Think hard about potential runtime failures."""
+Check for runtime failures by examining: (1) are all filenames exact and hardcoded, (2) are there any user input calls (sys.argv, input()), (3) will any operations fail on empty data."""
 
 
 def get_self_verification_section(query: str, has_json_files: bool = False) -> str:
@@ -183,4 +183,4 @@ Return JSON only:
 
 Be lenient - if output provides useful information, consider it adequate.
 
-Think hard about whether the user's question is truly answered."""
+Verify the answer by checking: (1) does the output directly address what was asked, (2) are the results specific enough (not just partial data), (3) is the format appropriate for the question type."""

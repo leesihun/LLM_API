@@ -87,7 +87,7 @@ Issues to fix:
 2. Filenames must remain HARDCODED
 3. {MARKER_ERROR}
 4. You may use other logics and approaches if needed
-5. Think hard for making changes, Aim for the best solution
+5. Choose the best fix by: analyzing the root cause, considering alternative approaches, ensuring the fix doesn't introduce new issues
 
 Generate corrected Python code only:"""
 

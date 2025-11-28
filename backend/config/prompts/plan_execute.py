@@ -133,7 +133,7 @@ Query: "Analyze sales.csv and create revenue chart"
 ]
 ```
 
-Think harder about step dependencies and optimal execution order.
+Mind the step dependencies and optimal execution order.
 
 Note that only one tool can be utilized each time. For complex tasks, you may need to break down the task into smaller steps with one tool use at a time.
 

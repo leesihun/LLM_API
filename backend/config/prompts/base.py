@@ -87,33 +87,6 @@ def role_definition(
     return " ".join(parts)
 
 
-def thinking_trigger(depth: str = "hard") -> str:
-    """
-    Add a thinking depth trigger following Anthropic patterns.
-
-    Args:
-        depth: Thinking depth level
-            - "normal" → "Think about"
-            - "hard" → "Think hard about"
-            - "harder" → "Think harder about"
-            - "ultra" → "Ultrathink about"
-
-    Returns:
-        Thinking prompt string
-
-    Examples:
-        thinking_trigger("hard") → "Think hard about"
-        thinking_trigger("ultra") → "Ultrathink about"
-    """
-    triggers = {
-        "normal": "Think about",
-        "hard": "Think hard about",
-        "harder": "Think harder about",
-        "ultra": "Ultrathink about"
-    }
-    return triggers.get(depth, "Think hard about")
-
-
 def format_code_block(code: str, language: str = "python") -> str:
     """
     Format code with proper markdown fences.
@@ -344,7 +317,6 @@ __all__ = [
     # Modern utilities (NEW)
     'section_header',
     'role_definition',
-    'thinking_trigger',
     'format_code_block',
 
     # Deprecated separators (backward compatibility)
