@@ -48,6 +48,64 @@ class Settings(BaseSettings):
     python_code_max_iterations: int = 5
 
     # ============================================================================
+    # Qwen Thinking Effort Configuration
+    # ============================================================================
+
+    # Thinking effort levels with severity-based instructions for Qwen models
+    # - none: /no_think (instant responses, no reasoning)
+    # - low: /think + brief reasoning guidance (1-2 steps)
+    # - mid: /think + moderate reasoning guidance (2-4 steps, default)
+    # - high: /think + deep reasoning guidance (4+ steps, thorough analysis)
+
+    # Global default thinking effort
+    thinking_effort_default: str = 'none'
+
+    # Task-specific thinking effort settings
+    thinking_effort_classifier: str = 'none'     # Fast classification
+    thinking_effort_coder: str = 'high'          # Deep code reasoning
+    thinking_effort_react: str = 'mid'           # Balanced agent reasoning
+    thinking_effort_planner: str = 'high'        # Thorough planning
+    thinking_effort_vision: str = 'low'          # Light visual analysis
+
+    def get_thinking_prompt_prefix(self, effort: str) -> str:
+        """
+        Get Qwen thinking mode prompt prefix with severity-based instructions.
+
+        Severity levels control the depth of reasoning:
+        - none: No thinking (/no_think)
+        - low: Quick reasoning (1-2 steps)
+        - mid: Balanced reasoning (2-4 steps)
+        - high: Deep reasoning (4+ steps with thorough analysis)
+
+        Args:
+            effort: Thinking effort level ('none', 'low', 'mid', 'high')
+
+        Returns:
+            Prompt prefix string with thinking control and severity guidance
+
+        Examples:
+            >>> settings.get_thinking_prompt_prefix('none')
+            '/no_think'
+
+            >>> settings.get_thinking_prompt_prefix('low')
+            '/think Brief reasoning: consider 1-2 key steps, then respond concisely.'
+
+            >>> settings.get_thinking_prompt_prefix('high')
+            '/think Deep reasoning: analyze thoroughly with 4+ steps. Break down the problem, consider alternatives, verify your approach, then provide a comprehensive answer.'
+        """
+        prefixes = {
+            'none': '/no_think',
+
+            'low': '/think Brief reasoning: consider 1-2 key steps, then respond concisely.',
+
+            'mid': '/think Moderate reasoning: think through 2-4 steps. Analyze the problem, plan your approach, then respond.',
+
+            'high': '/think Deep reasoning: analyze thoroughly with 4+ steps. Break down the problem, consider alternatives, verify your approach, then provide a comprehensive answer.'
+        }
+
+        return prefixes.get(effort, prefixes['mid'])
+
+    # ============================================================================
     # Vision/Multimodal Configuration
     # ============================================================================
 
