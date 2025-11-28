@@ -51,59 +51,67 @@ class Settings(BaseSettings):
     # Qwen Thinking Effort Configuration
     # ============================================================================
 
-    # Thinking effort levels with severity-based instructions for Qwen models
-    # - none: /no_think (instant responses, no reasoning)
-    # - low: /think + brief reasoning guidance (1-2 steps)
-    # - mid: /think + moderate reasoning guidance (2-4 steps, default)
-    # - high: /think + deep reasoning guidance (4+ steps, thorough analysis)
+    # Thinking effort levels control Qwen's reasoning via Ollama API parameter
+    # - none: Disable thinking completely (reasoning=False)
+    # - low: Light reasoning (reasoning=True, temp=0.3)
+    # - mid: Moderate reasoning (reasoning=True, temp=0.6, default)
+    # - high: Deep reasoning (reasoning=True, temp=0.8)
 
     # Global default thinking effort
     thinking_effort_default: str = 'none'
 
     # Task-specific thinking effort settings
-    thinking_effort_classifier: str = 'none'     # Fast classification
-    thinking_effort_coder: str = 'high'          # Deep code reasoning
-    thinking_effort_react: str = 'mid'           # Balanced agent reasoning
-    thinking_effort_planner: str = 'high'        # Thorough planning
-    thinking_effort_vision: str = 'low'          # Light visual analysis
+    thinking_effort_classifier: str = 'none'     # Fast classification, no thinking
+    thinking_effort_coder: str = 'none'          # Code generation
+    thinking_effort_react: str = 'none'          # Agent reasoning
+    thinking_effort_planner: str = 'none'        # Planning
+    thinking_effort_vision: str = 'none'         # Visual analysis
 
-    def get_thinking_prompt_prefix(self, effort: str) -> str:
+    def get_thinking_config(self, effort: str) -> dict:
         """
-        Get Qwen thinking mode prompt prefix with severity-based instructions.
+        Get thinking configuration for Qwen models using Ollama reasoning parameter.
 
-        Severity levels control the depth of reasoning:
-        - none: No thinking (/no_think)
-        - low: Quick reasoning (1-2 steps)
-        - mid: Balanced reasoning (2-4 steps)
-        - high: Deep reasoning (4+ steps with thorough analysis)
+        Maps thinking effort levels to ChatOllama reasoning parameter and temperature.
+
+        Effort Levels:
+        - none: Disable thinking completely (reasoning=False)
+        - low: Enable light reasoning (reasoning=True, low temp)
+        - mid: Enable moderate reasoning (reasoning=True, mid temp)
+        - high: Enable deep reasoning (reasoning=True, high temp)
 
         Args:
             effort: Thinking effort level ('none', 'low', 'mid', 'high')
 
         Returns:
-            Prompt prefix string with thinking control and severity guidance
+            dict with 'reasoning' (bool) and 'temperature' (float) keys
 
         Examples:
-            >>> settings.get_thinking_prompt_prefix('none')
-            '/no_think'
+            >>> settings.get_thinking_config('none')
+            {'reasoning': False, 'temperature': 0.1}
 
-            >>> settings.get_thinking_prompt_prefix('low')
-            '/think Brief reasoning: consider 1-2 key steps, then respond concisely.'
-
-            >>> settings.get_thinking_prompt_prefix('high')
-            '/think Deep reasoning: analyze thoroughly with 4+ steps. Break down the problem, consider alternatives, verify your approach, then provide a comprehensive answer.'
+            >>> settings.get_thinking_config('high')
+            {'reasoning': True, 'temperature': 0.8}
         """
-        prefixes = {
-            'none': '/no_think',
-
-            'low': '/think Brief reasoning: consider 1-2 key steps, then respond concisely.',
-
-            'mid': '/think Moderate reasoning: think through 2-4 steps. Analyze the problem, plan your approach, then respond.',
-
-            'high': '/think Deep reasoning: analyze thoroughly with 4+ steps. Break down the problem, consider alternatives, verify your approach, then provide a comprehensive answer.'
+        configs = {
+            'none': {
+                'reasoning': False,    # Disable thinking completely
+                'temperature': 0.1     # Low temp for fast, deterministic responses
+            },
+            'low': {
+                'reasoning': True,     # Enable thinking
+                'temperature': 0.3     # Lower temp for focused reasoning
+            },
+            'mid': {
+                'reasoning': True,
+                'temperature': 0.6     # Balanced reasoning (default)
+            },
+            'high': {
+                'reasoning': True,
+                'temperature': 0.8     # Higher temp for creative, thorough reasoning
+            }
         }
 
-        return prefixes.get(effort, prefixes['mid'])
+        return configs.get(effort, configs['mid'])
 
     # ============================================================================
     # Vision/Multimodal Configuration

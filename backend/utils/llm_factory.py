@@ -386,6 +386,7 @@ class LLMFactory:
         cls,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        thinking_effort: Optional[str] = None,
         num_ctx: Optional[int] = None,
         top_p: Optional[float] = None,
         top_k: Optional[int] = None,
@@ -402,6 +403,9 @@ class LLMFactory:
         Args:
             model: Model name (defaults to settings.ollama_model)
             temperature: Sampling temperature (defaults to settings.ollama_temperature)
+            thinking_effort: Thinking effort level ('none', 'low', 'mid', 'high')
+                            Controls Ollama reasoning parameter and temperature
+                            If None, no reasoning control applied
             num_ctx: Context window size (defaults to settings.ollama_num_ctx)
             top_p: Nucleus sampling parameter (defaults to settings.ollama_top_p)
             top_k: Top-k sampling parameter (defaults to settings.ollama_top_k)
@@ -418,10 +422,28 @@ class LLMFactory:
         Example:
             >>> llm = LLMFactory.create_llm(temperature=0.7, user_id="alice")
             >>> response = llm.invoke("Hello, world!")
-            
+
+            >>> # With thinking disabled
+            >>> llm = LLMFactory.create_llm(thinking_effort='none')
+
             >>> # With JSON logging for parsing
             >>> llm = LLMFactory.create_llm(log_format=LogFormat.JSON)
         """
+        # Apply thinking effort configuration (Qwen models via Ollama reasoning parameter)
+        reasoning_param = None
+        if thinking_effort:
+            thinking_config = settings.get_thinking_config(thinking_effort)
+            reasoning_param = thinking_config['reasoning']
+
+            # Override temperature if not explicitly provided
+            if temperature is None:
+                temperature = thinking_config['temperature']
+
+            logger.debug(
+                f"[LLMFactory] Applied thinking effort '{thinking_effort}' "
+                f"→ reasoning={reasoning_param}, temp={temperature}"
+            )
+
         config = {
             "base_url": settings.ollama_host,
             "model": model or settings.ollama_model,
@@ -437,6 +459,10 @@ class LLMFactory:
             config["timeout"] = timeout
         elif settings.ollama_timeout:
             config["timeout"] = settings.ollama_timeout
+
+        # Add reasoning parameter if thinking effort was specified
+        if reasoning_param is not None:
+            config["reasoning"] = reasoning_param
 
         # Merge with additional kwargs
         config.update(kwargs)
@@ -499,6 +525,10 @@ class LLMFactory:
         """
         classifier_model = model or settings.agentic_classifier_model
 
+        # Apply classifier thinking effort from settings if not in kwargs
+        if 'thinking_effort' not in kwargs:
+            kwargs['thinking_effort'] = settings.thinking_effort_classifier
+
         logger.debug(f"[LLMFactory] Creating classifier LLM with model={classifier_model}")
 
         return cls.create_llm(
@@ -552,6 +582,10 @@ class LLMFactory:
             temperature if temperature is not None else settings.ollama_coder_model_temperature
         )
         coder_num_ctx = num_ctx or settings.ollama_num_ctx
+
+        # Apply coder thinking effort from settings if not in kwargs
+        if 'thinking_effort' not in kwargs:
+            kwargs['thinking_effort'] = settings.thinking_effort_coder
 
         logger.debug(f"[LLMFactory] Creating coder LLM with model={coder_model}")
 
@@ -607,6 +641,10 @@ class LLMFactory:
             temperature if temperature is not None else settings.vision_temperature
         )
         vision_num_ctx = num_ctx or settings.ollama_num_ctx
+
+        # Apply vision thinking effort from settings if not in kwargs
+        if 'thinking_effort' not in kwargs:
+            kwargs['thinking_effort'] = settings.thinking_effort_vision
 
         logger.debug(f"[LLMFactory] Creating vision LLM with model={vision_model}")
 
