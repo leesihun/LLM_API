@@ -96,8 +96,10 @@ def log_execution_result(result: Dict[str, Any]) -> None:
 
 def enhance_error_detection(result: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Enhanced error detection: check for error patterns in stdout.
-    Some code may print errors but exit with return code 0.
+    Enhanced error detection: check for error patterns in stdout for BOTH success and failure cases.
+
+    For success (return_code 0): Detects silent errors that exit with code 0
+    For failure (return_code != 0): Enriches empty stderr with stdout error patterns
 
     Args:
         result: Execution result dict
@@ -105,25 +107,44 @@ def enhance_error_detection(result: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Updated result dict with enhanced error detection
     """
-    if result["return_code"] == 0 and result.get("output"):
-        error_patterns = [
-            "Error:", "error:", "ERROR:",
-            "Failed:", "failed:", "FAILED:",
-            "Exception:", "exception:",
-            "not found", "Not found", "NOT FOUND",
-            "does not contain", "does not exist",
-            "No valid", "no valid",
-            "Invalid", "invalid"
-        ]
+    output = result.get("output", "")
+    error = result.get("error", "")
+    return_code = result.get("return_code", -1)
 
-        stdout_lower = result["output"].lower()
-        for pattern in error_patterns:
-            if pattern.lower() in stdout_lower:
-                logger.warning(f"[ErrorDetection] Error pattern detected: '{pattern}'")
-                result["success"] = False
-                result["error"] = result["output"]
-                logger.error("[ErrorDetection] Code printed error messages despite return code 0")
-                break
+    if not output:
+        return result
+
+    # Define error patterns to check
+    error_patterns = [
+        "Error:", "error:", "ERROR:",
+        "Failed:", "failed:", "FAILED:",
+        "Exception:", "exception:",
+        "Traceback (most recent call last):",
+        "not found", "Not found", "NOT FOUND",
+        "does not contain", "does not exist",
+        "No valid", "no valid",
+        "Invalid", "invalid"
+    ]
+
+    output_lower = output.lower()
+    pattern_found = None
+
+    for pattern in error_patterns:
+        if pattern.lower() in output_lower:
+            pattern_found = pattern
+            logger.warning(f"[ErrorDetection] Error pattern in stdout: '{pattern}'")
+            break
+
+    if pattern_found:
+        if return_code == 0:
+            # Success case: code printed error but exited with 0
+            result["success"] = False
+            result["error"] = f"Error detected in output (code exited with 0 but printed error):\n{output}"
+            logger.error("[ErrorDetection] Code printed error messages despite return code 0")
+        elif not error or error.strip() == "":
+            # Failure case: empty stderr but stdout has error patterns
+            result["error"] = f"Error detected in output (stderr was empty):\n{output}"
+            logger.info("[ErrorDetection] Enriched empty stderr with stdout error patterns")
 
     return result
 

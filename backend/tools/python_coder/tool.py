@@ -139,16 +139,16 @@ class PythonCoderTool(BaseTool):
     
     def _convert_to_tool_result(self, result_dict: Dict[str, Any]) -> ToolResult:
         """
-        Convert orchestrator result dictionary to ToolResult.
-        
+        Convert orchestrator result dictionary to ToolResult with enhanced error history.
+
         Args:
             result_dict: Result from orchestrator.execute_code_task()
-            
+
         Returns:
             Standardized ToolResult
         """
         success = result_dict.get("success", False)
-        
+
         # Determine output
         if success:
             output = result_dict.get("output", "")
@@ -157,10 +157,47 @@ class PythonCoderTool(BaseTool):
                 output = "Code executed successfully"
         else:
             output = None
-        
-        # Determine error
-        error = result_dict.get("error") if not success else None
-        error_type = result_dict.get("error_type", "CodeExecutionError") if not success else None
+
+        # Enhanced error with attempt history
+        error = None
+        error_type = None
+        if not success:
+            error = result_dict.get("error", "Unknown error")
+            error_type = result_dict.get("error_type", "CodeExecutionError")
+
+            # Append attempt summary if multiple attempts were made
+            attempt_history = result_dict.get("attempt_history", [])
+            total_attempts = result_dict.get("total_attempts", len(attempt_history))
+
+            if total_attempts > 1 and attempt_history:
+                error_parts = [error, f"\n\n{'='*60}"]
+                error_parts.append(f"EXECUTION HISTORY ({total_attempts} attempts made)")
+                error_parts.append('='*60)
+
+                for attempt in attempt_history:
+                    attempt_num = attempt.get("attempt", "?")
+                    exec_success = attempt.get("execution_success", False)
+                    status = "✓ SUCCESS" if exec_success else "✗ FAILED"
+
+                    error_parts.append(f"\nAttempt {attempt_num}: {status}")
+
+                    if not exec_success:
+                        err_type = attempt.get("error_type", ("Unknown", ""))
+                        if isinstance(err_type, tuple):
+                            err_type = err_type[0]
+                        error_parts.append(f"  Error Type: {err_type}")
+
+                        # Include brief error message (truncated)
+                        attempt_error = attempt.get("execution_error", "")
+                        if attempt_error:
+                            truncated_error = attempt_error[:200] + "..." if len(attempt_error) > 200 else attempt_error
+                            error_parts.append(f"  Error: {truncated_error}")
+                    else:
+                        # Include execution time for successful attempts
+                        exec_time = attempt.get("execution_time", 0)
+                        error_parts.append(f"  Execution Time: {exec_time:.2f}s")
+
+                error = "\n".join(error_parts)
         
         # Build metadata
         metadata = {

@@ -20,12 +20,14 @@ class ToolName(str, Enum):
     - RAG_RETRIEVAL: Retrieve documents from vector store (FAISS)
     - PYTHON_CODER: Generate and execute Python code
     - FILE_ANALYZER: Analyze file metadata and structure
+    - VISION_ANALYZER: Analyze images using vision-enabled LLM
     - FINISH: Complete execution and return final answer
     """
     WEB_SEARCH = "web_search"
     RAG_RETRIEVAL = "rag_retrieval"
     PYTHON_CODER = "python_coder"
     FILE_ANALYZER = "file_analyzer"
+    VISION_ANALYZER = "vision_analyzer"
     FINISH = "finish"
 
 

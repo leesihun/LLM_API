@@ -231,13 +231,39 @@ class CodeExecutor:
             )
             execution_time = time.time() - start_time
 
-            # Provide descriptive error message when stderr is empty
+            # Enhanced error message when stderr is empty
             error_msg = None
             if result.returncode != 0:
                 if result.stderr and result.stderr.strip():
                     error_msg = result.stderr
                 else:
-                    error_msg = "Code execution failed without error message (check for missing imports or silent failures)"
+                    # Build detailed diagnostic message
+                    error_parts = ["Code execution failed without stderr output."]
+
+                    # Analyze return code
+                    if result.returncode == 1:
+                        error_parts.append("\n⚠️ Return code 1: Likely ImportError, ModuleNotFoundError, or SyntaxError.")
+                    elif result.returncode == 2:
+                        error_parts.append("\n⚠️ Return code 2: Command invocation error or invalid Python syntax.")
+                    elif result.returncode > 128:
+                        error_parts.append(f"\n⚠️ Return code {result.returncode}: Process terminated by signal (crash/kill).")
+                    else:
+                        error_parts.append(f"\n⚠️ Return code {result.returncode}: Abnormal termination.")
+
+                    # Check stdout for clues
+                    if result.stdout and result.stdout.strip():
+                        stdout_tail = result.stdout.strip()[-500:] if len(result.stdout) > 500 else result.stdout.strip()
+                        error_parts.append(f"\n\n📋 Last stdout output:\n{stdout_tail}")
+                    else:
+                        error_parts.append("\n📋 No stdout output (code may have crashed immediately).")
+
+                    error_parts.append("\n\n🔍 Possible causes:")
+                    error_parts.append("  1. Missing library import (install with: pip install <package>)")
+                    error_parts.append("  2. Syntax error in generated code")
+                    error_parts.append("  3. Code called sys.exit() without error message")
+                    error_parts.append("  4. Segmentation fault or memory error (check for C extension issues)")
+
+                    error_msg = "".join(error_parts)
 
             result_dict = {
                 "success": result.returncode == 0,
@@ -245,8 +271,15 @@ class CodeExecutor:
                 "error": error_msg,
                 "execution_time": execution_time,
                 "return_code": result.returncode,
-                "namespace": {}  # Subprocess mode doesn't capture namespace
+                "namespace": {}  # Will attempt to capture below
             }
+
+            # Attempt to capture namespace even in subprocess mode (for failed executions)
+            if result.returncode != 0 and session_id:
+                namespace = self._attempt_namespace_capture(execution_dir, code)
+                if namespace:
+                    result_dict["namespace"] = namespace
+                    logger.info(f"[CodeExecutor] Captured {len(namespace)} variable(s) from failed execution")
 
             # Log execution result
             utils.log_execution_result(result_dict)
@@ -279,6 +312,95 @@ class CodeExecutor:
         finally:
             # Cleanup execution directory (only if temporary)
             utils.cleanup_execution_dir(execution_dir, session_id)
+
+    def _attempt_namespace_capture(self, execution_dir: Path, original_code: str) -> Dict[str, Any]:
+        """
+        Attempt to capture variable namespace from failed code execution.
+
+        This runs a modified version of the code with try/except to capture
+        the last known variable states before the error occurred.
+
+        Args:
+            execution_dir: Directory where code was executed
+            original_code: The original code that failed
+
+        Returns:
+            Dictionary of variable information, or empty dict if capture fails
+        """
+        try:
+            # Create introspection wrapper code
+            introspect_code = f"""
+import json
+import sys
+
+# Original code wrapped in try/except
+namespace = {{'__capture_failed__': True}}
+try:
+{chr(10).join('    ' + line for line in original_code.split(chr(10)))}
+except Exception as e:
+    pass  # Ignore error, we just want variables up to failure point
+
+# Capture variables
+try:
+    namespace = {{}}
+    for name, value in list(locals().items()):
+        if name.startswith('_'):
+            continue
+
+        # Capture based on type
+        try:
+            vtype = type(value).__name__
+
+            if vtype in ['int', 'float', 'str', 'bool', 'NoneType']:
+                namespace[name] = {{'type': vtype, 'value': str(value)[:100]}}
+            elif vtype == 'list':
+                namespace[name] = {{'type': 'list', 'length': len(value), 'value': str(value[:3])[:100]}}
+            elif vtype == 'dict':
+                namespace[name] = {{'type': 'dict', 'keys': list(value.keys())[:5]}}
+            elif vtype == 'DataFrame':
+                namespace[name] = {{'type': 'DataFrame', 'shape': value.shape, 'columns': list(value.columns)[:10]}}
+            elif vtype == 'ndarray':
+                namespace[name] = {{'type': 'ndarray', 'shape': value.shape, 'dtype': str(value.dtype)}}
+            else:
+                namespace[name] = {{'type': vtype}}
+        except:
+            namespace[name] = {{'type': 'unknown'}}
+
+    print("__NAMESPACE_START__")
+    print(json.dumps(namespace))
+    print("__NAMESPACE_END__")
+except Exception as e:
+    print(f"__NAMESPACE_ERROR__: {{e}}")
+"""
+
+            # Execute introspection code
+            introspect_path = execution_dir / "introspect.py"
+            introspect_path.write_text(introspect_code, encoding='utf-8')
+
+            result = subprocess.run(
+                [sys.executable, str(introspect_path)],
+                capture_output=True,
+                timeout=5,  # Short timeout for introspection
+                cwd=str(execution_dir),
+                encoding='utf-8',
+                errors='backslashreplace',
+                env=utils.get_execution_env()
+            )
+
+            # Parse namespace from output
+            if "__NAMESPACE_START__" in result.stdout:
+                start_idx = result.stdout.index("__NAMESPACE_START__") + len("__NAMESPACE_START__")
+                end_idx = result.stdout.index("__NAMESPACE_END__")
+                namespace_json = result.stdout[start_idx:end_idx].strip()
+
+                import json
+                namespace = json.loads(namespace_json)
+                return namespace
+
+        except Exception as e:
+            logger.debug(f"[CodeExecutor] Namespace capture failed: {e}")
+
+        return {}
 
     def _get_user_files(self, execution_dir: Path) -> set:
         """

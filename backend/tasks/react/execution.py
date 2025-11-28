@@ -17,6 +17,7 @@ from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever_tool
 from backend.tools.python_coder import python_coder_tool
 from backend.tools.file_analyzer import file_analyzer
+from backend.tools.vision_analyzer import vision_analyzer_tool
 from backend.utils.logging_utils import get_logger
 from .models import ToolName
 
@@ -81,6 +82,9 @@ class ToolExecutor:
 
             elif action == ToolName.FILE_ANALYZER:
                 return await self._execute_file_analyzer(action_input, file_paths)
+
+            elif action == ToolName.VISION_ANALYZER:
+                return await self._execute_vision_analyzer(action_input, file_paths)
 
             else:
                 logger.warning(f"Invalid action: {action}")
@@ -201,6 +205,31 @@ class ToolExecutor:
             return f"File analysis completed:\n{result.get('summary','')}"
         else:
             return f"File analysis failed: {result.get('error','Unknown error')}"
+
+    async def _execute_vision_analyzer(
+        self,
+        query: str,
+        file_paths: Optional[List[str]]
+    ) -> str:
+        """Execute vision_analyzer tool."""
+        if not file_paths:
+            return "No files attached for vision analysis."
+
+        result = await vision_analyzer_tool(
+            query=query,
+            file_paths=file_paths,
+            user_id=self.user_id
+        )
+
+        logger.info(f"Vision Analyzer - Success: {result.get('success', False)}")
+        logger.info(f"Images Analyzed: {result.get('image_count', 0)}")
+
+        if result.get("success"):
+            analysis = result.get('analysis', '')
+            images = result.get('images_analyzed', [])
+            return f"Vision analysis completed for {len(images)} image(s):\n{analysis}"
+        else:
+            return f"Vision analysis failed: {result.get('error', 'Unknown error')}"
 
     def _load_conversation_history(
         self,

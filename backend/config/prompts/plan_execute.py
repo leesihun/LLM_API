@@ -1,10 +1,13 @@
 """
 Plan-Execute Agent Prompts
 Prompts for planning and executing complex multi-step tasks.
+
+Version: 2.0.0 - Modernized for Anthropic/Claude Code style
+Changes: Removed ASCII borders, markdown structure, thinking triggers
 """
 
 from typing import Optional
-from .base import get_current_time_context, section_border, MARKER_OK, MARKER_ERROR
+from .base import get_current_time_context
 
 
 def get_execution_plan_prompt(
@@ -16,8 +19,9 @@ def get_execution_plan_prompt(
     timezone: str = "UTC"
 ) -> str:
     """
-    Generate prompt for creating structured execution plans.
-    
+    Generate structured execution plan for multi-step tasks.
+    Returns JSON array of plan steps with goals, tools, and success criteria.
+
     Args:
         query: User's query
         conversation_history: Previous conversation context
@@ -25,97 +29,92 @@ def get_execution_plan_prompt(
         has_files: Whether files are attached
         file_info: File type information
         timezone: Timezone for current time context
+
+    Returns:
+        Planning prompt with JSON format specification
     """
     time_context = get_current_time_context(timezone)
-    
-    # File-specific guidance
-    file_guidance = ""
-    if has_files:
-        file_guidance = f"""
-{section_border("FILE HANDLING")}
-Files are attached. Strategy:
-1. Identify file types from list below
-2. Structured data (CSV, Excel, JSON) -> python_coder
-3. ALWAYS start with file analysis before processing
-"""
-        if file_info:
-            file_guidance += f"\nAttached Files:\n{file_info}\n"
 
-    return f"""You are an AI planning expert. Create a DETAILED execution plan.
+    # File-specific guidance
+    file_section = ""
+    if has_files:
+        file_info_display = file_info if file_info else "Files are attached."
+        file_section = f"""
+## Attached Files
+{file_info_display}
+
+**File Strategy:** Identify file types → Use python_coder for structured data → Start with analysis step.
+"""
+
+    return f"""You are an AI planning expert specializing in task decomposition and workflow optimization.
 
 {time_context}
-{file_guidance}
-
-Conversation History:
+{file_section}
+## Conversation History
 {conversation_history}
 
-Current Query: {query}
+## Current Query
+{query}
 
-Available Tools: {available_tools}
+## Available Tools
+{available_tools}
 
-{section_border("STEP FIELDS")}
+## Plan Structure
+Each step must include:
+1. **step_num** - Sequential number (1, 2, 3...)
+2. **goal** - What to accomplish (objective/outcome)
+3. **primary_tools** - Which tool(s) to use
+4. **success_criteria** - How to verify success (measurable)
+5. **context** - How to execute (specific instructions)
 
-For EACH step provide:
-1. "step_num": Sequential number starting from 1
-2. "goal": WHAT to accomplish (objective/outcome)
-3. "primary_tools": WHICH tool(s) to use
-4. "success_criteria": HOW to verify success (measurable)
-5. "context": HOW to execute (specific instructions)
-
-Goal vs Context:
+### Goal vs Context Example
 - Goal: "Calculate mean and median for numeric columns"
 - Context: "Use pandas.describe(). Handle missing values with dropna()."
 
-{section_border("VALID TOOLS")}
+## Tool Selection Guide
+- **web_search** - Current information, news, external data (input: 3-10 keywords)
+- **rag_retrieval** - Search uploaded documents (input: natural language query)
+- **python_coder** - Data analysis, file processing, calculations, visualizations
+- **file_analyzer** - Quick metadata inspection
 
-{MARKER_OK} web_search - Current/real-time information, news, external data
-   Input: 3-10 specific keywords
+**Note:** Do not include 'finish' step (happens automatically)
 
-{MARKER_OK} rag_retrieval - Search uploaded text documents (PDF, TXT, MD)
-   Input: Natural language query
+## Planning Rules
+1. **Work steps only** - Each step must produce tangible output
+2. **Synthesis last** - Add synthesis step only if combining multiple results
+3. **Tool preference** - python_coder > rag_retrieval for data files
+4. **Granularity** - Break complex goals into 2-4 completable steps
 
-{MARKER_OK} python_coder - Data analysis, file processing, calculations, visualizations
-   Handles: CSV, Excel, JSON, images
+## Success Criteria Examples
+**Good:**
+- "Data loaded: 1000 rows, 5 columns. Column names and types shown."
+- "Mean=45.6, Median=42.3 calculated with labels"
+- "Chart saved to output/chart.png with axis labels and legend"
 
-{MARKER_OK} file_analyzer - Quick file metadata inspection
+**Bad:**
+- "Data processed successfully" (too vague)
+- "Analysis complete" (no specifics)
+- "Code runs without errors" (no output verification)
 
-{MARKER_ERROR} finish - DO NOT include (happens automatically)
-
-{section_border("RULES")}
-
-1. WORK STEPS ONLY - Each step must produce tangible output
-2. SYNTHESIS - Add synthesis step only if combining multiple results
-3. TOOL SELECTION - python_coder > rag_retrieval for files
-4. GRANULARITY - Break complex goals into 2-4 steps, each completable in one tool execution
-
-{section_border("SUCCESS CRITERIA")}
-
-{MARKER_OK} GOOD: "Data loaded: 1000 rows, 5 columns. Column names and types shown."
-{MARKER_OK} GOOD: "Mean=45.6, Median=42.3 calculated and printed with labels"
-{MARKER_OK} GOOD: "Chart saved to output/chart.png with axis labels and legend"
-
-{MARKER_ERROR} BAD: "Data processed successfully" (vague)
-{MARKER_ERROR} BAD: "Analysis complete" (no specifics)
-{MARKER_ERROR} BAD: "Code runs without errors" (no output verification)
-
-{section_border("RESPONSE FORMAT")}
-
+## Output Format
 Respond with ONLY a JSON array. No markdown, no explanations.
 
+```json
 [
   {{
     "step_num": 1,
-    "goal": "Clear description of what to accomplish",
+    "goal": "Clear description",
     "primary_tools": ["tool_name"],
-    "success_criteria": "Measurable success indicators",
-    "context": "Specific execution instructions"
+    "success_criteria": "Measurable indicators",
+    "context": "Specific instructions"
   }}
 ]
+```
 
-{section_border("EXAMPLE")}
-
+## Example
 Query: "Analyze sales.csv and create revenue chart"
 
+```json
 [
   {{
     "step_num": 1,
@@ -132,5 +131,10 @@ Query: "Analyze sales.csv and create revenue chart"
     "context": "Use groupby() for aggregation. matplotlib for chart. Save with dpi=300."
   }}
 ]
+```
+
+Think harder about step dependencies and optimal execution order.
+
+Note that only one tool can be utilized each time. For complex tasks, you may need to break down the task into smaller steps with one tool use at a time.
 
 Now create a plan for the user's query. JSON array only:"""

@@ -84,9 +84,10 @@ Issues to fix:
 {section_border("FIXING RULES")}
 
 1. Address each issue listed
-2. Keep original logic and approach
-3. Filenames must remain HARDCODED
-4. {MARKER_ERROR} NO new dependencies if possible
+2. Filenames must remain HARDCODED
+3. {MARKER_ERROR}
+4. You may use other logics and approaches if needed
+5. Think hard for making changes, Aim for the best solution
 
 Generate corrected Python code only:"""
 

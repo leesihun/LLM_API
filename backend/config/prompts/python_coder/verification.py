@@ -1,10 +1,12 @@
 """
 Code Verification Prompts
 Semantic verification focused on correctness, not style.
+
+Version: 2.0.0 - Modernized for Anthropic/Claude Code style
+Changes: Removed ASCII markers, markdown structure, thinking triggers
 """
 
 from typing import Optional
-from ..base import section_border, MARKER_OK, MARKER_ERROR, MARKER_CRITICAL
 
 
 def get_verification_prompt(
@@ -14,88 +16,112 @@ def get_verification_prompt(
     code: str,
     has_json_files: bool = False
 ) -> str:
-    """Semantic code verification - focuses on execution errors."""
-    
-    json_check = f"""
-[4] JSON SAFETY:
-   - Uses EXACT filename from list?
-   - Has isinstance() check?
-   - Uses .get() for dict access?
-   - ONLY uses keys from Access Patterns?
+    """
+    Semantic code verification focused on execution errors.
+    Identifies blocking issues before execution.
+
+    Args:
+        query: User's question
+        context: Optional additional context
+        file_context: File metadata and context
+        code: Code to verify
+        has_json_files: Whether JSON files are present
+
+    Returns:
+        Verification prompt with JSON response format
+    """
+    context_line = f"\n**Context:** {context}\n" if context else ""
+
+    json_check = """
+### JSON Safety Checks
+- Uses exact filename from list?
+- Has `isinstance()` check?
+- Uses `.get()` for dict access?
+- Only uses keys from Access Patterns?
 """ if has_json_files else ""
-    
-    return f"""You are a Python code verifier. Find potential EXECUTION ERRORS.
 
-{MARKER_CRITICAL} Find problems causing execution failures or incorrect results.
+    return f"""You are a Python code verification specialist. Identify potential execution errors before running code.
 
-User Question: {query}
-{f"Context: {context}" if context else ""}
-
+## User Question
+{query}
+{context_line}
 {file_context}
 
-Code to verify:
+## Code to Verify
 ```python
 {code}
 ```
 
-{section_border("VERIFICATION CHECKLIST")}
+## Verification Checklist
 
-[1] LOGIC: Does code address the question? Correct calculations?
+### Logic Correctness
+- Does code address the question?
+- Are calculations correct?
 
-[2] EXECUTION BLOCKERS:
-   - Syntax errors?
-   - Undefined variables/functions?
-   - Uses sys.argv or input()? {MARKER_ERROR} CRITICAL ERROR
-   
-[3] FILE HANDLING:
-   - Uses EXACT filenames from list?
-   - NO generic names (file.json, data.csv)?
-   - Filenames HARDCODED (no sys.argv)?
+### Execution Blockers
+- Syntax errors present?
+- Undefined variables or functions?
+- Uses `sys.argv` or `input()`? **Critical error**
+
+### File Handling
+- Uses exact filenames from list?
+- No generic names: `file.json`, `data.csv`?
+- Filenames hardcoded (no `sys.argv`)?
 {json_check}
+### Critical Errors to Flag
+Must flag these patterns:
+- `if len(sys.argv) > 1:`
+- `main(sys.argv[1])`
+- `input('Enter:')`
+- `argparse`
 
-{MARKER_ERROR} CRITICAL ERRORS TO CATCH:
-- if len(sys.argv) > 1: ... {MARKER_ERROR} MUST FLAG
-- main(sys.argv[1]) {MARKER_ERROR} MUST FLAG  
-- input('Enter:') {MARKER_ERROR} MUST FLAG
-- argparse {MARKER_ERROR} MUST FLAG
+## Response Format
+Return JSON:
+```json
+{{
+  "verified": true/false,
+  "issues": ["issue1", "issue2", ...]
+}}
+```
 
-{section_border("RESPONSE FORMAT")}
+**Examples:**
+- `{{"verified": true, "issues": []}}` - Code will execute, answers question, correct filenames
+- `{{"verified": false, "issues": [...]}}` - Execution blocker detected
 
-Return JSON: {{"verified": true/false, "issues": ["issue1", ...]}}
+Focus on execution errors, not style.
 
-{MARKER_OK} {{"verified": true, "issues": []}} - Code will execute, answers question, correct filenames
-{MARKER_ERROR} {{"verified": false, "issues": [...]}} - Any execution blocker detected
-
-Focus on EXECUTION ERRORS, not style."""
+Think hard about potential runtime failures."""
 
 
 def get_self_verification_section(query: str, has_json_files: bool = False) -> str:
     """Self-verification for combined generation+verification."""
-    task_ref = query.split('\n')[0][:100]
-    
+    task_ref = query.split('\n')[0][:10000000]
+
     json_step = """
-[3] JSON Safety: .get() for access? isinstance() check? try/except?
+**3. JSON Safety:** .get() for access? isinstance() check? try/except?
 """ if has_json_files else """
-[3] File Safety: try/except for FileNotFoundError?
+**3. File Safety:** try/except for FileNotFoundError?
 """
-    
+
     return f"""
 
-{section_border("SELF-VERIFICATION")}
+## Self-Verification
 
-[1] Task: Does code answer "{task_ref}"?
-    {MARKER_ERROR} Reject if: partial answer or different task
+**1. Task:** Does code answer "{task_ref}"?
+   - Bad: Reject if partial answer or different task
 
-[2] Filenames: ALL hardcoded and exact?
-    {MARKER_ERROR} Reject if: generic names, sys.argv, input(), argparse
+**2. Filenames:** ALL hardcoded and exact?
+   - Bad: Reject if generic names, sys.argv, input(), argparse
 {json_step}
-{section_border("RESPONSE FORMAT")}
+## Response Format
 
+```json
 {{
   "code": "python code string",
   "self_check_passed": true/false,
   "issues": ["list of issues or empty"]
 }}
+```
 
 Set "self_check_passed": true ONLY if ALL checks pass.
 Respond with ONLY the JSON object:"""
@@ -107,36 +133,54 @@ def get_output_adequacy_prompt(
     output: str,
     context: Optional[str] = None
 ) -> str:
-    """Check if output adequately answers the question."""
-    return f"""Analyze if this output adequately answers the user's question.
+    """
+    Verify if code output adequately answers the user's query.
+    Returns: adequate (bool), reason (str), suggestion (str).
 
-User Question: {query}
-{f"Context: {context}" if context else ""}
+    Args:
+        query: User's question
+        code: Generated code
+        output: Code execution output
+        context: Optional additional context
 
-Code:
+    Returns:
+        Output adequacy verification prompt
+    """
+    context_section = f"\n## Additional Context\n{context}\n" if context else ""
+
+    return f"""You are a code output evaluator specializing in data analysis quality assurance.
+
+## Original Query
+{query}
+{context_section}
+## Generated Code
 ```python
 {code}
 ```
 
-Output:
+## Code Output
 ```
 {output[:5000]}
 ```
 
-{section_border("EVALUATION")}
+## Your Task
+Evaluate whether the output adequately answers the query. Consider:
+- Does it directly address the question?
+- Are results complete and specific?
+- Are calculations/analysis correct?
+- Is output format appropriate?
+- Any errors or warnings present?
 
-1. Does output contain requested information?
-2. Is output clear and understandable?
-3. Any errors or warnings?
-4. Is output complete?
-
-{section_border("RESPONSE FORMAT")}
-
+## Response Format
+Return JSON only:
+```json
 {{
   "adequate": true/false,
-  "reason": "Brief explanation",
-  "suggestion": "Changes needed if not adequate, empty if adequate"
+  "reason": "Brief explanation of your decision",
+  "suggestion": "How to improve if inadequate (empty if adequate)"
 }}
+```
 
 Be lenient - if output provides useful information, consider it adequate.
-Respond with ONLY JSON:"""
+
+Think hard about whether the user's question is truly answered."""

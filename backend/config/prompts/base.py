@@ -1,42 +1,157 @@
 """
 Base Prompt Utilities
 Provides standardized structure, markers, and temporal context for all prompts.
+
+Version: 2.0.0 - Modernized for Anthropic/Claude Code style
+Changes: Added new markdown-based utilities, deprecated ASCII markers
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import pytz
 
 
 # ============================================================================
-# STANDARD ASCII MARKERS
+# DEPRECATED ASCII MARKERS (Kept for backward compatibility)
 # ============================================================================
-# Use these consistently across all prompts instead of Unicode symbols
+# DEPRECATED: Use markdown emphasis instead
+# Migration: [OK] → **Good:**, [X] → **Bad:**, [!!!] → **Critical:**
 
-MARKER_OK = "[OK]"
-MARKER_ERROR = "[X]"
-MARKER_CRITICAL = "[!!!]"
-MARKER_WARNING = "[WARNING]"
-MARKER_CHECK = "[CHECK]"
-MARKER_RULE = "[RULE]"
-MARKER_TIP = "[TIP]"
+MARKER_OK = "**Good:**"  # Previously "[OK]"
+MARKER_ERROR = "**Bad:**"  # Previously "[X]"
+MARKER_CRITICAL = "**Critical:**"  # Previously "[!!!]"
+MARKER_WARNING = "**Warning:**"  # Previously "[WARNING]"
+MARKER_CHECK = "**Check:**"  # Previously "[CHECK]"
+MARKER_RULE = ""  # DEPRECATED: Use numbered lists instead
+MARKER_TIP = "**Tip:**"  # Previously "[TIP]"
 
 
 # ============================================================================
-# STANDARD SEPARATORS
+# MODERN MARKDOWN UTILITIES
+# ============================================================================
+
+def section_header(title: str, level: int = 2) -> str:
+    """
+    Create a markdown section header.
+
+    Args:
+        title: Section title
+        level: Markdown header level (1-6, default 2 for ##)
+
+    Returns:
+        Markdown header string
+
+    Example:
+        section_header("Task", 2) -> "## Task"
+        section_header("Requirements", 3) -> "### Requirements"
+    """
+    prefix = "#" * min(max(level, 1), 6)
+    return f"{prefix} {title}"
+
+
+def role_definition(
+    title: str,
+    expertise: Optional[str] = None,
+    context: Optional[str] = None
+) -> str:
+    """
+    Create a specific role definition following Anthropic best practices.
+
+    Args:
+        title: Professional role (e.g., "Python code generation expert")
+        expertise: Optional specialization (e.g., "specializing in data analysis")
+        context: Optional additional context
+
+    Returns:
+        Complete role definition string
+
+    Example:
+        role_definition(
+            "Python code generation expert",
+            "specializing in data analysis",
+            "You work with pandas, numpy, and matplotlib."
+        )
+        → "You are a Python code generation expert specializing in data analysis.
+           You work with pandas, numpy, and matplotlib."
+    """
+    parts = [f"You are a {title}"]
+
+    if expertise:
+        parts[0] += f" {expertise}"
+
+    parts[0] += "."
+
+    if context:
+        parts.append(context)
+
+    return " ".join(parts)
+
+
+def thinking_trigger(depth: str = "hard") -> str:
+    """
+    Add a thinking depth trigger following Anthropic patterns.
+
+    Args:
+        depth: Thinking depth level
+            - "normal" → "Think about"
+            - "hard" → "Think hard about"
+            - "harder" → "Think harder about"
+            - "ultra" → "Ultrathink about"
+
+    Returns:
+        Thinking prompt string
+
+    Examples:
+        thinking_trigger("hard") → "Think hard about"
+        thinking_trigger("ultra") → "Ultrathink about"
+    """
+    triggers = {
+        "normal": "Think about",
+        "hard": "Think hard about",
+        "harder": "Think harder about",
+        "ultra": "Ultrathink about"
+    }
+    return triggers.get(depth, "Think hard about")
+
+
+def format_code_block(code: str, language: str = "python") -> str:
+    """
+    Format code with proper markdown fences.
+
+    Args:
+        code: Code content
+        language: Syntax highlighting language
+
+    Returns:
+        Markdown code block
+    """
+    return f"```{language}\n{code}\n```"
+
+
+# ============================================================================
+# DEPRECATED SEPARATORS (Kept for backward compatibility)
 # ============================================================================
 
 def section_border(title: str = "", width: int = 80) -> str:
-    """Create a standard section border with optional centered title."""
-    border = "=" * width
+    """
+    DEPRECATED: Use section_header() instead.
+
+    Create a standard section border with optional centered title.
+    Kept for backward compatibility during migration.
+    """
     if title:
-        return f"{border}\n{title.center(width)}\n{border}"
-    return border
+        return section_header(title, level=2)
+    return ""
 
 
 def subsection_border(width: int = 80) -> str:
-    """Create a subsection separator."""
-    return "-" * width
+    """
+    DEPRECATED: Use section_header() with level=3 instead.
+
+    Create a subsection separator.
+    Kept for backward compatibility during migration.
+    """
+    return ""
 
 
 # ============================================================================
@@ -170,78 +285,84 @@ def format_examples_section(examples: list) -> str:
 
 
 # ============================================================================
-# COMMON RULE BLOCKS (Reusable across prompts)
+# COMMON RULE BLOCKS (Modernized with markdown)
 # ============================================================================
 
-FILENAME_RULES = f"""
-{MARKER_RULE} EXACT FILENAMES
-   - Copy EXACT filename from META DATA section
-   - {MARKER_ERROR} NO generic names: 'data.json', 'file.json', 'input.csv'
-   - {MARKER_OK} Example: filename = 'sales_report_Q4_2024.json'
+FILENAME_RULES = """
+### Filename Requirements
+- Use exact filenames from metadata
+- Avoid generic names: `data.json`, `file.json`, `input.csv`
+- Example: `filename = 'sales_report_Q4_2024.json'`
 """
 
-NO_ARGS_RULES = f"""
-{MARKER_RULE} NO COMMAND-LINE ARGS / USER INPUT
-   - Code runs via subprocess WITHOUT arguments
-   - {MARKER_ERROR} NO sys.argv, NO input(), NO argparse
-   - {MARKER_OK} All filenames must be HARDCODED
+NO_ARGS_RULES = """
+### No Command-Line Arguments
+- Code runs via subprocess without arguments
+- No `sys.argv`, `input()`, or `argparse`
+- All filenames must be hardcoded
 """
 
-JSON_SAFETY_RULES = f"""
-{MARKER_RULE} JSON SAFETY
-   - Use .get() for dict access: data.get('key', default)
-   - Check type: isinstance(data, dict) or isinstance(data, list)
-   - Add error handling: try/except json.JSONDecodeError
-   - Validate nested access: data.get('parent', {{}}).get('child', default)
+JSON_SAFETY_RULES = """
+### JSON Safety
+- Use `.get()` for dict access: `data.get('key', default)`
+- Check type: `isinstance(data, dict)` or `isinstance(data, list)`
+- Add error handling: `try/except json.JSONDecodeError`
+- Validate nested access: `data.get('parent', {}).get('child', default)`
 """
 
-ACCESS_PATTERN_RULES = f"""
-{MARKER_RULE} USE ACCESS PATTERNS
-   - Copy access patterns from META DATA section
-   - {MARKER_ERROR} DON'T guess keys or field names
-   - {MARKER_OK} Use .get() for safe dict access
+ACCESS_PATTERN_RULES = """
+### Access Patterns
+- Copy access patterns from metadata section
+- Don't guess keys or field names
+- Use `.get()` for safe dict access
 """
 
-OUTPUT_FILE_RULES = f"""
-{MARKER_RULE} OUTPUT DISPLAY
-   - {MARKER_OK} Use print() to display results directly in stdout
-   - DataFrames will show ALL rows/columns (pandas display options are pre-configured)
-   - {MARKER_CRITICAL} ONLY save to files when necessary:
-     * Images/plots: plt.savefig('output.png')
-     * PowerPoint: prs.save('output.pptx')
-     * Excel reports: df.to_excel('report.xlsx')
-     * PDF documents: Save as PDF when explicitly requested
-   - {MARKER_ERROR} DO NOT save ordinary results (CSV, TXT) to files - just print them
-   - {MARKER_OK} print(df) will show complete data, no truncation
+OUTPUT_FILE_RULES = """
+### Output Requirements
+- Use `print()` to display results directly in stdout
+- DataFrames will show ALL rows/columns (pandas display options pre-configured)
+- ONLY save to files when necessary:
+  - Images/plots: `plt.savefig('output.png')`
+  - PowerPoint: `prs.save('output.pptx')`
+  - Excel reports: `df.to_excel('report.xlsx')`
+  - PDF documents: Save as PDF when explicitly requested
+- Do not save ordinary results (CSV, TXT) to files - just print them
+- `print(df)` will show complete data, no truncation
 """
 
 
 __all__ = [
-    # Markers
+    # Deprecated markers (backward compatibility)
     'MARKER_OK',
-    'MARKER_ERROR', 
+    'MARKER_ERROR',
     'MARKER_CRITICAL',
     'MARKER_WARNING',
     'MARKER_CHECK',
     'MARKER_RULE',
     'MARKER_TIP',
-    
-    # Separators
+
+    # Modern utilities (NEW)
+    'section_header',
+    'role_definition',
+    'thinking_trigger',
+    'format_code_block',
+
+    # Deprecated separators (backward compatibility)
     'section_border',
     'subsection_border',
-    
+
     # Time context
     'get_current_time_context',
     'get_time_context_dict',
-    
+
     # Section formatters
     'format_context_section',
     'format_task_section',
     'format_rules_section',
     'format_format_section',
     'format_examples_section',
-    
-    # Reusable rule blocks
+
+    # Reusable rule blocks (modernized)
     'FILENAME_RULES',
     'NO_ARGS_RULES',
     'JSON_SAFETY_RULES',

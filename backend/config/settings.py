@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     ollama_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
     agentic_classifier_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
     ollama_coder_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
+    ollama_vision_model: str = 'gemma3:12b'
     ollama_timeout: int = 3000000
     ollama_num_ctx: int = 16384
     # Sampling parameters - optimized for coherent responses
@@ -42,9 +43,18 @@ class Settings(BaseSettings):
     ollama_top_k: int = 20          # Top-k sampling (higher = more diverse)
     ollama_coder_model_temperature: float = 0.6
 
-    react_max_iterations: int = 5  # Maximum iterations for ReAct loop
+    react_max_iterations: int = 10  # Maximum iterations for ReAct loop
     react_step_max_retries: int = 5  # Maximum retries per step in plan execution
     python_code_max_iterations: int = 5
+
+    # ============================================================================
+    # Vision/Multimodal Configuration
+    # ============================================================================
+
+    # Vision model for image understanding tasks
+    vision_enabled: bool = False
+    vision_max_image_size: int = 2048  # Max dimension (width/height) for image resizing
+    vision_temperature: float = 0.3  # Lower temp for more focused vision analysis
 
     # ============================================================================
     # API Keys - SECURE THESE IN PRODUCTION
@@ -94,7 +104,7 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Available tools
-    available_tools: list[str] = ['web_search', 'rag', 'python_coder']
+    available_tools: list[str] = ['web_search', 'rag', 'python_coder', 'vision_analyzer']
 
     # ============================================================================
     # Python Code Execution - Sandbox Configuration

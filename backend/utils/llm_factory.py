@@ -567,6 +567,61 @@ class LLMFactory:
         )
 
     @classmethod
+    def create_vision_llm(
+        cls,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        num_ctx: Optional[int] = None,
+        user_id: Optional[str] = None,
+        enable_prompt_logging: bool = True,
+        log_format: LogFormat = LogFormat.STRUCTURED,
+        log_file: Optional[Path] = None,
+        **kwargs
+    ) -> ChatOllama:
+        """
+        Create an LLM optimized for vision/image understanding tasks.
+
+        Uses settings.ollama_vision_model by default (e.g., llama3.2-vision:11b).
+        Uses lower temperature for more focused visual analysis.
+
+        Args:
+            model: Vision model name (defaults to settings.ollama_vision_model)
+            temperature: Sampling temperature (defaults to settings.vision_temperature)
+            num_ctx: Context window size (defaults to settings.ollama_num_ctx)
+            user_id: User ID for prompt logging (defaults to "default")
+            enable_prompt_logging: Enable prompt interception and logging (default: True)
+            log_format: Format for prompt logs - STRUCTURED, JSON, or COMPACT (default: STRUCTURED)
+            log_file: Custom log file path (defaults to data/scratch/prompts.log)
+            **kwargs: Additional parameters to pass to ChatOllama
+
+        Returns:
+            Configured ChatOllama instance for vision tasks
+
+        Example:
+            >>> vision_llm = LLMFactory.create_vision_llm(user_id="alice")
+            >>> # Use with multimodal message containing images
+            >>> response = vision_llm.invoke(multimodal_message)
+        """
+        vision_model = model or settings.ollama_vision_model
+        vision_temperature = (
+            temperature if temperature is not None else settings.vision_temperature
+        )
+        vision_num_ctx = num_ctx or settings.ollama_num_ctx
+
+        logger.debug(f"[LLMFactory] Creating vision LLM with model={vision_model}")
+
+        return cls.create_llm(
+            model=vision_model,
+            temperature=vision_temperature,
+            num_ctx=vision_num_ctx,
+            user_id=user_id,
+            enable_prompt_logging=enable_prompt_logging,
+            log_format=log_format,
+            log_file=log_file,
+            **kwargs
+        )
+
+    @classmethod
     def check_connection(cls, timeout: int = 5000) -> bool:
         """
         Check if Ollama service is accessible.

@@ -218,8 +218,13 @@ class PythonCoderTool:
                 stage_name=stage_name
             )
 
-            # Classify error for better retry guidance
-            error_type = self._classify_error(execution_result.get("error", "")) if not execution_result["success"] else ("Success", "")
+            # Classify error for better retry guidance (with context)
+            error_type = self._classify_error(
+                error_message=execution_result.get("error", ""),
+                return_code=execution_result.get("return_code", -1),
+                stdout=execution_result.get("output", ""),
+                namespace=execution_result.get("namespace", {})
+            ) if not execution_result["success"] else ("Success", "")
             
             attempt_history.append({
                 "attempt": attempt + 1,
@@ -872,22 +877,55 @@ class PythonCoderTool:
             logger.error(f"[PythonCoderTool] Failed to check output adequacy: {e}")
             raise
 
-    def _classify_error(self, error_message: str) -> Tuple[str, str]:
+    def _classify_error(
+        self,
+        error_message: str,
+        return_code: int = -1,
+        stdout: str = "",
+        namespace: Dict = None
+    ) -> Tuple[str, str]:
         """
-        Classify error and return (error_type, specific_guidance).
+        Classify error and return (error_type, specific_guidance) with enhanced context.
 
         This helps the LLM understand the nature of the error and provides
         actionable guidance for fixing it.
 
         Args:
             error_message: The error message from execution
+            return_code: Process return code
+            stdout: Standard output from execution
+            namespace: Variable namespace (if available)
 
         Returns:
             Tuple of (error_type, guidance_text)
         """
         if not error_message or error_message.strip() == "":
-            return ("Unknown", "Code execution failed but no error message was captured. This often means: 1) Missing library (check imports, install with pip), 2) Silent exception caught without logging, 3) Process terminated without error output. Add print() statements to debug.")
-            
+            # Build context-aware guidance for silent failures
+            clues = []
+
+            if return_code == 1:
+                clues.append("Return code 1 strongly suggests ImportError or ModuleNotFoundError")
+            elif return_code == 2:
+                clues.append("Return code 2 suggests invalid syntax or command invocation issue")
+            elif return_code > 128:
+                clues.append(f"Return code {return_code} indicates process was killed by signal")
+
+            if stdout and len(stdout.strip()) < 50:
+                clues.append(f"Minimal output ('{stdout.strip()[:30]}...') suggests code crashed very early")
+            elif not stdout:
+                clues.append("No output at all - code likely failed before any print statements")
+
+            if namespace is not None and len(namespace) == 0:
+                clues.append("No variables captured - code execution didn't reach variable assignments")
+
+            guidance_parts = ["Code execution failed silently."]
+            if clues:
+                guidance_parts.append(" Context: " + "; ".join(clues) + ".")
+
+            guidance_parts.append(" Common fixes: 1) Check all imports are installed (pip install <package>), 2) Verify code syntax, 3) Add try/except with print() to catch silent errors, 4) Check file paths exist.")
+
+            return ("SilentFailure", "".join(guidance_parts))
+
         error_lower = error_message.lower()
         
         if "indexerror" in error_lower or "list index out of range" in error_lower:
@@ -1019,7 +1057,14 @@ class PythonCoderTool:
             for prev in attempt_history:
                 attempt_num = prev.get("attempt", "?")
                 error_type = prev.get("error_type", ("Unknown", ""))[0]
-                error_msg = prev.get("error", "")[:500]
+
+                # Smart truncation: preserve error type at start and actual error at end
+                error_msg = prev.get("error", "")
+                if len(error_msg) > 800:
+                    # Keep first 300 chars (error type + traceback start)
+                    # Keep last 500 chars (actual error line and context)
+                    error_msg = error_msg[:300] + "\n\n... [middle of traceback truncated] ...\n\n" + error_msg[-500:]
+
                 prev_code = prev.get("code", "")
                 namespace = prev.get("namespace", {})
                 
