@@ -1,20 +1,3 @@
-"""
-Unified File Handler System
-============================
-Provides a unified interface for file handling across the system.
-
-This module replaces duplicated file handlers in:
-- backend/tools/python_coder/file_handlers/
-- backend/tools/file_analyzer/handlers/
-
-Unified interface supports both:
-- Metadata extraction for code generation (python_coder use case)
-- Full file analysis (file_analyzer use case)
-
-Created: 2025-01-20
-Version: 1.0.0
-"""
-
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Optional, List

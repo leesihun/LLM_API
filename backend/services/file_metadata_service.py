@@ -2,7 +2,6 @@
 File Metadata Service
 =====================
 Unified service for extracting metadata from various file formats.
-Eliminates code duplication between python_coder_tool and file_analyzer_tool.
 
 Supported formats: CSV, Excel, JSON, Text, PDF, DOCX, Images
 

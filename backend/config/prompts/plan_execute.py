@@ -75,7 +75,6 @@ Each step must include:
 - **web_search** - Current information, news, external data (input: 3-10 keywords)
 - **rag_retrieval** - Search uploaded documents (input: natural language query)
 - **python_coder** - Data analysis, file processing, calculations, visualizations
-- **file_analyzer** - Quick metadata inspection
 
 **Note:** Do not include 'finish' step (happens automatically)
 
