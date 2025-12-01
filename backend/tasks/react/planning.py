@@ -561,7 +561,7 @@ class PlanExecutor:
                 # Check if this was a failure
                 if "failed" in react_step.observation.lower() or "error" in react_step.observation.lower():
                     failed_code_attempts.append({
-                        'iteration': react_step.iteration,
+                        'iteration': react_step.step_num,
                         'thought': react_step.thought,
                         'observation': react_step.observation[:1000]  # Limit length
                     })
