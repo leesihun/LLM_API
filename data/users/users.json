@@ -14,6 +14,11 @@
       "username": "leesihun",
       "password": "s.hun.lee",
       "role": "guest"
+    },
+    {
+      "username": "leesihun123",
+      "password_hash": "$2b$12$dC7XKGxLbD6v2SmKxfEawOXw35LL.ZQojncPeEOMdedqc8viqXVh6",
+      "role": "guest"
     }
   ]
 }
