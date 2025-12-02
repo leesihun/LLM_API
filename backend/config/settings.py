@@ -26,92 +26,65 @@ class Settings(BaseSettings):
     secret_key: str = 'dev-secret-key-change-in-production-please'
 
     # ============================================================================
+    # LLM Backend Configuration
+    # ============================================================================
+
+    # Backend selection: 'ollama' or 'llamacpp'
+    llm_backend: str = 'ollama'  # Default to Ollama for backward compatibility
+
+    # ============================================================================
     # Ollama Configuration - Optimized for Performance
     # ============================================================================
 
     # Ollama service endpoint
     ollama_host: str = 'http://127.0.0.1:11434'
-    ollama_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
-    agentic_classifier_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
-    ollama_coder_model: str = 'qwen3-coder:30b'#'gpt-oss:20b'
+    ollama_model: str = 'gpt-oss:120b'#'gpt-oss:20b'
+    agentic_classifier_model: str = 'gpt-oss:20b'#'gpt-oss:20b'
+    ollama_coder_model: str = 'GLM-4.6-REAP'#'gpt-oss:20b'
     ollama_vision_model: str = 'gemma3:12b'
     ollama_timeout: int = 3000000
-    ollama_num_ctx: int = 16384
+    ollama_num_ctx: int = 4096  # Reduced from 16384 for faster processing
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.6  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 1.0  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.95      # Nucleus sampling
-    ollama_top_k: int = 20          # Top-k sampling (higher = more diverse)
-    ollama_coder_model_temperature: float = 0.6
+    ollama_top_k: int = 40          # Top-k sampling (higher = more diverse)
+    ollama_coder_model_temperature: float = 1.0
+
+    # ============================================================================
+    # Llama.cpp Configuration
+    # ============================================================================
+
+    # Model file paths (GGUF format)
+    llamacpp_model_path: str = '../models/gpt-oss-120b.gguf'
+    llamacpp_classifier_model_path: str = '../models/gpt-oss-20b.gguf'
+    llamacpp_coder_model_path: str = '../models/GLM-4.6-REAP.gguf'
+    llamacpp_vision_model_path: str = '../models/gemma3-12b-it-q8_0.gguf'
+
+    # Hardware acceleration
+    llamacpp_n_gpu_layers: int = -1  # -1 = offload all layers to GPU, 0 = CPU only
+    llamacpp_n_threads: int = 8      # CPU threads for computation
+    llamacpp_n_batch: int = 512      # Batch size for prompt processing
+
+    # Context and generation settings
+    llamacpp_n_ctx: int = 4096      # Context window size (reduced for faster processing)
+    llamacpp_temperature: float = 1.0
+    llamacpp_top_p: float = 0.95
+    llamacpp_top_k: int = 40
+    llamacpp_max_tokens: int = 4096  # Max tokens to generate
+    llamacpp_rope_freq_base: float = 10000.0  # RoPE frequency base (adjust for extended context)
+    llamacpp_rope_freq_scale: float = 1.0     # RoPE frequency scaling
+
+    # Memory optimization
+    llamacpp_use_mmap: bool = True   # Use memory mapping for model loading
+    llamacpp_use_mlock: bool = False # Lock model in RAM (requires privileges)
+    llamacpp_low_vram: bool = False  # Reduce VRAM usage (slower)
+
+    # Verbose logging for debugging
+    llamacpp_verbose: bool = True
 
     react_max_iterations: int = 10  # Maximum iterations for ReAct loop
     react_step_max_retries: int = 5  # Maximum retries per step in plan execution
     python_code_max_iterations: int = 5
-
-    # ============================================================================
-    # Qwen Thinking Effort Configuration
-    # ============================================================================
-
-    # Thinking effort levels control Qwen's reasoning via Ollama API parameter
-    # - none: Disable thinking completely (reasoning=False)
-    # - low: Light reasoning (reasoning=True, temp=0.3)
-    # - mid: Moderate reasoning (reasoning=True, temp=0.6, default)
-    # - high: Deep reasoning (reasoning=True, temp=0.8)
-
-    # Global default thinking effort
-    thinking_effort_default: str = 'none'
-
-    # Task-specific thinking effort settings
-    thinking_effort_classifier: str = 'none'     # Fast classification, no thinking
-    thinking_effort_coder: str = 'none'          # Code generation
-    thinking_effort_react: str = 'none'          # Agent reasoning
-    thinking_effort_planner: str = 'none'        # Planning
-    thinking_effort_vision: str = 'none'         # Visual analysis
-
-    def get_thinking_config(self, effort: str) -> dict:
-        """
-        Get thinking configuration for Qwen models using Ollama reasoning parameter.
-
-        Maps thinking effort levels to ChatOllama reasoning parameter and temperature.
-
-        Effort Levels:
-        - none: Disable thinking completely (reasoning=False)
-        - low: Enable light reasoning (reasoning=True, low temp)
-        - mid: Enable moderate reasoning (reasoning=True, mid temp)
-        - high: Enable deep reasoning (reasoning=True, high temp)
-
-        Args:
-            effort: Thinking effort level ('none', 'low', 'mid', 'high')
-
-        Returns:
-            dict with 'reasoning' (bool) and 'temperature' (float) keys
-
-        Examples:
-            >>> settings.get_thinking_config('none')
-            {'reasoning': False, 'temperature': 0.1}
-
-            >>> settings.get_thinking_config('high')
-            {'reasoning': True, 'temperature': 0.8}
-        """
-        configs = {
-            'none': {
-                'reasoning': False,    # Disable thinking completely
-                'temperature': 0.1     # Low temp for fast, deterministic responses
-            },
-            'low': {
-                'reasoning': True,     # Enable thinking
-                'temperature': 0.3     # Lower temp for focused reasoning
-            },
-            'mid': {
-                'reasoning': True,
-                'temperature': 0.6     # Balanced reasoning (default)
-            },
-            'high': {
-                'reasoning': True,
-                'temperature': 0.8     # Higher temp for creative, thorough reasoning
-            }
-        }
-
-        return configs.get(effort, configs['mid'])
 
     # ============================================================================
     # Vision/Multimodal Configuration

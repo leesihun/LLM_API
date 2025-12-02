@@ -138,11 +138,24 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {
+    health_info = {
         "status": "healthy",
-        "ollama_host": settings.ollama_host,
-        "model": settings.ollama_model
+        "backend": settings.llm_backend,
     }
+
+    if settings.llm_backend == 'ollama':
+        health_info.update({
+            "ollama_host": settings.ollama_host,
+            "model": settings.ollama_model
+        })
+    elif settings.llm_backend == 'llamacpp':
+        health_info.update({
+            "model_path": settings.llamacpp_model_path,
+            "n_gpu_layers": settings.llamacpp_n_gpu_layers,
+            "n_ctx": settings.llamacpp_n_ctx
+        })
+
+    return health_info
 
 
 # ============================================================================
@@ -171,47 +184,92 @@ async def global_exception_handler(request, exc):
 async def startup_event():
     """Run on application startup"""
     import httpx
+    from pathlib import Path
 
     logger.info("Starting HE Team LLM Assistant API...")
-    logger.info(f"Ollama Host: {settings.ollama_host}")
-    logger.info(f"Ollama Model: {settings.ollama_model}")
+    logger.info(f"LLM Backend: {settings.llm_backend}")
     logger.info(f"Server: {settings.server_host}:{settings.server_port}")
 
-    # Test Ollama connection
-    try:
-        logger.info("Testing Ollama connection...")
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{settings.ollama_host}/api/tags", timeout=10.0)
-            if response.status_code == 200:
-                logger.info("✓ Ollama connection successful!")
-                models = response.json().get("models", [])
-                logger.info(f"✓ Available models: {[m.get('name') for m in models]}")
-            else:
-                logger.error(f"✗ Ollama returned status {response.status_code}")
-    except Exception as e:
-        logger.error("=" * 80)
-        logger.error("✗ OLLAMA CONNECTION FAILED!")
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error message: {str(e)}")
-        logger.error(f"Ollama Host: {settings.ollama_host}")
-        logger.error("Please check:")
-        logger.error("  1. Is Ollama running? (ollama serve)")
-        logger.error("  2. Is it accessible at the configured host?")
-        logger.error("  3. Try: curl http://127.0.0.1:11434/api/tags")
-        logger.error("=" * 80)
+    # ========================================================================
+    # Backend-specific health checks and preloading
+    # ========================================================================
 
-    # Preload model into VRAM for faster first request
-    try:
-        logger.info(f"Preloading model '{settings.ollama_model}' into VRAM...")
-        from backend.utils.llm_factory import LLMFactory
+    if settings.llm_backend == 'ollama':
+        logger.info(f"Ollama Host: {settings.ollama_host}")
+        logger.info(f"Ollama Model: {settings.ollama_model}")
 
-        llm = LLMFactory.create_llm()
-        # Send a minimal warmup request to load model
-        await llm.ainvoke("Hello")
-        logger.info(f"✓ Model '{settings.ollama_model}' preloaded successfully!")
-    except Exception as e:
-        logger.warning(f"⚠ Model preload failed (non-critical): {e}")
-        logger.warning("First API request may be slower while model loads")
+        # Test Ollama connection
+        try:
+            logger.info("Testing Ollama connection...")
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{settings.ollama_host}/api/tags", timeout=10.0)
+                if response.status_code == 200:
+                    logger.info("✓ Ollama connection successful!")
+                    models = response.json().get("models", [])
+                    logger.info(f"✓ Available models: {[m.get('name') for m in models]}")
+                else:
+                    logger.error(f"✗ Ollama returned status {response.status_code}")
+        except Exception as e:
+            logger.error("=" * 80)
+            logger.error("✗ OLLAMA CONNECTION FAILED!")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error(f"Ollama Host: {settings.ollama_host}")
+            logger.error("Please check:")
+            logger.error("  1. Is Ollama running? (ollama serve)")
+            logger.error("  2. Is it accessible at the configured host?")
+            logger.error("  3. Try: curl http://127.0.0.1:11434/api/tags")
+            logger.error("=" * 80)
+
+        # Preload model into VRAM for faster first request
+        try:
+            logger.info(f"Preloading model '{settings.ollama_model}' into VRAM...")
+            from backend.utils.llm_factory import LLMFactory
+
+            llm = LLMFactory.create_llm()
+            # Send a minimal warmup request to load model
+            await llm.ainvoke("Hello")
+            logger.info(f"✓ Model '{settings.ollama_model}' preloaded successfully!")
+        except Exception as e:
+            logger.warning(f"⚠ Model preload failed (non-critical): {e}")
+            logger.warning("First API request may be slower while model loads")
+
+    elif settings.llm_backend == 'llamacpp':
+        logger.info(f"Llama.cpp Model Path: {settings.llamacpp_model_path}")
+        logger.info(f"GPU Layers: {settings.llamacpp_n_gpu_layers}")
+        logger.info(f"Context Size: {settings.llamacpp_n_ctx}")
+
+        # Check if model file exists
+        model_path = Path(settings.llamacpp_model_path)
+        if model_path.exists():
+            logger.info(f"✓ Model file found: {model_path}")
+            logger.info(f"  File size: {model_path.stat().st_size / (1024**3):.2f} GB")
+        else:
+            logger.error("=" * 80)
+            logger.error("✗ LLAMA.CPP MODEL FILE NOT FOUND!")
+            logger.error(f"Expected path: {settings.llamacpp_model_path}")
+            logger.error("Please download a GGUF model and place it at this path.")
+            logger.error("Example models:")
+            logger.error("  - Qwen Coder: https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF")
+            logger.error("  - Llama 3: https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF")
+            logger.error("=" * 80)
+
+        # Preload model for faster first request (lazy loading will happen on first use)
+        try:
+            logger.info("Initializing llama.cpp wrapper (model will load on first use)...")
+            from backend.utils.llm_factory import LLMFactory
+
+            # Just create the wrapper (doesn't load model yet due to lazy loading)
+            llm = LLMFactory.create_llm()
+            logger.info("✓ Llama.cpp wrapper initialized successfully!")
+            logger.info("  Note: Model will be loaded into memory on first inference request")
+        except Exception as e:
+            logger.error(f"✗ Failed to initialize llama.cpp wrapper: {e}")
+            logger.error("Application may not function correctly")
+
+    else:
+        logger.error(f"✗ Unknown LLM backend: '{settings.llm_backend}'")
+        logger.error("Valid backends: 'ollama', 'llamacpp'")
 
     logger.info("Application started successfully")
 

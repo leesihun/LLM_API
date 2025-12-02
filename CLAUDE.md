@@ -4,13 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an **AI-powered LLM API server** with sophisticated **agentic workflow capabilities**. The system integrates Large Language Models (via Ollama) with multi-agent reasoning patterns (ReAct, Plan-Execute) to handle complex tasks including web search, document retrieval (RAG), and autonomous Python code generation/execution.
+This is an **AI-powered LLM API server** with sophisticated **agentic workflow capabilities**. The system integrates Large Language Models via **dual backend support** (Ollama + llama.cpp) with multi-agent reasoning patterns (ReAct, Plan-Execute) to handle complex tasks including web search, document retrieval (RAG), and autonomous Python code generation/execution.
 
 **Key Technologies:**
 - Backend: FastAPI + LangChain + LangGraph
-- LLM: Ollama (default model: gemma3:12b)
+- **LLM Backends:**
+  - **Ollama** (default): Server-based inference with model management
+  - **llama.cpp**: Direct GGUF model loading with fine-grained hardware control
 - Agent Patterns: ReAct (Reasoning + Acting), Plan-Execute
 - Tools: Web search (Tavily), RAG (FAISS), Python code generation/execution
+
+### LLM Backend Selection
+
+The system supports two LLM backends that can be switched via configuration:
+
+| Feature | Ollama | llama.cpp |
+|---------|--------|-----------|
+| **Deployment** | Server-based (external service) | Direct in-process loading |
+| **Model Format** | Ollama model library | GGUF files |
+| **GPU Control** | Automatic | Fine-grained (layer-by-layer) |
+| **Memory Mapping** | Managed by Ollama | Configurable (mmap, mlock) |
+| **Context Extension** | Limited by model | RoPE scaling support |
+| **Best For** | Quick setup, model management | Production, custom deployments, fine control |
+
+**Configure backend in [backend/config/settings.py](backend/config/settings.py:33):**
+```python
+llm_backend: str = 'ollama'  # or 'llamacpp'
+```
 
 ## Essential Commands
 
@@ -30,7 +50,7 @@ python run_frontend.py
 ```
 Frontend runs at: `http://localhost:3000`
 
-**Prerequisites:**
+**Prerequisites (Ollama Backend):**
 - Ollama must be running: `ollama serve`
 - Required models must be pulled:
   ```bash
@@ -39,13 +59,55 @@ Frontend runs at: `http://localhost:3000`
   ollama pull bge-m3:latest
   ```
 
+**Prerequisites (llama.cpp Backend):**
+- Download GGUF model files from Hugging Face
+- Place models in `./models/` directory (or configure path in settings.py)
+- **Recommended models:**
+  ```bash
+  # Qwen Coder (excellent for coding tasks)
+  # Download from: https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF
+
+  # Llama 3 (general purpose)
+  # Download from: https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF
+
+  # DeepSeek Coder (specialized for code)
+  # Download from: https://huggingface.co/TheBloke/deepseek-coder-6.7B-instruct-GGUF
+  ```
+
 **Environment Setup:**
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
+# Note: llama-cpp-python may need GPU-specific build
+# For CUDA support (NVIDIA):
+CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+
+# For Metal support (Apple Silicon):
+CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+
 # Configuration is in backend/config/settings.py
 # .env file is OPTIONAL - only override specific values if needed
+```
+
+**Switching Between Backends:**
+```python
+# Edit backend/config/settings.py (line 33)
+llm_backend: str = 'ollama'     # Use Ollama (default)
+llm_backend: str = 'llamacpp'   # Use llama.cpp
+
+# Or via API at runtime:
+from backend.utils.llm_factory import LLMFactory
+
+# Ollama backend
+llm = LLMFactory.create_llm(backend='ollama', model='qwen3-coder:30b')
+
+# llama.cpp backend
+llm = LLMFactory.create_llm(
+    backend='llamacpp',
+    model_path='./models/qwen-coder-7b-q4.gguf',
+    n_gpu_layers=-1  # -1 = offload all to GPU
+)
 ```
 
 ### Testing
@@ -311,11 +373,73 @@ GET /health
 
 ## Important Implementation Details
 
-### Ollama Configuration
+### Backend Configuration
+
+#### Ollama Backend
 - Default timeout: 3000 seconds (50 minutes)
-- Context window: 4096 tokens
+- Context window: 4096 tokens (configurable via `ollama_num_ctx`)
 - Temperature: 0.3 (conservative for code generation)
-- Connection tested on startup (see app.py startup_event)
+- Connection tested on startup (see [app.py](backend/api/app.py:197) startup_event)
+- Models kept loaded in VRAM (`keep_alive: -1`)
+- Configurable in [settings.py](backend/config/settings.py:40)
+
+#### llama.cpp Backend
+- **Model Loading:** Lazy loading on first inference (faster startup)
+- **Context window:** 16384 tokens (configurable via `llamacpp_n_ctx`)
+- **GPU Offloading:** `-1` = all layers to GPU, `0` = CPU only, `N` = specific layer count
+- **Hardware Optimization:**
+  - Memory mapping (`use_mmap=True`): Faster loading, less RAM
+  - Memory locking (`use_mlock=False`): Prevents swapping (requires privileges)
+  - Low VRAM mode (`low_vram=False`): Reduces VRAM at cost of speed
+- **Context Extension:** RoPE scaling (`rope_freq_base`, `rope_freq_scale`)
+- **Batch Processing:** `n_batch=512` for prompt processing efficiency
+- **Threading:** `n_threads=8` for CPU computation
+- Configurable in [settings.py](backend/config/settings.py:54)
+
+**Key llama.cpp Settings ([settings.py](backend/config/settings.py:54)):**
+```python
+# Model paths (GGUF format)
+llamacpp_model_path: str = './models/qwen-coder-30b.gguf'
+llamacpp_classifier_model_path: str = './models/qwen-coder-30b.gguf'
+llamacpp_coder_model_path: str = './models/qwen-coder-30b.gguf'
+llamacpp_vision_model_path: str = './models/llama-vision.gguf'
+
+# GPU acceleration
+llamacpp_n_gpu_layers: int = -1  # -1 = all, 0 = CPU only, N = specific layers
+llamacpp_n_threads: int = 8      # CPU threads
+llamacpp_n_batch: int = 512      # Batch size
+
+# Context and generation
+llamacpp_n_ctx: int = 16384      # Context window
+llamacpp_temperature: float = 0.6
+llamacpp_top_p: float = 0.95
+llamacpp_top_k: int = 20
+llamacpp_max_tokens: int = 4096
+
+# Context extension (RoPE scaling)
+llamacpp_rope_freq_base: float = 10000.0   # Default for most models
+llamacpp_rope_freq_scale: float = 1.0      # 1.0 = no scaling, >1.0 = extend context
+
+# Memory optimization
+llamacpp_use_mmap: bool = True    # Memory mapping (faster loading)
+llamacpp_use_mlock: bool = False  # Lock in RAM (prevents swapping)
+llamacpp_low_vram: bool = False   # Reduce VRAM usage (slower)
+llamacpp_verbose: bool = False    # Debug logging
+```
+
+**GPU Layer Offloading Strategy:**
+- **Full GPU (`n_gpu_layers=-1`):** Best performance, requires VRAM ≥ model size
+- **Partial GPU (`n_gpu_layers=20-40`):** Balance between speed and VRAM usage
+- **CPU Only (`n_gpu_layers=0`):** Slowest, but works without GPU
+
+**RoPE Scaling for Extended Context:**
+```python
+# Example: Extend 4K context to 16K
+llamacpp_rope_freq_scale: float = 4.0  # 4K * 4 = 16K
+
+# Note: Not all models support context extension
+# Test with your specific model before deploying
+```
 
 ### LangGraph vs ReAct
 - **agent_graph.py:** LangGraph implementation (structured workflow with verification node)
@@ -566,10 +690,53 @@ result2, _ = client.chat_continue(MODEL, sid, "Analyze file X again for Y", file
 
 ## Troubleshooting
 
+### Ollama Backend Issues
+
 **Ollama Connection Errors:**
 - Verify Ollama is running: `ollama serve`
 - Check settings.ollama_host (default: http://127.0.0.1:11434)
 - Settings.py forces this default even if env vars exist
+- Test connection: `curl http://127.0.0.1:11434/api/tags`
+
+### llama.cpp Backend Issues
+
+**Model File Not Found:**
+- Verify file path in [settings.py](backend/config/settings.py:58): `llamacpp_model_path`
+- Check file exists: `ls -lh ./models/`
+- Download GGUF models from Hugging Face (links in Prerequisites section)
+
+**CUDA/GPU Errors:**
+- Verify llama-cpp-python built with CUDA support:
+  ```bash
+  python -c "from llama_cpp import Llama; print('CUDA available')"
+  ```
+- Rebuild with CUDA if needed:
+  ```bash
+  CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+  ```
+- Check NVIDIA drivers: `nvidia-smi`
+- Reduce GPU layers if out of VRAM: `llamacpp_n_gpu_layers = 20`
+
+**Memory Errors (Out of RAM/VRAM):**
+- Reduce context size: `llamacpp_n_ctx = 4096`
+- Use smaller quantization (Q4 instead of Q8)
+- Enable low VRAM mode: `llamacpp_low_vram = True`
+- Reduce GPU layers: `llamacpp_n_gpu_layers = 0` (CPU only)
+- Disable memory mapping: `llamacpp_use_mmap = False`
+
+**Slow Inference:**
+- Increase GPU layers: `llamacpp_n_gpu_layers = -1` (all layers)
+- Increase batch size: `llamacpp_n_batch = 2048`
+- Reduce thread count if hyperthreading causes contention
+- Check model quantization (Q4_K_M is good balance)
+
+**Model Loading Hangs:**
+- Disable verbose logging: `llamacpp_verbose = False`
+- Check disk I/O (model files are large)
+- Ensure sufficient disk space for memory mapping
+- Try disabling mlock: `llamacpp_use_mlock = False`
+
+### General Issues
 
 **Code Execution Timeouts:**
 - Increase settings.python_code_timeout
@@ -580,11 +747,18 @@ result2, _ = client.chat_continue(MODEL, sid, "Analyze file X again for Y", file
 - Check agentic classifier - may need to adjust prompt
 - Review ReAct final answer generation (`_generate_final_answer`)
 - Verify observations contain data (check tool execution logs)
+- Check max_tokens setting (llama.cpp: `llamacpp_max_tokens`)
 
 **Import Errors in Generated Code:**
 - Review BLOCKED_IMPORTS in backend/tools/python_coder/executor.py
 - Ensure required packages installed in environment
 - Check AST validation in `CodeExecutor.validate_imports()`
+
+**Backend Switching Issues:**
+- Clear any cached LLM instances
+- Restart server after changing `llm_backend` in settings.py
+- Verify model files exist for chosen backend
+- Check logs in `data/logs/app.log` for startup errors
 
 ## Additional Resources
 
@@ -600,6 +774,61 @@ result2, _ = client.chat_continue(MODEL, sid, "Analyze file X again for Y", file
 
 ---
 
-**Last Updated:** January 2025
-**Version:** 2.0.0 (Modular Architecture)
-**Previous Versions:** 1.4.0 (Context-Aware Code Gen), 1.3.0 (Session Notepad), 1.2.0 (Tool Unification)
+**Last Updated:** December 2025
+**Version:** 2.1.0 (Dual Backend Support - Ollama + llama.cpp)
+**Previous Versions:** 2.0.0 (Modular Architecture), 1.4.0 (Context-Aware Code Gen), 1.3.0 (Session Notepad), 1.2.0 (Tool Unification)
+
+### Version 2.1.0 (December 2, 2025)
+**Feature: Dual Backend Support - llama.cpp Integration**
+
+Added native llama.cpp support alongside Ollama for flexible LLM deployment.
+
+**New Components:**
+- `LlamaCppWrapper` in [backend/utils/llm_factory.py](backend/utils/llm_factory.py:40) - ChatOllama-compatible interface
+- Backend selection via `llm_backend` setting in [settings.py](backend/config/settings.py:33)
+- Comprehensive llama.cpp configuration (GPU layers, context extension, memory optimization)
+
+**Key Features:**
+- **Dual backend architecture:** Switch between Ollama and llama.cpp without code changes
+- **GGUF model support:** Direct loading of quantized models (Q4_K_M, Q8_0, etc.)
+- **Fine-grained GPU control:** Layer-by-layer offloading (`n_gpu_layers`)
+- **Context extension:** RoPE scaling support for extended context windows
+- **Memory optimization:** Configurable mmap, mlock, and low-VRAM modes
+- **Lazy loading:** Models loaded on first inference for faster startup
+- **ChatOllama compatibility:** Same API interface for both backends
+
+**Backend Comparison:**
+- **Ollama:** Best for quick setup, automatic model management, multi-user scenarios
+- **llama.cpp:** Best for production, fine-tuned hardware control, embedded deployments
+
+**Configuration:**
+```python
+# Backend selection (settings.py:33)
+llm_backend: str = 'ollama'  # or 'llamacpp'
+
+# llama.cpp settings (settings.py:54-83)
+llamacpp_model_path: str = './models/qwen-coder-30b.gguf'
+llamacpp_n_gpu_layers: int = -1  # GPU offloading
+llamacpp_n_ctx: int = 16384      # Context window
+llamacpp_rope_freq_scale: float = 1.0  # Context extension
+```
+
+**Usage:**
+```python
+from backend.utils.llm_factory import LLMFactory
+
+# Ollama backend (existing)
+llm = LLMFactory.create_llm(backend='ollama', model='qwen3-coder:30b')
+
+# llama.cpp backend (new)
+llm = LLMFactory.create_llm(
+    backend='llamacpp',
+    model_path='./models/qwen-coder-7b-q4.gguf',
+    n_gpu_layers=-1
+)
+
+# Both return ChatOllama-compatible interface
+response = await llm.ainvoke("Hello, world!")
+```
+
+**Breaking Changes:** None - fully backward compatible

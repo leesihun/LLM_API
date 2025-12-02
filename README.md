@@ -1,115 +1,117 @@
-# LLM API Project
+# LLM API - AI-Powered Agentic Workflow System
 
-Python-based LLM API server with agentic workflow capabilities.
+> **Production-ready FastAPI server with advanced multi-agent reasoning, dual LLM backend support, and autonomous code generation capabilities**
 
-## Overview
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-This project provides an AI-powered API service that leverages Large Language Models (LLMs) through Ollama, with sophisticated agentic capabilities including web search, document retrieval (RAG), and Python code generation/execution.
+---
 
-## Features
+## 🚀 Overview
 
-- **Multi-Agent Architecture**: ReAct and Plan-Execute patterns for complex task handling
-- **Python Code Generation**: AI-driven code generation with iterative verification and execution
-- **Web Search Integration**: Real-time information retrieval via Tavily API
-- **RAG (Retrieval Augmented Generation)**: Document-based context retrieval
-- **Session Management**: User authentication and conversation history
-- **File Upload Support**: Process various file formats (CSV, Excel, JSON, PDF, etc.)
-- **Security**: Sandboxed code execution with import restrictions and timeouts
+An enterprise-grade LLM API server that combines the power of Large Language Models with sophisticated agentic workflows. The system features **dual backend support** (Ollama + llama.cpp) and implements cutting-edge reasoning patterns (ReAct, Plan-Execute) to handle complex, multi-step tasks autonomously.
 
-## Architecture
+### Key Capabilities
 
-```
-LLM_API/
-├── backend/
-│   ├── api/              # FastAPI routes and application
-│   ├── config/           # Configuration and settings
-│   ├── core/             # Core agentic graph logic
-│   ├── models/           # Pydantic schemas
-│   ├── storage/          # Conversation persistence
-│   ├── tasks/            # Task handlers (ReAct, Plan-Execute, Smart Agent)
-│   ├── tools/            # Tool implementations
-│   │   ├── python_coder_tool.py    # Unified Python code generation & execution
-│   │   ├── rag_retriever.py        # Document retrieval
-│   │   └── web_search.py           # Web search
-│   └── utils/            # Authentication utilities
-├── frontend/
-│   └── static/           # Web interface
-├── data/
-│   ├── conversations/    # Conversation history
-│   ├── uploads/          # User uploaded files
-│   ├── scratch/          # Temporary code execution
-│   └── logs/             # Application logs
-└── requirements.txt
-```
+- **🤖 Dual LLM Backend**: Switch between Ollama (easy setup) and llama.cpp (production-grade) without code changes
+- **🧠 Multi-Agent Architecture**: ReAct and Plan-Execute patterns for complex reasoning and task decomposition
+- **💻 Autonomous Code Generation**: AI-driven Python code generation with iterative verification and sandboxed execution
+- **🔍 Web Intelligence**: Real-time information retrieval via Tavily API integration
+- **📚 Document Understanding**: RAG (Retrieval Augmented Generation) with FAISS for context-aware responses
+- **📁 Multi-Format File Processing**: CSV, Excel, JSON, PDF, images, and more
+- **🔒 Enterprise Security**: Sandboxed execution, JWT authentication, import restrictions, timeout controls
+- **💾 Session Continuity**: Variable persistence, conversation history, and task memory across executions
 
-## Installation
+---
 
-### Prerequisites
+## 🎯 When to Use This
 
-- Python 3.9+
-- Ollama (for LLM inference)
-- Tavily API key (for web search)
+| Use Case | Example |
+|----------|---------|
+| **Complex Data Analysis** | "Analyze these 3 CSV files, calculate correlations, create visualizations, and generate a PowerPoint report" |
+| **Real-time Research** | "Search for the latest AI research papers from 2025 and summarize key findings" |
+| **Automated Reporting** | "Load sales data, calculate KPIs, create charts, and export to Excel with formatting" |
+| **Document Intelligence** | "Analyze these PDFs, extract key metrics, and compare trends across documents" |
+| **Iterative Problem Solving** | "Debug this dataset, identify anomalies, and propose fixes with statistical validation" |
 
-### Setup
+---
 
-1. Clone the repository:
+## 📋 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Architecture](#-architecture)
+- [Backend Selection](#-llm-backend-selection)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Usage](#-usage)
+- [API Reference](#-api-reference)
+- [Agent Types](#-agent-types)
+- [Tools & Capabilities](#-tools--capabilities)
+- [Security](#-security)
+- [Development](#-development)
+- [Troubleshooting](#-troubleshooting)
+- [Version History](#-version-history)
+
+---
+
+## ⚡ Quick Start
+
+### 1. Install Dependencies
+
 ```bash
+# Clone and setup
 git clone <repository-url>
 cd LLM_API
-```
-
-2. Create and activate virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
 pip install -r requirements.txt
 ```
 
-4. Configure Ollama:
+### 2. Choose Your Backend
+
+#### Option A: Ollama (Recommended for Getting Started)
+
 ```bash
 # Install Ollama from https://ollama.ai/
+ollama serve
+
 # Pull required models
 ollama pull gemma3:12b
 ollama pull gpt-oss:20b
 ollama pull bge-m3:latest
 ```
 
-5. Configure settings:
-Edit `backend/config/settings.py` to customize:
-- Ollama host and model
-- API keys (Tavily)
-- Server host and port
-- Python code execution limits
+#### Option B: llama.cpp (Recommended for Production)
 
-## Usage
+```bash
+# Download GGUF models from Hugging Face
+# Example: Qwen Coder 7B Q4 quantization
+wget https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf
 
-### Start the Server
+# Place in ./models/ directory
+mkdir -p models
+mv qwen2.5-coder-7b-instruct-q4_k_m.gguf models/
+
+# For GPU support, install llama-cpp-python with CUDA
+CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+```
+
+### 3. Configure Backend
+
+Edit `backend/config/settings.py`:
+
+```python
+# Line 33: Choose your backend
+llm_backend: str = 'ollama'  # or 'llamacpp'
+```
+
+### 4. Start the Server
 
 ```bash
 python run_backend.py
+# Server runs at http://0.0.0.0:1007
 ```
 
-Or for frontend:
-```bash
-python run_frontend.py
-```
-
-Default server runs at: `http://0.0.0.0:1007`
-
-### API Endpoints
-
-- `POST /v1/chat/completions` - Chat completion with agentic capabilities (OpenAI-compatible)
-- `POST /api/files/upload` - Upload files for processing
-- `POST /api/auth/login` - User authentication
-- `GET /api/chat/sessions` - List user's chat sessions
-- `GET /api/chat/sessions/{session_id}/artifacts` - List generated files in a session
-- `GET /api/chat/sessions/{session_id}/artifacts/{filename}` - Download a generated file
-
-### Example Request
+### 5. Test the API
 
 ```python
 import requests
@@ -117,786 +119,780 @@ import requests
 response = requests.post(
     "http://localhost:1007/api/chat",
     json={
-        "message": "Analyze the uploaded CSV file and show statistics",
+        "message": "Search for the latest news about AI and summarize the top 3 articles",
         "session_id": "test-session",
         "user_id": "admin"
     }
 )
+
+print(response.json()["response"])
 ```
 
-## Configuration
+---
 
-Key settings in `backend/config/settings.py`:
+## 🏗️ Architecture
+
+### System Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    User Request + Files                     │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              LLM-Powered Task Classifier                     │
+│   (Analyzes intent → routes to chat/react/plan-execute)    │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+        ▼                ▼                ▼
+   ┌────────┐      ┌─────────┐     ┌──────────────┐
+   │  CHAT  │      │  REACT  │     │ PLAN-EXECUTE │
+   │ Simple │      │ Single  │     │  Multi-Step  │
+   │ Answer │      │  Tool   │     │   Complex    │
+   └────────┘      └────┬────┘     └──────┬───────┘
+                        │                 │
+                        ▼                 ▼
+              ┌──────────────────────────────────┐
+              │        Tool Execution             │
+              │  • Web Search (Tavily)           │
+              │  • RAG Retrieval (FAISS)         │
+              │  • Python Code Gen/Exec          │
+              │  • File Analysis                 │
+              └──────────────────┬───────────────┘
+                                 │
+                                 ▼
+              ┌──────────────────────────────────┐
+              │     Response Synthesis            │
+              │  + Session Storage                │
+              │  + Variable Persistence           │
+              └──────────────────────────────────┘
+```
+
+### Directory Structure
+
+```
+LLM_API/
+├── backend/
+│   ├── api/                    # FastAPI application
+│   │   ├── app.py              # Main app, CORS, middleware
+│   │   └── routes/             # Modular API endpoints (v2.0+)
+│   │       ├── chat.py         # Chat & completions
+│   │       ├── auth.py         # Authentication
+│   │       ├── files.py        # File upload/download
+│   │       ├── admin.py        # Admin endpoints
+│   │       └── tools.py        # Tool-specific routes
+│   │
+│   ├── config/
+│   │   ├── settings.py         # Central configuration (all defaults)
+│   │   └── prompts/            # Centralized prompt management (v2.0+)
+│   │       ├── __init__.py     # PromptRegistry
+│   │       ├── task_classification.py
+│   │       ├── react_agent.py
+│   │       ├── plan_execute.py
+│   │       ├── file_analyzer.py
+│   │       └── python_coder/   # Code generation prompts
+│   │
+│   ├── tasks/                  # Agent implementations
+│   │   ├── chat_task.py        # Entry point & classifier
+│   │   ├── react/              # Modular ReAct agent (v2.0+)
+│   │   │   ├── agent.py        # Main orchestration
+│   │   │   ├── thought_action_generator.py
+│   │   │   ├── tool_executor.py
+│   │   │   ├── answer_generator.py
+│   │   │   ├── context_manager.py
+│   │   │   ├── verification.py
+│   │   │   └── plan_executor.py
+│   │   ├── Plan_execute.py     # Plan-Execute workflow
+│   │   └── smart_agent_task.py # High-level router
+│   │
+│   ├── tools/                  # Tool implementations (v2.0+)
+│   │   ├── python_coder/       # Code generation & execution
+│   │   │   ├── tool.py         # Main orchestration
+│   │   │   ├── orchestrator.py # Context-aware coordination (v1.4+)
+│   │   │   ├── generator.py    # Code generation
+│   │   │   ├── executor/       # Execution engine
+│   │   │   │   ├── code_executor.py
+│   │   │   │   └── repl_manager.py
+│   │   │   ├── verifier.py     # Code verification
+│   │   │   └── variable_storage.py  # Persistence (v1.3+)
+│   │   ├── web_search/         # Tavily integration
+│   │   ├── rag_retriever/      # FAISS RAG
+│   │   └── file_analyzer/      # Multi-format file processing
+│   │
+│   ├── utils/
+│   │   ├── llm_factory.py      # Centralized LLM creation (v2.0+)
+│   │   ├── auth.py             # JWT authentication
+│   │   └── logging_utils.py    # Structured logging (v1.8+)
+│   │
+│   └── storage/
+│       └── conversation_store.py  # Conversation persistence
+│
+├── data/
+│   ├── conversations/          # Chat history (JSON)
+│   ├── uploads/                # User uploaded files
+│   ├── scratch/                # Code execution workspace
+│   │   └── {session_id}/
+│   │       ├── variables/      # Persisted variables (v1.3+)
+│   │       └── *.py            # Generated code
+│   └── logs/                   # Application logs
+│
+├── frontend/                   # Web interface
+├── requirements.txt
+└── run_backend.py             # Server launcher
+```
+
+---
+
+## 🔄 LLM Backend Selection
+
+### Comparison
+
+| Feature | **Ollama** | **llama.cpp** |
+|---------|-----------|--------------|
+| **Setup Complexity** | ⭐⭐⭐⭐⭐ Easy | ⭐⭐⭐ Moderate |
+| **Model Management** | Built-in model library | Manual GGUF downloads |
+| **GPU Control** | Automatic | Fine-grained (layer-by-layer) |
+| **Memory Mapping** | Managed by Ollama | Configurable (mmap, mlock) |
+| **Context Extension** | Limited by model | RoPE scaling support |
+| **Production Use** | ⭐⭐⭐ Good | ⭐⭐⭐⭐⭐ Excellent |
+| **Best For** | Development, quick setup | Production, embedded, fine control |
+
+### Configuration
 
 ```python
-# Ollama Configuration
-ollama_host: str = 'http://127.0.0.1:11434'
-ollama_model: str = 'qwen3:8b'  # General purpose model
-ollama_num_ctx: int = 16384
+# backend/config/settings.py (line 33)
+llm_backend: str = 'ollama'  # or 'llamacpp'
 
-# Agentic Flow - Model Selection
-agentic_classifier_model: str = 'qwen3:8b'  # Task classification
-ollama_coder_model: str = 'qwen3:8b'  # Code generation (can use specialized model like 'deepseek-coder:6.7b')
-ollama_coder_model_temperature: float = 0.1  # Dedicated sampling temp for coder LLM
+# Ollama Settings (lines 40-52)
+ollama_host: str = 'http://127.0.0.1:11434'
+ollama_model: str = 'gemma3:12b'
+ollama_num_ctx: int = 4096
+ollama_timeout: int = 3000
+
+# llama.cpp Settings (lines 54-83)
+llamacpp_model_path: str = './models/qwen-coder-30b.gguf'
+llamacpp_n_gpu_layers: int = -1      # -1 = all layers to GPU
+llamacpp_n_ctx: int = 16384          # Context window
+llamacpp_temperature: float = 0.6
+llamacpp_rope_freq_scale: float = 1.0  # Context extension
+llamacpp_use_mmap: bool = True       # Memory mapping
+llamacpp_use_mlock: bool = False     # Lock in RAM
+```
+
+### Switching Backends at Runtime
+
+```python
+from backend.utils.llm_factory import LLMFactory
+
+# Ollama
+llm = LLMFactory.create_llm(backend='ollama', model='qwen3-coder:30b')
+
+# llama.cpp
+llm = LLMFactory.create_llm(
+    backend='llamacpp',
+    model_path='./models/qwen-coder-7b-q4.gguf',
+    n_gpu_layers=-1  # All layers to GPU
+)
+
+# Both return ChatOllama-compatible interface
+response = await llm.ainvoke("Hello, world!")
+```
+
+---
+
+## 🛠️ Installation
+
+### Prerequisites
+
+- **Python 3.9+**
+- **LLM Backend**:
+  - **Ollama** (easy): Install from [ollama.ai](https://ollama.ai/)
+  - **llama.cpp** (advanced): GGUF models from [Hugging Face](https://huggingface.co/models?library=gguf)
+- **API Keys** (optional):
+  - Tavily API key for web search
+
+### Step-by-Step Installation
+
+#### 1. Clone Repository
+
+```bash
+git clone <repository-url>
+cd LLM_API
+```
+
+#### 2. Create Virtual Environment
+
+```bash
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# Linux/Mac
+source venv/bin/activate
+```
+
+#### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+#### 4. Install llama-cpp-python (If Using llama.cpp Backend)
+
+```bash
+# NVIDIA GPU (CUDA)
+CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+
+# Apple Silicon (Metal)
+CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+
+# CPU Only
+pip install llama-cpp-python
+```
+
+#### 5. Setup Ollama Models (If Using Ollama Backend)
+
+```bash
+# Start Ollama service
+ollama serve
+
+# Pull required models
+ollama pull gemma3:12b       # General purpose
+ollama pull gpt-oss:20b      # Task classification
+ollama pull bge-m3:latest    # Embeddings for RAG
+```
+
+#### 6. Download GGUF Models (If Using llama.cpp Backend)
+
+```bash
+# Create models directory
+mkdir -p models
+
+# Download recommended models from Hugging Face
+# Qwen Coder (excellent for coding tasks)
+wget https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf -P models/
+
+# Update settings.py with model path
+# llamacpp_model_path: str = './models/qwen2.5-coder-7b-instruct-q4_k_m.gguf'
+```
+
+---
+
+## ⚙️ Configuration
+
+### Central Configuration File
+
+All settings are in `backend/config/settings.py`. The `.env` file is **optional** and only used for overrides.
+
+### Key Settings
+
+```python
+# Backend Selection
+llm_backend: str = 'ollama'  # or 'llamacpp'
+
+# Ollama Configuration
+ollama_model: str = 'gemma3:12b'
+agentic_classifier_model: str = 'gpt-oss:20b'
+ollama_coder_model: str = 'gemma3:12b'  # Can use specialized model
+
+# llama.cpp Configuration
+llamacpp_model_path: str = './models/qwen-coder-30b.gguf'
+llamacpp_n_gpu_layers: int = -1  # GPU acceleration
 
 # Python Code Execution
 python_code_enabled: bool = True
-python_code_timeout: int = 3000
-python_code_max_memory: int = 5120
-python_code_max_iterations: int = 5
+python_code_timeout: int = 3000  # seconds
+python_code_max_iterations: int = 5  # retry attempts
 
 # Security
 secret_key: str = 'your-secret-key-here'
 jwt_expiration_hours: int = 24
+
+# API Keys (optional)
+tavily_api_key: str = ''  # For web search
 ```
 
-## Python Code Execution
+### Environment Variables (Optional Overrides)
 
-The system can generate and execute Python code safely:
+Create `.env` file:
 
-### Features
-- **Unified Tool**: Single integrated tool for code generation, verification, and execution
-- **Iterative Verification**: Up to 3 iterations to ensure code answers user's question
-- **Execution Retry**: Up to 5 retry attempts on execution failure with auto-fixing
-- **Sandboxed Execution**: Isolated subprocess execution with security restrictions
-- **File Support**: Process multiple file formats (CSV, Excel, JSON, etc.)
+```bash
+OLLAMA_HOST=http://127.0.0.1:11434
+TAVILY_API_KEY=your-api-key
+SECRET_KEY=your-secret-key
+```
 
-### Security Measures
-- Import restrictions (blocked: socket, subprocess, eval, exec, etc.)
-- Execution timeout (default: 300 seconds)
-- Memory limits
-- Isolated temporary directories
-- Static code analysis before execution
+---
 
-## Version History
+## 📖 Usage
 
-### Version 2.1.0 (November 26, 2025)
+### Starting the Server
 
-**Feature: Artifact Download Endpoint**
+```bash
+# Backend API server
+python run_backend.py
+# Server runs at: http://0.0.0.0:1007
 
-Added a new API endpoint to download files generated during chat sessions (charts, reports, PowerPoint files, etc.) directly to the client.
+# Frontend (separate terminal)
+python run_frontend.py
+# Frontend runs at: http://localhost:3000
+```
 
-**New Endpoint:**
-- `GET /api/chat/sessions/{session_id}/artifacts/{filename}` - Download a specific artifact file
+### Basic Chat Request
 
-**Usage Example (Python):**
 ```python
-import httpx
+import requests
 
-# List available artifacts
-artifacts = httpx.get(
-    f"{base_url}/api/chat/sessions/{session_id}/artifacts",
-    headers={"Authorization": f"Bearer {token}"}
-).json()
-
-# Download a specific file
-response = httpx.get(
-    f"{base_url}/api/chat/sessions/{session_id}/artifacts/chart.png",
-    headers={"Authorization": f"Bearer {token}"}
+response = requests.post(
+    "http://localhost:1007/api/chat",
+    json={
+        "message": "What is Python?",
+        "session_id": "my-session",
+        "user_id": "admin"
+    }
 )
-with open("chart.png", "wb") as f:
-    f.write(response.content)
+
+print(response.json()["response"])
 ```
 
-**Security:**
-- Validates session ownership (user can only download from their own sessions)
-- Path traversal protection (blocks `../` attacks)
-- Only serves files from session scratch directory
+### File Upload and Analysis
 
-**Modified Files:**
-- `backend/api/routes/chat.py` - Added `download_artifact` endpoint with FileResponse
-- `PPTX_Report_Generator_Agent_v2.ipynb` - Added `download_artifact()` method to LLMApiClient
+```python
+import requests
 
-**Benefits:**
-- Programmatic file retrieval for Jupyter notebooks and scripts
-- No need for separate file server or manual file copying
-- Secure access control tied to session ownership
+# 1. Upload file
+files = {'file': open('data.csv', 'rb')}
+upload_response = requests.post(
+    "http://localhost:1007/api/files/upload",
+    files=files
+)
+file_path = upload_response.json()["file_path"]
+
+# 2. Chat with file context
+response = requests.post(
+    "http://localhost:1007/api/chat",
+    json={
+        "message": "Analyze this CSV and show statistics",
+        "file_paths": [file_path],
+        "session_id": "analysis-session",
+        "user_id": "admin"
+    }
+)
+
+print(response.json()["response"])
+```
+
+### OpenAI-Compatible API
+
+```python
+import requests
+import json
+
+response = requests.post(
+    "http://localhost:1007/v1/chat/completions",
+    json={
+        "model": "gemma3:12b",
+        "messages": json.dumps([
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Explain quantum computing"}
+        ]),
+        "agent_type": "auto"  # or "chat", "react", "plan_execute"
+    }
+)
+
+print(response.json())
+```
+
+### Multi-Phase Workflow Pattern
+
+```python
+# Phase 1: Initial analysis (process files ONCE)
+phase1_prompt = """
+Analyze the attached CSV file.
+Calculate: mean, median, correlations, and outliers.
+I'll ask follow-up questions in subsequent messages.
+"""
+result1, session_id = client.chat_new(MODEL, phase1_prompt, files=[csv_path])
+
+# Phase 2: Visualization (reuse Phase 1 findings from memory)
+phase2_prompt = """
+**PRIORITY: Use your Phase 1 analysis from conversation memory.**
+
+You already calculated: mean, median, correlations, and outliers.
+
+**DO NOT re-analyze the raw files.** Use your Phase 1 findings.
+
+Current Task: Create 3 visualizations based on Phase 1 results:
+1. Distribution plot
+2. Correlation heatmap
+3. Outlier detection chart
+"""
+result2, _ = client.chat_continue(MODEL, session_id, phase2_prompt)
+
+# Phase 3: Report generation (reuse all previous work)
+phase3_prompt = """
+**PRIORITY: Use Phase 1 & 2 findings from conversation memory.**
+
+Create a PowerPoint report with:
+- Phase 1 statistics
+- Phase 2 visualizations
+- Executive summary
+"""
+result3, _ = client.chat_continue(MODEL, session_id, phase3_prompt)
+```
+
+**Benefits of Multi-Phase Pattern:**
+- 90% fewer LLM calls - no redundant processing
+- Faster execution - reuse existing calculations
+- Better consistency - all phases use same base analysis
+
+See: `PPTX_Report_Generator_Agent_v2.ipynb` for detailed example.
 
 ---
 
-### Version 2.0.1 (November 26, 2025)
+## 🔌 API Reference
 
-**Bugfix: Temp File Cleanup in Uploads Folder**
+### Core Endpoints
 
-Fixed an issue where temporary files in `uploads/{user_id}` were never deleted after being copied to the scratch folder for execution.
+#### `POST /api/chat`
 
-**Problem:**
-When files were uploaded via `/v1/chat/completions`, they were:
-1. Saved as `temp_{id}_{filename}` in `uploads/{user_id}/`
-2. Copied to `data/scratch/{session_id}/` for code execution
-3. **Never deleted** from the uploads folder if any exception occurred during agent execution
+Main chat interface with agentic capabilities.
 
-The cleanup code was inside the `try` block, so any exception during chat/agent execution would skip the cleanup, leaving orphaned temp files.
+**Request:**
+```json
+{
+  "message": "string",
+  "session_id": "string (optional)",
+  "user_id": "string",
+  "file_paths": ["string (optional)"]
+}
+```
 
-**Fix:**
-Moved the temp file cleanup to a `finally` block, ensuring files are always deleted regardless of success or failure.
+**Response:**
+```json
+{
+  "response": "string",
+  "session_id": "string",
+  "agent_type": "chat|react|plan_execute",
+  "tool_calls": ["array (optional)"]
+}
+```
 
-**Modified Files:**
-- `backend/api/routes/chat.py` - Moved `_cleanup_files()` call from `try` block to `finally` block
+#### `POST /v1/chat/completions`
 
-**Impact:**
-- Temp files in `uploads/` folder are now properly cleaned up after processing
-- Reduces disk usage from accumulated orphan files
-- No functional change to file handling - files are still copied (not moved) to scratch
+OpenAI-compatible chat completions endpoint.
+
+**Request:**
+```json
+{
+  "model": "string",
+  "messages": "JSON string",
+  "agent_type": "auto|chat|react|plan_execute (optional)"
+}
+```
+
+#### `POST /api/files/upload`
+
+Upload files for processing.
+
+**Request:** `multipart/form-data` with file
+
+**Response:**
+```json
+{
+  "file_path": "string",
+  "filename": "string",
+  "size": "number"
+}
+```
+
+#### `GET /api/chat/sessions/{session_id}/artifacts`
+
+List files generated during a session.
+
+**Response:**
+```json
+{
+  "artifacts": [
+    {
+      "filename": "string",
+      "size": "number",
+      "modified": "timestamp"
+    }
+  ]
+}
+```
+
+#### `GET /api/chat/sessions/{session_id}/artifacts/{filename}`
+
+Download a generated artifact file.
+
+**Response:** File download (FileResponse)
 
 ---
 
-### Version 2.0.0 (November 26, 2025)
+## 🤖 Agent Types
 
-**Enhancement: Intelligent Retry System for Python Coder**
+### 1. Chat Agent (Simple Q&A)
 
-Major overhaul of the Python coder's error recovery mechanism to prevent the model from getting "stuck" on repeated errors. The system now learns from previous failed attempts and adapts its approach.
+**When Used:** Questions answerable from LLM knowledge base (no tools required)
 
-**Problem Solved:**
-When code failed with errors like `IndexError: list index out of range`, the model would often repeat the same mistake because:
-- It didn't see its previous failed code
-- It didn't know what variables actually contained at failure time
-- Retry prompts were identical, producing identical wrong outputs
+**Examples:**
+- "What is Python?"
+- "Explain machine learning"
+- "How does photosynthesis work?"
 
-**Key Changes:**
-
-1. **Full Attempt History Tracking** (`orchestrator.py`)
-   - `attempt_history` now stores: full code, error message, error type, and variable namespace
-   - Error classification with specific guidance for each error type
-   - New `_classify_error()` method categorizes 15+ error types with actionable guidance
-
-2. **Runtime Variable Capture on Error** (`repl_manager.py`)
-   - Namespace is now captured even when execution fails
-   - New `<<<ERROR_NAMESPACE_*>>>` markers for error-state variables
-   - LLM can see: "data: list (EMPTY - length=0)" - explaining WHY IndexError occurred
-
-3. **Enhanced Retry Prompts** (`fixing.py`)
-   - New `get_retry_prompt_with_history()` shows all previous failed attempts
-   - Escalating strategy: Attempt 2 suggests different approach, Attempt 3+ forces complete rethink
-   - `get_execution_fix_prompt()` now includes debug context section with variable states
-
-4. **Forced Different Approach on Repeated Errors** (`orchestrator.py`)
-   - Detects when same error type repeats (e.g., KeyError twice in a row)
-   - Skips incremental patching, forces full regeneration with "COMPLETELY RETHINK" prompt
-   - Prevents stuck loops where model keeps trying the same broken approach
-
-5. **Improved Error Context Building** (`orchestrator.py`)
-   - `_build_retry_context()` enhanced with attempt_history, force_different_approach flags
-   - `_format_namespace_for_prompt()` formats variable states for LLM consumption
-   - Clearly shows empty lists, dict keys, DataFrame shapes at failure point
-
-**Error Type Classifications:**
-- IndexError, KeyError, TypeError, NoneType, FileNotFound, JSONDecode
-- ValueError, AttributeError, NameError, ImportError, ZeroDivision
-- EncodingError, PermissionError, MemoryError, Timeout, RuntimeError
-
-**Example Improvement:**
-
-Before (stuck loop):
-```
-Attempt 1: data[0] → IndexError
-Attempt 2: data[0] → IndexError (same mistake)
-Attempt 3: data[0] → IndexError (still same)
-```
-
-After (learns from failures):
-```
-Attempt 1: data[0] → IndexError
-Attempt 2: (sees "data: list (EMPTY - length=0)") → adds len() check → still fails
-Attempt 3: (forced different approach) → uses data.get() pattern → SUCCESS
-```
-
-**Modified Files:**
-- `backend/tools/python_coder/orchestrator.py` - Major retry logic overhaul
-- `backend/tools/python_coder/executor/repl_manager.py` - Error namespace capture
-- `backend/config/prompts/python_coder/fixing.py` - New retry prompts with history
-- `backend/config/prompts/python_coder/__init__.py` - New exports
-- `backend/config/prompts/__init__.py` - Registry updates
-- `backend/tools/python_coder/code_fixer.py` - Error namespace parameter
-
-**Benefits:**
-- Dramatically reduced "stuck" scenarios where model repeats same error
-- Better error understanding through runtime variable inspection
-- Escalating retry strategies prevent repetitive failures
-- 15+ classified error types with specific fix guidance
+**Characteristics:**
+- Direct LLM response
+- No tool invocation
+- Fastest response time
 
 ---
 
-### Version 1.9.0 (November 25, 2025)
+### 2. ReAct Agent (Single-Goal Tool Tasks)
 
-**Enhancement: Prompt System Overhaul + Output File Handling**
+**When Used:** Single-objective tasks requiring tool usage
 
-Major restructuring of the prompt system to improve output quality, reduce token usage, and establish maintainable architecture. Also added file-based output handling to prevent CMD window truncation issues.
+**Examples:**
+- "Search for the latest AI news"
+- "Analyze this CSV file"
+- "Calculate the Fibonacci sequence"
 
-**Key Changes:**
+**How It Works:**
+```
+Loop (max 10 iterations):
+  1. Thought: "I need to search for AI news"
+  2. Action: web_search("latest AI news")
+  3. Observation: [search results]
+  4. Thought: "Now I have enough information"
+  5. Action: finish([final answer])
+```
 
-1. **Output File Handling for Python Coder** (NEW)
-   - Prompts now instruct LLM to save results to files (`result.csv`, `result.txt`) instead of printing large data
-   - System automatically loads result files after execution for adequacy checking
-   - Solves CMD window truncation issues with large pandas DataFrames
-   - New setting: `python_code_output_max_llm_chars` (default: 8000)
-   - New rule block: `OUTPUT_FILE_RULES` in `base.py`
+**Tools Available:**
+- `web_search`: Tavily API for real-time search
+- `rag_retrieval`: Document retrieval from FAISS
+- `python_coder`: Code generation and execution
+- `file_analyzer`: Multi-format file analysis
+- `finish`: Return final answer
 
-2. **New Base Utilities** (`backend/config/prompts/base.py`)
-   - Standardized ASCII markers: `[OK]`, `[X]`, `[!!!]`, `[WARNING]`
-   - `get_current_time_context()` - Temporal awareness for all prompts
-   - `section_border()` - Consistent visual separators
-   - Reusable rule blocks: `FILENAME_RULES`, `NO_ARGS_RULES`, `JSON_SAFETY_RULES`, `OUTPUT_FILE_RULES`
-
-2. **Token Optimization**
-   - `plan_execute.py`: Reduced from 242 to ~130 lines (~45% reduction)
-   - `task_classification.py`: Removed 60 lines of commented examples
-   - `python_coder/*.py`: Consolidated duplicate rules across files
-
-3. **Temporal Awareness**
-   - All relevant prompts now include current time context
-   - Format: `Current Time: {date} ({day_of_week}) {time} {timezone}`
-   - Helps LLM understand time-sensitive queries
-
-4. **Expanded File Analyzer** (`backend/config/prompts/file_analyzer.py`)
-   - New specialized prompts:
-     - `get_json_analysis_prompt()` - JSON structure analysis
-     - `get_csv_analysis_prompt()` - CSV column/type analysis
-     - `get_excel_analysis_prompt()` - Multi-sheet Excel analysis
-     - `get_structure_comparison_prompt()` - Compare two files
-     - `get_anomaly_detection_prompt()` - Data quality issues
-
-5. **Improved Plan Context Passing** (`backend/tasks/react/planning.py`)
-   - Changed generic "Instructions" to structured "Execution Guidance"
-   - Now includes both approach and success criteria
-   - Better context for tool execution
-
-6. **Enhanced Plan Section** (`backend/config/prompts/python_coder/templates.py`)
-   - Clearer step relationships with status markers
-   - Data flow visualization from previous steps
-   - Truncated summaries for token efficiency
-
-**Modified Files:**
-- `backend/config/prompts/base.py` - Added `OUTPUT_FILE_RULES`
-- `backend/config/prompts/__init__.py`
-- `backend/config/prompts/task_classification.py`
-- `backend/config/prompts/plan_execute.py`
-- `backend/config/prompts/file_analyzer.py`
-- `backend/config/prompts/python_coder/generation.py` - Added output file instructions
-- `backend/config/prompts/python_coder/templates.py` - Added output file rules
-- `backend/tools/python_coder/orchestrator.py` - Added `_load_result_files()` method
-- `backend/config/settings.py` - Added `python_code_output_max_llm_chars`
-- `backend/tasks/react/planning.py`
-
-**Benefits:**
-- ~25-35% average token reduction across prompts
-- Consistent structure and formatting
-- Better temporal awareness for time-sensitive queries
-- Improved code generation context
-- More specialized file analysis capabilities
-- Reliable output handling for large data (no CMD truncation)
+**Optimizations:**
+- Combined thought-action generation (1 LLM call instead of 2)
+- Context pruning for long conversations
+- Early exit detection when answer is complete
+- Variable persistence across executions
 
 ---
 
-### Version 1.8.0 (November 25, 2025)
+### 3. Plan-Execute Agent (Multi-Step Complex Tasks)
 
-**Enhancement: Structured LLM Prompt Logging**
+**When Used:** Complex tasks requiring planning and structured execution
 
-Completely redesigned the `LLMInterceptor` class for much more readable and structured prompt/response logging.
+**Examples:**
+- "Analyze 3 CSV files, create visualizations, and generate a PowerPoint report"
+- "Research latest AI papers, summarize findings, and create comparison table"
+- "Load data, calculate KPIs, detect anomalies, and export results"
 
-**Key Changes:**
-
-1. **Three Log Formats**
-   - `STRUCTURED` (default): Human-readable with clear visual sections, box-drawing characters, and hierarchical layout
-   - `JSON`: JSON Lines format for programmatic parsing and analysis
-   - `COMPACT`: Minimal single-line format for quick scanning
-
-2. **Request/Response Pairing**
-   - Each request now gets a unique `call_id` (UUID)
-   - Responses are linked to their originating requests via the same `call_id`
-   - Makes it easy to trace conversation flow
-
-3. **Enhanced Metadata**
-   - Token estimation for tracking approximate usage
-   - Duration tracking (in ms) for performance analysis
-   - Clear role labels (SYSTEM, HUMAN, ASSISTANT, etc.)
-
-4. **Improved Visual Structure**
-   - Box-drawing header with log metadata
-   - Clear visual separation between requests (📤) and responses (📥)
-   - Content properly indented and wrapped for readability
-   - No more repetitive `====` lines cluttering the log
-
-5. **Streaming Response Logging**
-   - Stream methods now aggregate chunks and log the complete response after streaming completes
-   - Previously, streaming responses were not logged at all
-
-**New Classes:**
-- `LogFormat` - Enum for output format selection
-- `LogMessage` - Dataclass for structured message representation
-- `LogEntry` - Dataclass for complete log entries with metadata
-
-**Factory Method Updates:**
-- `create_llm()`, `create_classifier_llm()`, `create_coder_llm()` now accept:
-  - `log_format: LogFormat` - Select output format
-  - `log_file: Path` - Custom log file path
-
-**Example Structured Output:**
+**How It Works:**
 ```
-════════════════════════════════════════════════════════════════════════════════
-  📤 REQUEST   │  ID: a1b2c3d4  │  2025-11-25 14:30:45.123
-────────────────────────────────────────────────────────────────────────────────
-  Model: qwen3:8b                        User: admin
-  Tokens: ~125                           Duration: 
-────────────────────────────────────────────────────────────────────────────────
+Phase 1: Planning
+  - Planner creates structured plan with steps
+  - Each step has: goal, success_criteria, primary_tools, fallback_tools
 
-  [SYSTEM]
-  ········································
-    You are a helpful assistant.
+Phase 2: Guided Execution
+  - Executor (ReAct agent) executes each step
+  - Tool selection based on step requirements
+  - Previous results passed to next step
 
-  [HUMAN]
-  ········································
-    What is the capital of France?
-
-════════════════════════════════════════════════════════════════════════════════
+Phase 3: Monitoring & Adaptation
+  - Verify each step completion
+  - Auto-retry on failure
+  - Final answer synthesis
 ```
 
-**Modified Files:**
-- `backend/utils/llm_factory.py` - Complete rewrite of `LLMInterceptor` class (v1.0.0 → v1.1.0)
+**Example Plan:**
+```json
+[
+  {
+    "step": 1,
+    "goal": "Load and validate data files",
+    "success_criteria": "All files loaded without errors",
+    "primary_tools": ["file_analyzer", "python_coder"],
+    "fallback_tools": ["rag_retrieval"]
+  },
+  {
+    "step": 2,
+    "goal": "Calculate statistics and correlations",
+    "success_criteria": "Statistics calculated and validated",
+    "primary_tools": ["python_coder"],
+    "fallback_tools": []
+  },
+  {
+    "step": 3,
+    "goal": "Create visualizations",
+    "success_criteria": "3 charts generated and saved",
+    "primary_tools": ["python_coder"],
+    "fallback_tools": []
+  }
+]
+```
 
 ---
 
-### Version 1.7.5 (November 24, 2025)
+## 🛠️ Tools & Capabilities
 
-**Refactor: Prompt registry cleanup**
+### 1. Python Code Generator & Executor
 
-- Removed unused prompt modules (`backend/config/prompts/agent_graph.py`, `context_formatting.py`, `phase_manager.py`, `python_coder_legacy.py`, `rag.py`, `templates.py`, `validators.py`) to keep the prompt directory aligned with real runtime usage.
-- `backend/config/prompts/__init__.py` - pruned imports, registry entries, and `__all__` exports so the centralized registry only exposes prompts that are actually queried.
-- `backend/config/prompts/react_agent.py` - deleted the unused finish-step and action-input prompts that previously caused parameter mismatches in historical logs.
-- `backend/config/prompts/python_coder/fixing.py` & `backend/config/prompts/python_coder/__init__.py` - removed the orphaned `get_smart_fix_prompt` helper and its export to reduce dead code.
-- Documentation updated to reflect the leaner prompt surface area.
+**What It Does:** Generates and executes Python code in a sandboxed environment
 
-### Version 1.7.2 (November 24, 2025)
+**Features:**
+- Context-aware generation (v1.4+): Uses conversation history, plan context, react iteration history
+- Iterative verification: Max 3 verification loops
+- Execution retry: Max 5 attempts with auto-fixing
+- Variable persistence (v1.3+): DataFrames, arrays, objects saved across executions
+- File support: CSV, Excel, JSON, PDF, images, etc.
 
-**Bugfix: Resilient plan JSON parsing**
-
-- `backend/tasks/Plan_execute.py` - added `_parse_plan_text()` plus helpers that strip markdown fences, pull out JSON blocks, and fall back to `ast.literal_eval`, eliminating `JSONDecodeError: Expecting ':' at line 24 column 7` when the planner LLM emits narration or slightly malformed arrays.
-
-### Version 1.7.3 (November 24, 2025)
-
-**Bugfix: Default plan fallback**
-
-- `backend/tasks/Plan_execute.py` - `_parse_plan_text()` now emits a single-step fallback plan (web_search or python_coder) instead of raising when the LLM output can’t be parsed, preventing “Unable to parse execution plan as JSON array” from aborting Plan-and-Execute runs.
-
-### Version 1.7.4 (November 24, 2025)
-
-**Feature: Coder temperature setting**
-
-- `backend/utils/llm_factory.py` - `create_coder_llm()` now defaults to `settings.ollama_coder_model_temperature`, decoupling code-generation sampling from the general-purpose LLM temperature.
-- `backend/config/settings.py` / `README` - documented `ollama_coder_model_temperature` so deployments can tune deterministic code output separately.
-
-### Version 1.7.1 (November 24, 2025)
-
-**Bugfix: Async file upload handling**
-
-- `backend/api/routes/chat.py` - made `_handle_file_uploads()` async and now awaits `UploadFile.read()` directly, eliminating the `asyncio.run()` call that crashed under FastAPI’s running event loop when saving uploaded files.
-
-### Version 1.7.0 (November 24, 2025)
-
-**Refactor: File analyzer clarity & metadata**
-
-- `backend/tools/file_analyzer/analyzer.py` - rewrote the orchestration layer around a `FileAnalysisPayload` helper, added normalized input validation, richer error/warning reporting, per-run metadata, and clearer handler execution utilities so multi-file analyses are easier to reason about and debug.
-- `backend/tools/file_analyzer/__init__.py` - bumped the module version to `1.1.0` to reflect the refactor.
-
-Users now receive structured warnings for unsupported formats or missing files, plus an `analysis_id` and success counters in the returned payload.
-
-### Version 1.6.5 (November 24, 2024)
-
-**Enhancement: Multi-line info logging**
-
-- `backend/utils/logging_utils.py` - `StructuredLogger.info()` now detects newline characters and logs each line separately (using the same formatting as `multiline`), so `logger.info()` can handle multi-line commands without manual `logger.multiline()` calls.
-
-### Version 1.6.4 (November 24, 2024)
-
-**Bugfix: Restored ReAct variable loading**
-
-- `backend/tasks/react/agent.py` - reintroduced `_load_variables()` and invoke it before guided plan execution so sessions with saved python_coder variables no longer crash with `'ReActAgent' object has no attribute '_load_variables'`.
-
-### Version 1.6.3 (November 24, 2024)
-
-**Documentation: Plan-and-Execute workflow**
-
-- Added `PLAN_EXECUTE_WORKFLOW.md`, a comprehensive description of every phase (planning, guided execution, monitoring, adaptation) in the hybrid Plan-and-Execute agent.
-
-### Version 1.6.2 (November 24, 2024)
-
-**Change: Removed ReAct fuzzy action matching**
-
-- `backend/tasks/react/thought_action_generator.py` - deleted fuzzy action mapping logic and now default to `finish` whenever the LLM emits an unknown action label.
-
-### Version 1.6.1 (November 24, 2024)
-
-**Bugfix: Chat Message Serialization**
-
-- `backend/api/routes/chat.py` - serialize `ChatMessage` instances with `model_dump()` before writing them to `data/scratch/{user}/llm_input_messages_{session}.json`, preventing `TypeError: Object of type ChatMessage is not JSON serializable` when persisting request payloads.
-
-### Version 1.6.0 (November 24, 2024)
-
-**Simplification: Session Notepad Removal**
-
-Removed the automatic session notepad feature to simplify the architecture and reduce overhead.
-
-**Rationale:**
-- The session notepad added redundancy with existing conversation history and variable storage
-- Extra LLM call after every execution added latency and cost without sufficient benefit
-- Simpler architecture is easier to maintain and reason about
-- Variable persistence remains intact and provides sufficient session continuity
-
-**Changes:**
-1. **Deleted Files:**
-   - `backend/tools/notepad.py` - Removed SessionNotepad class
-
-2. **Modified Files:**
-   - `backend/tasks/react/agent.py` - Removed notepad loading and generation hooks
-   - `backend/tasks/react/context_manager.py` - Simplified to only inject variable context
-   - `backend/config/prompts/__init__.py` - Removed notepad prompt imports and registrations
-   - `backend/config/prompts/react_agent.py` - Removed notepad entry generation prompt
-   - `backend/config/prompts/context_formatting.py` - Removed notepad context formatter
-
-3. **What Remains:**
-   - ✅ Variable persistence (DataFrames, arrays, etc.) - still works
-   - ✅ Conversation history - still tracked
-   - ✅ Session management - still functional
-   - ✅ Variable metadata injection - agent still sees available variables
-
-**Benefits:**
-- Reduced execution overhead (no post-execution LLM call)
-- Simpler codebase with less coupling
-- Lower latency and cost per execution
-- Cleaner separation of concerns
-
-**Migration Guide:**
-- No action needed - variable persistence works automatically
-- Variables are still saved and loaded across executions within the same session
-- Conversation history provides sufficient context for most use cases
-
----
-
-### Version 1.2.0 (2024-10-31)
-
-**Major Changes: Python Code Tool Unification**
-
-1. **Unified Python Code Tool**
-   - Merged `python_coder_tool.py` and `python_executor_engine.py` into a single module
-   - Removed redundant `python_executor.py` (unused legacy code)
-   - Simplified architecture with `CodeExecutor` class for low-level execution
-   - Single `PythonCoderTool` class for high-level code generation and orchestration
-
-2. **Verification System Redesign**
-   - **Reduced scope**: Verifier now focuses ONLY on "Does the code answer the user's question?"
-   - **Reduced iterations**: Maximum verification iterations reduced from 10 to 3
-   - Removed overly detailed checks (performance, code quality, file handling details)
-   - Simplified verification prompt for faster and more focused validation
-
-3. **Execution Retry Logic**
-   - Added automatic retry mechanism for failed code execution
-   - Maximum 5 execution attempts with auto-fixing between retries
-   - New `_fix_execution_error()` method uses LLM to analyze and fix runtime errors
-   - Execution history tracking for debugging
-
-4. **Code Quality Improvements**
-   - Consolidated constants (`BLOCKED_IMPORTS`, `SUPPORTED_FILE_TYPES`)
-   - Better separation of concerns (CodeExecutor vs PythonCoderTool)
-   - Improved logging and error messages
-   - Backward compatibility exports for existing imports
-
-5. **Configuration Updates**
-   - `settings.py`: `python_code_max_iterations` default changed from 10 to 3
-   - Removed obsolete `python_executor` references from `React.py`
-   - Consolidated `PYTHON_CODE` and `PYTHON_CODER` tool types into single `PYTHON_CODER`
-
-6. **File Cleanup**
-   - Deleted: `backend/tools/python_executor_engine.py`
-   - Deleted: `backend/tools/python_executor.py` (unused)
-   - Updated: `backend/tasks/React.py` (removed python_executor imports)
-   - Updated: `backend/tools/python_coder_tool.py` (unified implementation)
-
-**Benefits:**
-- Faster verification (3 iterations vs 10)
-- More reliable execution (5 retry attempts with auto-fixing)
-- Simpler codebase (1 file instead of 3)
-- Focused verification on core goal (answering user's question)
-- Better error recovery through retry logic
-
-**Breaking Changes:**
-- `python_executor_engine.PythonExecutor` moved to `python_coder_tool.CodeExecutor`
-- `ToolName.PYTHON_CODE` removed, use `ToolName.PYTHON_CODER` instead
-- Import changes required in custom code using these tools
-
----
-
-### Version 1.3.0 (November 19, 2024)
-
-**Feature: Variable Persistence System** *(Note: Session Notepad portion removed in v1.6.0)*
-
-Implemented variable persistence system for maintaining data continuity across executions within the same session.
-
-**New Components:**
-- `backend/tools/python_coder/variable_storage.py` - Type-specific variable serialization
-
-**Key Features:**
-1. **Variable Persistence**: Variables from successful code executions are automatically saved with type-specific serialization:
-   - DataFrames → Parquet format
-   - NumPy arrays → .npy files
-   - Simple types → JSON
-   - Matplotlib figures → PNG images
-2. **Context Auto-Injection**: Variable metadata is automatically injected into subsequent executions within the same session
-3. **Namespace Capture**: Enhanced REPL mode captures execution namespace and returns variable metadata
-
-**Modified Files:**
-- `backend/tools/python_coder/executor.py` - Added namespace capture in REPL bootstrap
-- `backend/tools/python_coder/orchestrator.py` - Added namespace to success/final results
-
-**Storage Structure:**
-```
-./data/scratch/{session_id}/
-└── variables/                   # Persisted variables
-    ├── variables_metadata.json  # Variable catalog with load instructions
-    ├── df_*.parquet            # DataFrames
-    ├── *.json                  # Simple types
-    └── *.npy                   # NumPy arrays
-```
-
-**Benefits:**
-- Seamless session continuity - variables persist across executions
-- Efficient data reuse - no need to recompute variables
-- Explicit variable loading - agent sees what's available and writes code to load when needed
-- Safe serialization - no pickle, uses native formats
+**Security Measures:**
+- Blocked imports: `socket`, `subprocess`, `eval`, `exec`, `pickle`, etc.
+- Execution timeout: 3000 seconds (configurable)
+- Memory limits: 5120 MB (configurable)
+- Isolated session directories
+- AST-based import validation (no runtime eval)
 
 **Example Flow:**
-1. User: "Analyze the warpage data"
-   - Agent executes code, creates `df_warpage` and `stats_summary`
-   - Variables saved: `df_warpage.parquet`, `stats_summary.json`
+```
+User: "Analyze warpage data and calculate statistics"
+  → Code generated with file metadata
+  → Static analysis (import checks)
+  → LLM verification: "Does code answer question?"
+  → Execute code in subprocess
+  → On error: LLM analyzes and fixes code
+  → Retry with fixed code (max 5 attempts)
+  → Variables saved: df_warpage.parquet, stats.json
+```
 
-2. User: "Create a heatmap visualization"
-   - System injects variable context showing available variables
-   - Agent sees `df_warpage` is available and writes code to load it
-   - New visualization code builds on previous work
+**Variable Persistence:**
+```
+./data/scratch/{session_id}/variables/
+├── variables_metadata.json    # Variable catalog
+├── df_warpage.parquet         # DataFrames
+├── stats_summary.json         # Simple types
+└── correlation_matrix.npy     # NumPy arrays
+```
 
 ---
 
-### Version 1.5.0 (November 24, 2024)
+### 2. Web Search (Tavily API)
 
-**Major Refactor: 3-Way Agent Classification & Code Simplification**
+**What It Does:** Real-time web search for current information
 
-Completely redesigned the agent routing system to use direct LLM-powered 3-way classification, removed streaming support, and significantly simplified the codebase for better maintainability.
+**Features:**
+- Tavily API integration
+- Result ranking and filtering
+- Source attribution
+- Configurable search depth
 
-**Key Changes:**
-
-1. **3-Way LLM Agent Classification**
-   - Replaced 2-stage classification (agentic vs chat → react vs plan_execute)
-   - New single-stage LLM classification directly returns: "chat", "react", or "plan_execute"
-   - More accurate classification with comprehensive examples for each agent type
-   - Eliminated keyword-based heuristics in favor of intelligent LLM decision-making
-
-2. **Simplified chat.py** (`backend/api/routes/chat.py`)
-   - Reduced from 510 lines to ~400 lines (22% reduction)
-   - Removed all streaming-related code (StreamingResponse, SSE chunks, stream parameter)
-   - Extracted file handling to `_handle_file_uploads()` helper function
-   - Restructured endpoint into 4 clear phases:
-     - Phase 1: File Handling
-     - Phase 2: Classification (LLM-powered)
-     - Phase 3: Execution (route to appropriate agent)
-     - Phase 4: Storage & Cleanup
-   - Much easier to read, understand, and maintain
-
-3. **Updated Task Classification** (`backend/config/prompts/task_classification.py`)
-   - New `get_agent_type_classifier_prompt()` function for 3-way classification
-   - Comprehensive examples for each agent type:
-     - **chat**: Pure knowledge questions (10+ examples)
-     - **react**: Single-goal tool tasks (10+ examples)
-     - **plan_execute**: Multi-step complex workflows (10+ examples)
-   - Clear decision rules and edge case handling
-   - Backward-compatible with deprecated `get_agentic_classifier_prompt()`
-
-4. **Simplified Smart Agent** (`backend/tasks/smart_agent_task.py`)
-   - Removed `_select_agent()` heuristic method (50+ lines removed)
-   - Agent now simply routes to specified agent type
-   - Classification happens in chat.py before calling smart_agent_task
-   - Cleaner separation of concerns
-
-**Agent Type Definitions:**
-
-- **chat**: Simple questions answerable from LLM knowledge base (no tools)
-  - Example: "What is Python?", "Explain machine learning"
-  
-- **react**: Single-goal tasks requiring tool usage (web search, code execution, file analysis)
-  - Example: "Search for current weather", "Analyze this CSV file"
-  
-- **plan_execute**: Multi-step complex tasks requiring planning and structured execution
-  - Example: "Analyze 3 files, create visualizations, and generate a report"
-
-**Benefits:**
-
-- **Clearer Logic**: Single LLM decision instead of fragmented 2-stage classification
-- **Better Accuracy**: LLM understands nuanced differences between agent types
-- **Simpler Codebase**: Removed ~160 lines of complex logic and streaming code
-- **Easier Maintenance**: Clear separation of concerns, well-defined phases
-- **Better Logging**: Comprehensive logging at each phase for debugging
-
-**Breaking Changes:**
-
-- `stream` parameter removed from `/v1/chat/completions` endpoint
-- Streaming responses no longer supported
-- `AgentType.AUTO` deprecated in smart_agent_task (classification moved to chat.py)
-- `determine_task_type()` renamed to `determine_agent_type()` and returns 3 values
-
-**Modified Files:**
-
-- `backend/api/routes/chat.py` - Major refactor (510 → 400 lines)
-- `backend/config/prompts/task_classification.py` - 3-way classification prompt
-- `backend/tasks/smart_agent_task.py` - Removed heuristic selection
-- `backend/config/settings.py` - Added `ollama_coder_model` setting
-- `backend/utils/llm_factory.py` - Coder LLM now uses configurable model
-
-**Migration Guide:**
-
-If you have custom code calling these endpoints:
-
-```python
-# Before (streaming - NO LONGER SUPPORTED)
-response = requests.post("/v1/chat/completions", data={
-    "stream": "true",  # ❌ Parameter removed
-    ...
-})
-
-# After (non-streaming only)
-response = requests.post("/v1/chat/completions", data={
-    "model": "qwen3:8b",
-    "messages": json.dumps([...]),
-    "agent_type": "auto",  # or "chat", "react", "plan_execute"
-    ...
-})
+**Example:**
 ```
-
-**Testing:**
-
-Tested with various query types to ensure correct agent routing:
-- Simple questions → chat
-- Single tool tasks → react  
-- Multi-step complex tasks → plan_execute
-- Explicit agent_type parameter correctly overrides classification
+Query: "Latest AI breakthroughs in 2025"
+→ Tavily API search
+→ Top 5 results with summaries
+→ Source URLs and timestamps
+```
 
 ---
 
-### Version 1.4.0 (November 20, 2024)
+### 3. RAG Retriever (FAISS)
 
-**Enhancement: Context-Aware Python Code Generation**
+**What It Does:** Document-based context retrieval
 
-Significantly improved Python code generation by integrating comprehensive context from different agent workflows and conversation history.
+**Features:**
+- FAISS vector store
+- BGE-M3 embeddings
+- Semantic similarity search
+- Multi-document support
 
-**Key Changes:**
-
-1. **Enhanced Orchestrator Context Passing** (`backend/tools/python_coder/orchestrator.py`)
-   - Added `conversation_history`, `plan_context`, and `react_context` parameters to `execute_code_task()` method
-   - Modified `_generate_code_with_self_verification()` to accept and pass context to prompt generation
-   - Context now flows through the entire code generation pipeline
-
-2. **Improved Python Coder Prompts** (`backend/config/prompts/python_coder.py`)
-   - Updated `get_code_generation_with_self_verification_prompt()` to handle new context parameters
-   - Enhanced `get_python_code_generation_prompt()` with three new context sections:
-     - **PAST HISTORIES**: Shows previous conversation turns with timestamps
-     - **PLANS**: Displays Plan-Execute workflow context with step status and previous results
-     - **REACTS**: Shows ReAct iteration history including failed code attempts and errors
-   - Structured prompt now has 8 sections: HISTORIES → INPUT → PLANS → REACTS → TASK → METADATA → RULES → CHECKLISTS
-
-3. **ReAct Agent Integration** (`backend/tasks/react/tool_executor.py`)
-   - Added `_build_react_context()` method to extract failed code attempts and errors
-   - Added `_load_conversation_history()` method to load conversation from store
-   - Modified `_execute_python_coder()` to automatically gather and pass all contexts
-   - react_context structure includes iteration history with failed code, observations, and error reasons
-
-4. **Plan-Execute Agent Integration** (`backend/tasks/react/plan_executor.py`)
-   - Added `_build_plan_context()` method to create structured plan context
-   - Modified `execute_step()` to accept and track all plan steps and results
-   - plan_context includes current step, total steps, full plan with status, and previous results
-   - Automatic context injection when python_coder tool is invoked during plan execution
-
-5. **Conversation History Integration** (`backend/storage/conversation_store.py`)
-   - Leveraged existing `get_messages()` method for conversation history retrieval
-   - History automatically loaded when session_id is available
-   - Recent conversation context (last 10 messages) passed to code generation
-
-**Benefits:**
-- **Better Context Awareness**: Python coder now sees full conversation history, reducing repeated questions
-- **Learn from Failures**: ReAct context shows previous failed attempts, preventing the same mistakes
-- **Plan Alignment**: Plan context ensures generated code aligns with overall execution strategy
-- **Improved Code Quality**: LLM can generate more appropriate code with full context visibility
-- **Reduced Iterations**: Context-aware generation reduces need for multiple retry attempts
-
-**Example Context Flow:**
-
-Plan-Execute scenario:
+**Example:**
 ```
-User: "Analyze sales data and create visualizations"
-→ Plan Step 1: Load data (python_coder called)
-  → Context includes: conversation history, plan (step 1 of 3)
-→ Plan Step 2: Calculate metrics (python_coder called)
-  → Context includes: conversation history, plan (step 2 of 3), previous step result
-→ Plan Step 3: Create charts (python_coder called)
-  → Context includes: conversation history, plan (step 3 of 3), all previous results
+Query: "What is the pricing model?"
+→ Embed query with BGE-M3
+→ FAISS similarity search
+→ Retrieve top 3 relevant chunks
+→ Context passed to LLM
 ```
-
-ReAct scenario with retries:
-```
-User: "Calculate average from data.json"
-→ Iteration 1: python_coder generates code → fails (FileNotFoundError)
-→ Iteration 2: python_coder called again
-  → Context includes: conversation history, react_context with failed attempt #1
-→ Iteration 3: python_coder called again
-  → Context includes: conversation history, react_context with failed attempts #1 and #2
-```
-
-**Modified Files:**
-- `backend/tools/python_coder/orchestrator.py` - Context parameter additions
-- `backend/config/prompts/python_coder.py` - Prompt structure enhancement
-- `backend/tasks/react/tool_executor.py` - Context gathering and passing
-- `backend/tasks/react/plan_executor.py` - Plan context building
-
-**New Test File:**
-- `test_python_coder_prompt.py` - Comprehensive test for prompt generation with all context sections
-
-**Testing:**
-Run the test to verify prompt generation:
-```bash
-python test_python_coder_prompt.py
-```
-
-The test verifies:
-- All 8 prompt sections are present
-- Conversation history is properly formatted
-- Plan context shows step progression
-- ReAct context includes failed attempts
-- File metadata and access patterns are included
-- Rules and checklists are present
 
 ---
 
-### Version 1.1.0 (Previous)
-- Multi-agent architecture implementation
-- ReAct pattern for reasoning and acting
-- Plan-Execute workflow for complex tasks
-- Web search and RAG integration
+### 4. File Analyzer
 
-### Version 1.0.0 (Initial)
-- Basic LLM API server
-- Ollama integration
-- Simple chat functionality
+**What It Does:** Multi-format file analysis and extraction
 
-## Development
+**Supported Formats:**
+- **Tabular:** CSV, Excel (.xlsx, .xls)
+- **Documents:** PDF, TXT, Markdown
+- **Data:** JSON, XML
+- **Images:** PNG, JPG (with vision model)
 
-### Project Structure
+**Features:**
+- Format-specific analyzers
+- LLM-powered deep analysis
+- Metadata extraction (columns, dtypes, preview)
+- Structure comparison
+- Anomaly detection
 
-- **API Layer** (`backend/api/`): FastAPI routes and HTTP handling
-- **Agent Layer** (`backend/tasks/`, `backend/core/`): Agentic reasoning and task execution
-- **Tool Layer** (`backend/tools/`): External integrations (web, RAG, code execution)
-- **Storage Layer** (`backend/storage/`): Data persistence
+**Example:**
+```
+File: sales_data.csv
+→ Extract columns, dtypes, shape
+→ Preview first 5 rows
+→ Statistical summary
+→ LLM analysis: "Sales data with 12 columns, 1000 rows..."
+```
 
-### Adding New Tools
+---
 
-1. Create tool in `backend/tools/`
-2. Register in `backend/tasks/React.py` or `backend/core/agent_graph.py`
-3. Add to `ToolName` enum if needed
+## 🔒 Security
+
+### Code Execution Sandbox
+
+- **Blocked Imports:** 30+ dangerous modules (socket, subprocess, eval, etc.)
+- **Timeout Enforcement:** 3000 seconds (configurable)
+- **Memory Limits:** 5120 MB (configurable)
+- **Isolated Directories:** Session-based workspace prevents cross-contamination
+- **AST Validation:** Static analysis before execution
+- **No Runtime Eval:** Import checks use AST parsing, not `eval()`
+
+### Authentication
+
+- **JWT Tokens:** Secure user authentication
+- **Session Management:** User-scoped sessions
+- **Path Traversal Protection:** Blocks `../` attacks in file downloads
+- **Session Ownership Validation:** Users can only access their own data
+
+### Best Practices
+
+- ✅ Change `secret_key` in production
+- ✅ Never expose server directly to internet without authentication
+- ✅ Review `BLOCKED_IMPORTS` before modifying
+- ✅ Monitor logs for suspicious activity
+- ✅ Limit file upload sizes and types
+- ✅ Use HTTPS in production
+- ✅ Implement rate limiting for public deployments
+
+---
+
+## 🧪 Development
+
+### Project Structure Philosophy
+
+- **API Layer** (`backend/api/`): HTTP handling, routing, middleware
+- **Agent Layer** (`backend/tasks/`): Reasoning, planning, orchestration
+- **Tool Layer** (`backend/tools/`): External integrations and execution
+- **Storage Layer** (`backend/storage/`): Persistence and data management
+- **Utils Layer** (`backend/utils/`): Shared utilities and factories
 
 ### Testing
 
@@ -904,55 +900,378 @@ The test verifies:
 # Run API tests
 python -m pytest tests/
 
-# Manual testing with Jupyter notebook
+# Manual testing with Jupyter
 jupyter notebook API_examples.ipynb
+
+# Check Ollama connection
+curl http://127.0.0.1:11434/api/tags
 ```
 
-## Troubleshooting
+### Adding a New Tool
 
-### Common Issues
+1. **Create Tool Module** in `backend/tools/`
+   ```python
+   # backend/tools/my_tool/tool.py
+   class MyTool:
+       def run(self, query: str) -> dict:
+           # Implementation
+           return {"result": "..."}
 
-1. **Ollama Connection Error**
-   - Ensure Ollama is running: `ollama serve`
-   - Check `ollama_host` in settings
+   my_tool = MyTool()
+   ```
 
-2. **Code Execution Timeout**
-   - Increase `python_code_timeout` in settings
-   - Check for infinite loops in generated code
+2. **Add to ToolName Enum** in `backend/tasks/react/models.py`
+   ```python
+   class ToolName(str, Enum):
+       MY_TOOL = "my_tool"
+   ```
 
-3. **Import Errors in Generated Code**
-   - Review `BLOCKED_IMPORTS` in `python_coder_tool.py`
-   - Required packages must be installed in environment
+3. **Add Execution Logic** in `backend/tasks/react/tool_executor.py`
+   ```python
+   elif action.tool_name == ToolName.MY_TOOL:
+       from backend.tools.my_tool import my_tool
+       observation = my_tool.run(action.tool_input)
+   ```
 
-4. **Memory Issues**
-   - Reduce `ollama_num_ctx` for lower memory usage
-   - Increase `python_code_max_memory` if needed
+4. **Update Prompts** in `backend/config/prompts/react_agent.py`
+   ```python
+   AVAILABLE_TOOLS = [
+       "my_tool: Description of what this tool does"
+   ]
+   ```
 
-## Security Considerations
-
-- **Never expose** the server directly to the internet without proper authentication
-- **Change** `secret_key` in production
-- **Review** `BLOCKED_IMPORTS` before modifying
-- **Monitor** code execution logs for suspicious activity
-- **Limit** file upload sizes and types
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit changes with clear messages
-4. Submit a pull request
-
-## License
-
-[Your License Here]
-
-## Contact
-
-[Your Contact Information]
+5. **Register in Settings** in `backend/config/settings.py`
+   ```python
+   available_tools: list = ["my_tool", ...]
+   ```
 
 ---
 
-**Last Updated**: November 26, 2025
-**Version**: 2.1.0
+## 🔧 Troubleshooting
 
+### Ollama Backend Issues
+
+**Problem:** "Connection refused" when starting server
+
+**Solution:**
+```bash
+# 1. Check Ollama is running
+ollama serve
+
+# 2. Test connection
+curl http://127.0.0.1:11434/api/tags
+
+# 3. Verify settings.py
+# ollama_host: str = 'http://127.0.0.1:11434'
+```
+
+**Problem:** "Model not found" error
+
+**Solution:**
+```bash
+# Pull required models
+ollama pull gemma3:12b
+ollama pull gpt-oss:20b
+ollama pull bge-m3:latest
+
+# List available models
+ollama list
+```
+
+---
+
+### llama.cpp Backend Issues
+
+**Problem:** "CUDA error" when using GPU
+
+**Solution:**
+```bash
+# 1. Verify NVIDIA drivers
+nvidia-smi
+
+# 2. Rebuild llama-cpp-python with CUDA
+CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+
+# 3. Test in Python
+python -c "from llama_cpp import Llama; print('CUDA available')"
+
+# 4. Reduce GPU layers if out of VRAM
+# settings.py: llamacpp_n_gpu_layers = 20  (instead of -1)
+```
+
+**Problem:** "Out of memory" error
+
+**Solution:**
+```python
+# settings.py
+llamacpp_n_ctx = 4096          # Reduce context size
+llamacpp_low_vram = True       # Enable low VRAM mode
+llamacpp_n_gpu_layers = 0      # CPU only
+llamacpp_use_mmap = False      # Disable memory mapping
+```
+
+**Problem:** Slow inference
+
+**Solution:**
+```python
+# settings.py
+llamacpp_n_gpu_layers = -1     # All layers to GPU
+llamacpp_n_batch = 2048        # Increase batch size
+llamacpp_use_mmap = True       # Enable memory mapping
+
+# Use smaller quantization (Q4_K_M instead of Q8_0)
+# Download from Hugging Face
+```
+
+---
+
+### Code Execution Issues
+
+**Problem:** "Code execution timeout"
+
+**Solution:**
+```python
+# settings.py
+python_code_timeout: int = 5000  # Increase timeout (seconds)
+```
+
+**Problem:** "Import not allowed" error
+
+**Solution:**
+```python
+# Review blocked imports in:
+# backend/tools/python_coder/executor/code_executor.py
+
+# BLOCKED_IMPORTS list includes:
+# socket, subprocess, eval, exec, pickle, etc.
+
+# If you need to allow an import, remove it from the list
+# (only if you trust the code source!)
+```
+
+**Problem:** Empty or incomplete responses
+
+**Solution:**
+```bash
+# 1. Check logs
+cat data/logs/app.log
+
+# 2. Verify classifier is working
+# Edit settings.py: agentic_classifier_model
+
+# 3. Check max_tokens setting
+# settings.py: llamacpp_max_tokens = 4096
+```
+
+---
+
+### General Issues
+
+**Problem:** Variables not persisting across sessions
+
+**Solution:**
+```python
+# Ensure you're using the same session_id
+# Variables are session-scoped, not user-scoped
+
+# Check variable storage:
+ls data/scratch/{session_id}/variables/
+cat data/scratch/{session_id}/variables/variables_metadata.json
+```
+
+**Problem:** File upload fails
+
+**Solution:**
+```bash
+# 1. Check upload directory exists
+mkdir -p data/uploads
+
+# 2. Verify file size limits
+# FastAPI default: 2MB
+# Increase in backend/api/app.py if needed
+
+# 3. Check file permissions
+chmod 755 data/uploads
+```
+
+---
+
+## 📚 Version History
+
+### Version 2.1.0 (December 2, 2025)
+**Feature: Dual Backend Support - llama.cpp Integration**
+
+- Added native llama.cpp support alongside Ollama
+- `LlamaCppWrapper` in `llm_factory.py` for ChatOllama-compatible interface
+- Backend selection via `llm_backend` setting
+- Comprehensive llama.cpp configuration (GPU layers, context extension, memory optimization)
+- GGUF model support with fine-grained hardware control
+- RoPE scaling for extended context windows
+- Lazy loading for faster startup
+- Backward compatible with existing Ollama deployments
+
+**Configuration:**
+```python
+llm_backend: str = 'ollama'  # or 'llamacpp'
+llamacpp_model_path: str = './models/qwen-coder-30b.gguf'
+llamacpp_n_gpu_layers: int = -1  # GPU offloading
+llamacpp_n_ctx: int = 16384      # Context window
+```
+
+---
+
+### Version 2.0.0 (January 2025)
+**Major Refactoring: Modular Architecture**
+
+Comprehensive code restructuring that splits large monolithic files into focused, maintainable modules.
+
+**ReAct Agent Modularization:**
+- Split 2000+ line `React.py` → 8 focused modules in `backend/tasks/react/`
+- Modules: agent.py, thought_action_generator.py, tool_executor.py, answer_generator.py, context_manager.py, verification.py, plan_executor.py, models.py
+
+**Python Coder Tool Modularization:**
+- Split `python_coder_tool.py` → 5 modules in `backend/tools/python_coder/`
+- Modules: tool.py, generator.py, executor.py, verifier.py, models.py
+
+**Other Modularizations:**
+- File Analyzer: `file_analyzer_tool.py` → 4 modules
+- Web Search: `web_search.py` → 2 modules
+- RAG Retriever: `rag_retriever.py` → 4 modules
+- API Routes: `routes.py` → 5 route modules
+
+**Infrastructure Improvements:**
+- Added `llm_factory.py` - centralized LLM creation
+- Added `prompts.py` - centralized prompt management (PromptRegistry)
+- Legacy files preserved for backward compatibility
+
+---
+
+### Version 1.9.0 (November 25, 2025)
+**Enhancement: Prompt System Overhaul + Output File Handling**
+
+- Output file handling for Python coder (solves CMD truncation)
+- New base utilities: ASCII markers, temporal awareness, reusable rule blocks
+- Token optimization: 25-35% average reduction across prompts
+- Expanded file analyzer with specialized prompts
+- Improved plan context passing
+
+---
+
+### Version 1.8.0 (November 25, 2025)
+**Enhancement: Structured LLM Prompt Logging**
+
+- Redesigned `LLMInterceptor` class for readable logging
+- Three log formats: STRUCTURED, JSON, COMPACT
+- Request/response pairing with unique call IDs
+- Enhanced metadata: token estimation, duration tracking
+- Streaming response logging
+
+---
+
+### Version 1.7.0 (November 24, 2025)
+**Enhancement: Intelligent Retry System for Python Coder**
+
+- Full attempt history tracking with error classification
+- Runtime variable capture on error
+- Enhanced retry prompts with escalating strategies
+- Forced different approach on repeated errors
+- 15+ classified error types with specific guidance
+
+**Problem Solved:** Model no longer gets "stuck" on repeated errors (e.g., IndexError loops)
+
+---
+
+### Version 1.6.0 (November 24, 2024)
+**Simplification: Session Notepad Removal**
+
+- Removed automatic session notepad feature
+- Simpler architecture with less overhead
+- Variable persistence remains intact
+- Reduced latency and cost per execution
+
+---
+
+### Version 1.5.0 (November 24, 2024)
+**Major Refactor: 3-Way Agent Classification**
+
+- LLM-powered 3-way classification: chat, react, plan_execute
+- Simplified `chat.py`: 510 → 400 lines (22% reduction)
+- Removed streaming support
+- Clearer logic and better accuracy
+
+---
+
+### Version 1.4.0 (November 20, 2024)
+**Enhancement: Context-Aware Python Code Generation**
+
+- Conversation history integration
+- Plan context for Plan-Execute workflows
+- ReAct context with failed attempts
+- 8-section prompt structure: HISTORIES → INPUT → PLANS → REACTS → TASK → METADATA → RULES → CHECKLISTS
+
+---
+
+### Version 1.3.0 (November 19, 2024)
+**Feature: Variable Persistence System**
+
+- Automatic variable saving with type-specific serialization
+- DataFrames → Parquet, arrays → .npy, simple types → JSON
+- Context auto-injection into subsequent executions
+- Namespace capture in REPL mode
+
+---
+
+### Version 1.2.0 (October 31, 2024)
+**Major Changes: Python Code Tool Unification**
+
+- Merged multiple files into single `python_coder_tool.py`
+- Reduced verification iterations: 10 → 3
+- Added execution retry logic: max 5 attempts with auto-fixing
+- Simplified architecture
+
+---
+
+### Earlier Versions
+- **v1.1.0:** Multi-agent architecture implementation
+- **v1.0.0:** Initial LLM API server with Ollama integration
+
+---
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) file for details
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📧 Support
+
+- **Issues:** [GitHub Issues](https://github.com/your-repo/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/your-repo/discussions)
+- **Documentation:** See [CLAUDE.md](CLAUDE.md) for detailed developer docs
+
+---
+
+## 🙏 Acknowledgments
+
+- **LangChain** - Agent framework
+- **LangGraph** - Workflow orchestration
+- **Ollama** - LLM inference
+- **llama.cpp** - High-performance LLM runtime
+- **Tavily** - Web search API
+- **FAISS** - Vector similarity search
+
+---
+
+**Built with ❤️ for AI-powered automation**
+
+*Last Updated: December 2, 2025 | Version 2.1.0*
