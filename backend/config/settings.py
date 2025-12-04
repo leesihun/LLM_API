@@ -36,29 +36,6 @@ class Settings(BaseSettings):
 
     # Ollama service endpoint
     ollama_host: str = 'http://127.0.0.1:11434'
-
-    @field_validator('ollama_host')
-    @classmethod
-    def validate_ollama_host(cls, v: str) -> str:
-        """
-        Ensure ollama_host always has http:// or https:// protocol.
-        If missing, defaults to http://
-        """
-        if not v:
-            return 'http://127.0.0.1:11434'
-        
-        v = v.strip()
-        
-        # If it doesn't start with http:// or https://, add http://
-        if not v.startswith(('http://', 'https://')):
-            # If it looks like a host:port, add http:// prefix
-            if '://' not in v:
-                v = f'http://{v}'
-            else:
-                # If it has :// but not http/https, replace with http://
-                v = f'http://{v.split("://", 1)[1]}'
-        
-        return v
     ollama_model: str = 'gemma3:12b-it-q8_0'#'deepseek-r1:1.5b'#'gpt-oss:120b'#'gpt-oss:20b'
     agentic_classifier_model: str = 'gemma3:12b-it-q8_0'#'deepseek-r1:1.5b'#'gpt-oss:20b'#'gpt-oss:20b'
     ollama_coder_model: str = 'gemma3:12b-it-q8_0'#'deepseek-r1:1.5b'#'GLM-4.6-REAP'#'gpt-oss:20b'
