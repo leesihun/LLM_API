@@ -831,11 +831,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - Handles all case variations: `THOUGHT:`, `Thought:`, `thought:`
   - Handles all action input formats: `ACTION INPUT:`, `Action Input:`, `ACTION_INPUT:`, `Input:`
   - Better multi-line content handling
+- 🔧 **Fixed Ollama tool_calls response format** (major fix)
+  - Ollama models with function calling return `tool_calls` instead of `content`
+  - Now extracts tool calls and converts to THOUGHT/ACTION/ACTION INPUT format
+  - Properly handles `response.tool_calls` attribute
 - 🔧 Enhanced LLM response handling in ThoughtActionGenerator
   - Added retry logic (3 attempts) for empty responses
   - Added comprehensive debug logging for LLM invocations
-  - Fixed extraction from `additional_kwargs` (Ollama sometimes returns content here)
-  - Handles tool_calls format in additional_kwargs
   - Logs LLM type, model, prompt length for debugging
 - 🔧 Fixed LLMInterceptor response logging
   - Now logs `additional_kwargs` and `response_metadata` when content is empty

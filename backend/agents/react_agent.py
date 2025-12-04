@@ -431,16 +431,37 @@ class ThoughtActionGenerator:
         """Extract text content from LLM response object."""
         # Log raw response for debugging
         logger.info(f"[ReAct] Raw response type: {type(response)}")
-        logger.info(f"[ReAct] Raw response repr: {repr(response)[:1500]}")
+        logger.debug(f"[ReAct] Raw response repr: {repr(response)[:1500]}")
         
-        # Log all attributes of the response
-        if hasattr(response, '__dict__'):
-            logger.info(f"[ReAct] Response __dict__ keys: {response.__dict__.keys()}")
-            for key, value in response.__dict__.items():
-                val_str = str(value)[:200] if value else 'None/Empty'
-                logger.info(f"[ReAct] Response.{key} = {val_str}")
+        # PRIORITY: Check for tool_calls first - Ollama returns function calls here
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            tool_calls = response.tool_calls
+            logger.info(f"[ReAct] Found tool_calls: {tool_calls}")
+            
+            # Convert tool call to THOUGHT/ACTION/ACTION INPUT format
+            if isinstance(tool_calls, list) and len(tool_calls) > 0:
+                tool_call = tool_calls[0]
+                if isinstance(tool_call, dict):
+                    action = tool_call.get('name', 'unknown')
+                    args = tool_call.get('args', {})
+                    
+                    # Build action input from args
+                    if isinstance(args, dict):
+                        # For web_search, use the query
+                        if 'query' in args:
+                            action_input = args['query']
+                        else:
+                            # Stringify all args
+                            action_input = ', '.join(f"{k}={v}" for k, v in args.items())
+                    else:
+                        action_input = str(args)
+                    
+                    # Construct the expected format
+                    formatted = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
+                    logger.info(f"[ReAct] Converted tool_call to format: {formatted}")
+                    return formatted
         
-        # Try direct content attribute first
+        # Try direct content attribute
         if hasattr(response, 'content') and response.content:
             logger.debug(f"[ReAct] Found content attribute: {len(response.content)} chars")
             return response.content
