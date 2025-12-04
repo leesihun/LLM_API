@@ -826,11 +826,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ JWT authentication
 
 **v2.0.4 Changes:**
-- 🔧 Fixed ReAct response parsing for THOUGHT/ACTION/ACTION INPUT format
-  - Improved regex patterns to handle LLM output variations
-  - Added support for `ACTION INPUT:`, `Action Input:`, `ACTION_INPUT:` formats
-  - Better handling of multi-line action inputs
-  - Added fallback parsing for alternate `INPUT:` format
+- 🔧 Completely rewritten ReAct response parser (`_parse_response`)
+  - Multi-strategy parsing: structured regex + line-by-line fallback
+  - Handles all case variations: `THOUGHT:`, `Thought:`, `thought:`
+  - Handles all action input formats: `ACTION INPUT:`, `Action Input:`, `ACTION_INPUT:`, `Input:`
+  - Better multi-line content handling
+  - Added comprehensive debug logging for LLM responses
+  - Added empty response detection with detailed error logging
+  - Proper validation of extracted thought/action/input before returning
 
 **Planned:**
 - 🔄 Streaming responses (Server-Sent Events)

@@ -385,8 +385,23 @@ class ThoughtActionGenerator:
             latest_observation=latest_observation
         )
 
+        logger.debug(f"[ReAct] Sending prompt to LLM ({len(prompt)} chars)")
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        return self._parse_response(response.content.strip())
+        
+        # Extract content from response
+        if hasattr(response, 'content'):
+            response_text = response.content
+        else:
+            response_text = str(response)
+        
+        # Log response details
+        logger.info(f"[ReAct] LLM response received: {len(response_text)} chars")
+        if not response_text or not response_text.strip():
+            logger.error(f"[ReAct] Empty LLM response! Response object: {type(response)}, attrs: {dir(response)}")
+            raise ValueError("LLM returned empty response")
+        
+        logger.debug(f"[ReAct] Response preview: {response_text[:500]}")
+        return self._parse_response(response_text.strip())
 
     def _parse_response(self, response: str) -> Tuple[str, str, str]:
         """Parse LLM response for THOUGHT, ACTION, and ACTION INPUT.
