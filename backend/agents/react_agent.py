@@ -389,19 +389,117 @@ class ThoughtActionGenerator:
         return self._parse_response(response.content.strip())
 
     def _parse_response(self, response: str) -> Tuple[str, str, str]:
-        thought_match = re.search(r'THOUGHT:\s*(.+?)(?=ACTION:|$)', response, re.IGNORECASE | re.DOTALL)
-        action_match = re.search(r'ACTION:\s*(\w+)', response, re.IGNORECASE)
-        input_match = re.search(r'ACTION\s+INPUT:\s*(.+?)(?=\n\n|\Z)', response, re.IGNORECASE | re.DOTALL)
-        if not thought_match or not action_match or not input_match:
-            raise ValueError("Incomplete thought/action response from LLM.")
-
-        thought = thought_match.group(1).strip()
-        action = action_match.group(1).strip().lower()
-        action_input = input_match.group(1).strip()
-
+        """Parse LLM response for THOUGHT, ACTION, and ACTION INPUT.
+        
+        Handles various LLM output formats including:
+        - THOUGHT: / Thought: / thought:
+        - ACTION: / Action: / action:
+        - ACTION INPUT: / Action Input: / ACTION_INPUT: / Input:
+        - Multi-line content
+        - Various whitespace patterns
+        """
+        logger.debug(f"[ReAct] Parsing response ({len(response)} chars): {response[:300]}...")
+        
+        if not response or not response.strip():
+            logger.error("[ReAct] Empty response from LLM")
+            raise ValueError("Empty response from LLM")
+        
+        # Normalize: convert various action input formats to consistent marker
+        normalized = response
+        # Handle: "ACTION INPUT:", "Action Input:", "ACTION_INPUT:", "action input:"
+        normalized = re.sub(r'action[\s_]*input\s*:', 'ACTION_INPUT:', normalized, flags=re.IGNORECASE)
+        
+        # Strategy 1: Try structured extraction with flexible patterns
+        thought = action = action_input = None
+        
+        # THOUGHT: Extract everything between THOUGHT: and ACTION: (case insensitive)
+        thought_patterns = [
+            r'thought\s*:\s*(.+?)(?=\s*action\s*:)',  # THOUGHT: ... ACTION:
+            r'thought\s*:\s*(.+?)$',  # THOUGHT: ... (at end)
+        ]
+        for pattern in thought_patterns:
+            match = re.search(pattern, normalized, re.IGNORECASE | re.DOTALL)
+            if match:
+                thought = match.group(1).strip()
+                break
+        
+        # ACTION: Extract the tool name (word after ACTION:, but not ACTION_INPUT)
+        action_patterns = [
+            r'(?<!_)action\s*:\s*(\w+)',  # ACTION: tool_name (not ACTION_INPUT)
+        ]
+        for pattern in action_patterns:
+            match = re.search(pattern, normalized, re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip().lower()
+                # Make sure we didn't accidentally match "input" from "ACTION INPUT"
+                if candidate != 'input':
+                    action = candidate
+                    break
+        
+        # ACTION_INPUT: Extract everything after ACTION_INPUT: to end or next section
+        input_patterns = [
+            r'action_input\s*:\s*(.+?)(?=\s*thought\s*:|$)',  # Until next THOUGHT or end
+            r'action_input\s*:\s*(.+)$',  # Until end
+            r'input\s*:\s*(.+?)(?=\s*thought\s*:|$)',  # Fallback: INPUT:
+            r'input\s*:\s*(.+)$',  # INPUT: until end
+        ]
+        for pattern in input_patterns:
+            match = re.search(pattern, normalized, re.IGNORECASE | re.DOTALL)
+            if match:
+                action_input = match.group(1).strip()
+                break
+        
+        # Strategy 2: If structured parsing failed, try line-by-line parsing
+        if not thought or not action or not action_input:
+            logger.debug("[ReAct] Structured parsing incomplete, trying line-by-line")
+            lines = normalized.split('\n')
+            current_section = None
+            sections = {'thought': [], 'action': [], 'input': []}
+            
+            for line in lines:
+                line_lower = line.lower().strip()
+                if line_lower.startswith('thought'):
+                    current_section = 'thought'
+                    content = re.sub(r'^thought\s*:\s*', '', line, flags=re.IGNORECASE).strip()
+                    if content:
+                        sections['thought'].append(content)
+                elif re.match(r'^action\s*:', line_lower) and 'input' not in line_lower:
+                    current_section = 'action'
+                    content = re.sub(r'^action\s*:\s*', '', line, flags=re.IGNORECASE).strip()
+                    if content:
+                        sections['action'].append(content)
+                elif 'input' in line_lower and ':' in line:
+                    current_section = 'input'
+                    content = re.sub(r'^.*input\s*:\s*', '', line, flags=re.IGNORECASE).strip()
+                    if content:
+                        sections['input'].append(content)
+                elif current_section and line.strip():
+                    sections[current_section].append(line.strip())
+            
+            if not thought and sections['thought']:
+                thought = ' '.join(sections['thought'])
+            if not action and sections['action']:
+                action = sections['action'][0].split()[0].lower()  # First word only
+            if not action_input and sections['input']:
+                action_input = ' '.join(sections['input'])
+        
+        # Validate we have all parts
+        if not thought:
+            logger.warning(f"[ReAct] Could not extract THOUGHT from: {response[:300]}")
+            raise ValueError("Could not parse THOUGHT from LLM response")
+        if not action:
+            logger.warning(f"[ReAct] Could not extract ACTION from: {response[:300]}")
+            raise ValueError("Could not parse ACTION from LLM response")
+        if not action_input:
+            logger.warning(f"[ReAct] Could not extract ACTION INPUT from: {response[:300]}")
+            raise ValueError("Could not parse ACTION INPUT from LLM response")
+        
+        # Validate action is a known tool
         if action not in self.VALID_ACTIONS:
+            logger.warning(f"[ReAct] Unknown action '{action}'. Valid: {self.VALID_ACTIONS}")
             raise ValueError(f"Unsupported action requested: {action}")
-
+        
+        logger.debug(f"[ReAct] Parsed - Thought: {thought[:50]}... Action: {action}, Input: {action_input[:50]}...")
         return thought, action, action_input
 
     def _build_file_guidance(self) -> str:

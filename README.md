@@ -814,7 +814,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version: 2.0.3
+### Current Version: 2.0.4
 
 **Completed:**
 - ✅ Dual backend support (Ollama + llama.cpp)
@@ -824,6 +824,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ Vision analysis capabilities
 - ✅ OpenAI-compatible API
 - ✅ JWT authentication
+
+**v2.0.4 Changes:**
+- 🔧 Fixed ReAct response parsing for THOUGHT/ACTION/ACTION INPUT format
+  - Improved regex patterns to handle LLM output variations
+  - Added support for `ACTION INPUT:`, `Action Input:`, `ACTION_INPUT:` formats
+  - Better handling of multi-line action inputs
+  - Added fallback parsing for alternate `INPUT:` format
 
 **Planned:**
 - 🔄 Streaming responses (Server-Sent Events)
@@ -839,5 +846,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by HE Team**
 
-**Version:** 2.0.3
+**Version:** 2.0.4
 **Last Updated:** 2025-12-04
