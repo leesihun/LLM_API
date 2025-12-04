@@ -159,34 +159,60 @@ Answer:"""
             return "Failed to generate answer from results."
 
     async def _tavily_search(self, query: str, max_results: int) -> List[SearchResult]:
-        """Execute search with Tavily."""
-        ssl_verify = "C:/DigitalCity.crt" if Path("C:/DigitalCity.crt").exists() else True
+        """Execute search with Tavily with SSL fallback."""
+        # SSL verification options in order of preference:
+        # 1. Corporate certificate (if exists)
+        # 2. Default SSL verification
+        # 3. Disabled SSL verification (fallback for problematic certs)
+        ssl_options = []
+        if Path("C:/DigitalCity.crt").exists():
+            ssl_options.append("C:/DigitalCity.crt")
+        ssl_options.append(True)   # Default SSL verification
+        ssl_options.append(False)  # Fallback: disable SSL verification
         
-        async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as client:
-            response = await client.post(
-                self.tavily_url,
-                json={
-                    "api_key": self.tavily_api_key,
-                    "query": query,
-                    "max_results": max_results,
-                    "search_depth": self.search_depth,
-                    "include_answer": True
-                }
-            )
-            
-            if response.status_code != 200:
-                raise Exception(f"Tavily API error: {response.status_code}")
+        last_error = None
+        for ssl_verify in ssl_options:
+            try:
+                async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as client:
+                    response = await client.post(
+                        self.tavily_url,
+                        json={
+                            "api_key": self.tavily_api_key,
+                            "query": query,
+                            "max_results": max_results,
+                            "search_depth": self.search_depth,
+                            "include_answer": True
+                        }
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"Tavily API error: {response.status_code}")
 
-            data = response.json()
-            return [
-                SearchResult(
-                    title=item.get("title", ""),
-                    url=item.get("url", ""),
-                    content=item.get("content", ""),
-                    score=item.get("score")
-                )
-                for item in data.get("results", [])
-            ]
+                    data = response.json()
+                    if ssl_verify is False:
+                        logger.warning("[WebSearchTool] SSL verification disabled for this request")
+                    return [
+                        SearchResult(
+                            title=item.get("title", ""),
+                            url=item.get("url", ""),
+                            content=item.get("content", ""),
+                            score=item.get("score")
+                        )
+                        for item in data.get("results", [])
+                    ]
+            except Exception as e:
+                error_msg = str(e)
+                # Only retry with different SSL option if it's an SSL-related error
+                if "SSL" in error_msg or "CERTIFICATE" in error_msg or "certificate" in error_msg.lower():
+                    logger.warning(f"[WebSearchTool] SSL error with verify={ssl_verify}: {e}")
+                    last_error = e
+                    continue
+                else:
+                    # Non-SSL error, raise immediately
+                    raise
+        
+        # All SSL options failed
+        raise last_error if last_error else Exception("All SSL verification options failed")
 
     def _get_temporal_context(self) -> Dict[str, str]:
         now = datetime.now()

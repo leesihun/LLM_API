@@ -814,7 +814,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version: 2.0.4
+### Current Version: 2.0.5
 
 **Completed:**
 - ✅ Dual backend support (Ollama + llama.cpp)
@@ -824,6 +824,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ Vision analysis capabilities
 - ✅ OpenAI-compatible API
 - ✅ JWT authentication
+
+**v2.0.5 Changes:**
+- 🔧 **Fixed Tavily SSL certificate verification issues**
+  - Added progressive SSL fallback mechanism in `_tavily_search`
+  - Tries corporate certificate → default SSL → disabled SSL verification
+  - Fixes `[SSL: CERTIFICATE_VERIFY_FAILED] Basic Constraints of CA cert not marked critical` error
+  - Logs warning when SSL verification is disabled for transparency
 
 **v2.0.4 Changes:**
 - 🔧 Completely rewritten ReAct response parser (`_parse_response`)
@@ -857,5 +864,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by HE Team**
 
-**Version:** 2.0.4
+**Version:** 2.0.5
 **Last Updated:** 2025-12-04
