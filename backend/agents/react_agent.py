@@ -705,8 +705,68 @@ class AnswerGenerator:
     async def generate(self, user_query: str, steps: List[ReActStep]) -> str:
         context = self.formatter.format(steps)
         prompt = _build_final_answer_prompt(query=user_query, context=context)
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        return response.content.strip()
+        
+        try:
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            content = self._extract_response_content(response)
+            
+            if content and content.strip():
+                return content.strip()
+            
+            # Fallback: synthesize from observations if LLM returns empty
+            logger.warning("[AnswerGenerator] LLM returned empty content, using fallback synthesis")
+            return self._fallback_synthesis(user_query, steps)
+            
+        except Exception as e:
+            logger.error(f"[AnswerGenerator] Error generating answer: {e}")
+            return self._fallback_synthesis(user_query, steps)
+
+    def _extract_response_content(self, response) -> str:
+        """Extract text content from LLM response object (handles various formats)."""
+        # Direct content attribute
+        if hasattr(response, 'content') and response.content:
+            return response.content
+        
+        # Text attribute
+        if hasattr(response, 'text') and response.text:
+            return response.text
+        
+        # Check additional_kwargs
+        if hasattr(response, 'additional_kwargs') and response.additional_kwargs:
+            kwargs = response.additional_kwargs
+            for key in ['content', 'text', 'message', 'response', 'output']:
+                if key in kwargs and kwargs[key]:
+                    return str(kwargs[key])
+        
+        # Check response_metadata
+        if hasattr(response, 'response_metadata') and response.response_metadata:
+            meta = response.response_metadata
+            if isinstance(meta, dict):
+                if 'message' in meta and isinstance(meta['message'], dict):
+                    if 'content' in meta['message'] and meta['message']['content']:
+                        return meta['message']['content']
+                if 'content' in meta and meta['content']:
+                    return meta['content']
+        
+        # Fallback to string
+        return str(response) if response else ""
+
+    def _fallback_synthesis(self, user_query: str, steps: List[ReActStep]) -> str:
+        """Create a fallback answer from the observations when LLM fails."""
+        if not steps:
+            return "I was unable to generate a response. Please try again."
+        
+        # Collect all observations
+        observations = []
+        for step in steps:
+            if step.observation and step.observation != "Task completed":
+                observations.append(step.observation)
+        
+        if not observations:
+            return "The task was completed but no detailed observations were recorded."
+        
+        # Return a summary of observations
+        return f"Based on the analysis:\n\n" + "\n\n".join(observations)
 
 
 # ============================================================================
@@ -989,17 +1049,23 @@ class ReActAgent:
         self.steps = []
         final_answer = ""
         
+        logger.info(f"[ReActAgent] Starting execute for query: {user_query[:100]}...")
+        
         # Standard ReAct Loop
         for i in range(self.max_iterations):
             step = ReActStep(i + 1)
             context = ContextFormatter().format(self.steps)
+            
+            logger.info(f"[ReActAgent] === Iteration {i + 1} ===")
             
             # Generate
             try:
                 thought, action, action_input = await self.thought_generator.generate(
                     user_query, self.steps, context, include_finish_check=(i > 2)
                 )
+                logger.info(f"[ReActAgent] Generated - Thought: {thought[:50]}..., Action: {action}, Input: {action_input[:50]}...")
             except ValueError as exc:
+                logger.error(f"[ReActAgent] Failed to parse thought/action: {exc}")
                 step.observation = f"Failed to parse thought/action: {exc}"
                 self.steps.append(step)
                 break
@@ -1008,24 +1074,35 @@ class ReActAgent:
             step.action = action
             step.action_input = action_input
             
-            if action == ToolName.FINISH:
+            if action == ToolName.FINISH or action == "finish":
+                logger.info(f"[ReActAgent] FINISH action detected. Current steps count: {len(self.steps)}")
                 final_answer = await self.answer_generator.generate(user_query, self.steps)
+                logger.info(f"[ReActAgent] Generated final answer ({len(final_answer)} chars): {final_answer[:200]}...")
                 step.observation = "Task completed"
                 self.steps.append(step)
                 break
                 
             # Execute
+            logger.info(f"[ReActAgent] Executing tool: {action}")
             observation = await self.tool_executor.execute(
                 action, action_input, file_paths, session_id, steps=self.steps
             )
             step.observation = observation
             self.steps.append(step)
+            logger.info(f"[ReActAgent] Step {step.step_num} completed. Observation: {observation[:200]}...")
 
         if not final_answer:
+            logger.info(f"[ReActAgent] No final answer yet, generating from {len(self.steps)} steps")
             final_answer = await self.answer_generator.generate(user_query, self.steps)
+            logger.info(f"[ReActAgent] Generated final answer ({len(final_answer)} chars)")
+
+        logger.info(f"[ReActAgent] Total steps recorded: {len(self.steps)}")
+        for idx, s in enumerate(self.steps):
+            logger.info(f"[ReActAgent] Step {idx + 1}: action={s.action}, thought={s.thought[:50]}...")
 
         # Build response with ReAct reasoning steps included
         response_with_reasoning = self._format_response_with_steps(final_answer)
+        logger.info(f"[ReActAgent] Final response with reasoning ({len(response_with_reasoning)} chars)")
 
         # Build Metadata
         metadata = {
@@ -1038,18 +1115,19 @@ class ReActAgent:
     def _format_response_with_steps(self, final_answer: str) -> str:
         """Format the response to include ReAct reasoning steps."""
         if not self.steps:
-            return final_answer
+            logger.warning("[ReActAgent] No steps to format, returning final_answer only")
+            return final_answer or "No response generated."
         
         parts = ["## ReAct Reasoning Process\n"]
         
         for step in self.steps:
             parts.append(f"### Step {step.step_num}")
-            parts.append(f"**THOUGHT:** {step.thought}")
-            parts.append(f"**ACTION:** {step.action}")
-            parts.append(f"**ACTION INPUT:** {step.action_input}")
+            parts.append(f"**THOUGHT:** {step.thought or 'N/A'}")
+            parts.append(f"**ACTION:** {step.action or 'N/A'}")
+            parts.append(f"**ACTION INPUT:** {step.action_input or 'N/A'}")
             
-            # Truncate long observations for readability
-            observation = step.observation
+            # Truncate long observations for readability (handle None)
+            observation = step.observation or "No observation"
             if len(observation) > 1000:
                 observation = observation[:1000] + "... [truncated]"
             parts.append(f"**OBSERVATION:** {observation}")
@@ -1057,7 +1135,7 @@ class ReActAgent:
         
         parts.append("---")
         parts.append("## Final Answer\n")
-        parts.append(final_answer)
+        parts.append(final_answer or "No final answer generated.")
         
         return "\n".join(parts)
 

@@ -833,6 +833,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - Final answer is separated with a clear "---" divider
   - Long observations are truncated to 1000 chars for readability
   - This makes the agent's reasoning transparent to the user
+- 🔧 **Fixed empty LLM response handling in AnswerGenerator**
+  - Added `_extract_response_content()` method to handle various LLM response formats
+  - Added `_fallback_synthesis()` for when LLM returns empty content
+  - Now properly extracts content from `response_metadata`, `additional_kwargs`, etc.
+  - Falls back to synthesizing answer from observations if LLM fails
+- 🔧 **Enhanced ReAct execute logging**
+  - Added comprehensive step-by-step logging for debugging
+  - Logs each iteration: thought, action, observation
+  - Logs final answer generation and step count
+- 🔧 **Null-safety improvements**
+  - `_format_response_with_steps()` now handles None values gracefully
+  - Default fallback messages for missing thoughts/actions/observations
 
 **v2.0.5 Changes:**
 - 🔧 **Fixed Tavily SSL certificate verification issues**
