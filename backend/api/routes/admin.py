@@ -12,7 +12,7 @@ from backend.models.schemas import (
 )
 from backend.api.dependencies import require_admin
 from backend.config.settings import settings
-from backend.tasks.chat_task import chat_task
+from backend.agents.react_agent import agent_system, SimpleChatAgent
 from backend.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -43,8 +43,7 @@ async def change_model(
         settings.ollama_model = request.model
 
         # Reinitialize simple chat LLM to take effect immediately
-        from backend.utils.llm_factory import LLMFactory
-        chat_task.llm = LLMFactory.create_llm()
+        agent_system.chat_agent = SimpleChatAgent()
 
         return ModelChangeResponse(success=True, model=settings.ollama_model)
     except Exception as e:

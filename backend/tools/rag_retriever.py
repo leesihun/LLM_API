@@ -1,40 +1,40 @@
 """
 RAG Retriever Tool
-Processes documents and performs semantic search
+==================
+Consolidated RAG tool for document indexing and retrieval.
+Combines tool interface and core retrieval logic using FAISS/Chroma.
 """
 
 import os
 import json
+import hashlib
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-import hashlib
 
-# Document loaders
 from langchain_community.document_loaders import (
-    PyPDFLoader,
-    Docx2txtLoader,
-    TextLoader,
-    UnstructuredExcelLoader,
+    PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredExcelLoader
 )
 from langchain_core.documents import Document
-
-# Text splitting
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# Embeddings
 from langchain_community.embeddings import OllamaEmbeddings
-
-# Vector stores
 from langchain_community.vectorstores import FAISS, Chroma
 
 from backend.config.settings import settings
-from backend.models.schemas import RAGResult
+from backend.core import BaseTool, ToolResult
+from backend.utils.logging_utils import get_logger
+from backend.models.tool_metadata import RAGDocument
+
+logger = get_logger(__name__)
 
 
-class RAGRetriever:
-    """Document processing and retrieval system"""
+class RAGRetrieverTool(BaseTool):
+    """
+    RAG (Retrieval-Augmented Generation) tool.
+    Handles document indexing and semantic search.
+    """
 
     def __init__(self):
+        super().__init__()
         self.embeddings = OllamaEmbeddings(
             model=settings.embedding_model,
             base_url=settings.ollama_host
@@ -42,195 +42,132 @@ class RAGRetriever:
         self.vector_db_path = Path(settings.vector_db_path)
         self.vector_db_path.mkdir(parents=True, exist_ok=True)
         self.vector_stores: Dict[str, Any] = {}
-
-        # Text splitter configuration
+        
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len,
+            chunk_size=1000, chunk_overlap=200, length_function=len
         )
+        logger.info("[RAGRetrieverTool] Initialized")
 
-    def _load_json_as_document(self, file_path: Path) -> List[Document]:
-        """Load JSON file and convert to Document objects"""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # Convert JSON to formatted text
-        text_content = json.dumps(data, indent=2)
-        
-        # Create a single document with the JSON content
-        return [Document(
-            page_content=text_content,
-            metadata={"source": str(file_path), "type": "json"}
-        )]
-    
-    def _get_document_loader(self, file_path: Path):
-        """Get appropriate document loader based on file extension"""
-        extension = file_path.suffix.lower()
+    async def execute(
+        self, query: str, context: Optional[str] = None,
+        document_ids: Optional[List[str]] = None, top_k: int = 5,
+        file_paths: Optional[List[str]] = None, **kwargs
+    ) -> ToolResult:
+        """Execute RAG retrieval."""
+        try:
+            if not query or not query.strip():
+                return self._handle_validation_error("Query cannot be empty")
 
-        if extension == ".json":
-            # Return a custom loader function for JSON
-            return lambda: self._load_json_as_document(file_path)
-        
-        loaders = {
-            ".pdf": PyPDFLoader,
-            ".docx": Docx2txtLoader,
-            ".txt": TextLoader,
-            ".xlsx": UnstructuredExcelLoader,
-            ".xls": UnstructuredExcelLoader,
-        }
+            if file_paths:
+                logger.info(f"[RAG] Indexing {len(file_paths)} files")
+                new_ids = []
+                for fp in file_paths:
+                    try:
+                        doc_id = await self.index_document(Path(fp))
+                        new_ids.append(doc_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to index {fp}: {e}")
+                if not document_ids and new_ids:
+                    document_ids = new_ids
 
-        loader_class = loaders.get(extension)
+            results = await self.retrieve(query, document_ids, top_k)
+            return self._format_tool_result(query, results)
 
-        if loader_class is None:
-            raise ValueError(f"Unsupported file type: {extension}")
-
-        return loader_class(str(file_path))
-
-    def _get_doc_id(self, file_path: Path) -> str:
-        """Generate unique document ID from file path"""
-        return hashlib.md5(str(file_path).encode()).hexdigest()
+        except Exception as e:
+            return self._handle_error(e, "execute")
 
     async def index_document(self, file_path: Path) -> str:
-        """
-        Process and index a document
-        Returns document ID
-        """
-        # Load document
+        """Index a document."""
         loader = self._get_document_loader(file_path)
-        # For JSON files, loader() returns documents directly
-        if file_path.suffix.lower() == ".json":
-            documents = loader()
-        else:
-            documents = loader.load()
-
-        # Split into chunks
+        documents = loader() if file_path.suffix.lower() == ".json" else loader.load()
         chunks = self.text_splitter.split_documents(documents)
-
-        # Add metadata
-        doc_id = self._get_doc_id(file_path)
+        
+        doc_id = hashlib.md5(str(file_path).encode()).hexdigest()
         for chunk in chunks:
             chunk.metadata["doc_id"] = doc_id
             chunk.metadata["source"] = str(file_path)
 
-        # Create or update vector store
-        if doc_id in self.vector_stores:
-            # Update existing store
-            self.vector_stores[doc_id].add_documents(chunks)
-        else:
-            # Create new store
-            if settings.vector_db_type == "faiss":
-                vector_store = FAISS.from_documents(chunks, self.embeddings)
-            elif settings.vector_db_type == "chroma":
-                vector_store = Chroma.from_documents(
-                    chunks,
-                    self.embeddings,
-                    persist_directory=str(self.vector_db_path / doc_id)
-                )
-            else:
-                raise ValueError(f"Unsupported vector DB: {settings.vector_db_type}")
-
-            self.vector_stores[doc_id] = vector_store
-
-            # Save FAISS index
-            if settings.vector_db_type == "faiss":
-                vector_store.save_local(str(self.vector_db_path / doc_id))
-
+        self._update_vector_store(doc_id, chunks)
         return doc_id
 
-    async def retrieve(
-        self,
-        query: str,
-        document_ids: Optional[List[str]] = None,
-        top_k: int = 5
-    ) -> List[RAGResult]:
-        """
-        Retrieve relevant chunks from indexed documents
-        """
+    async def retrieve(self, query: str, document_ids: Optional[List[str]] = None, top_k: int = 5) -> List[RAGDocument]:
+        """Retrieve relevant chunks."""
+        stores = self._get_stores_to_search(document_ids)
         results = []
-
-        # Determine which stores to search
-        stores_to_search = {}
-
-        if document_ids:
-            for doc_id in document_ids:
-                if doc_id in self.vector_stores:
-                    stores_to_search[doc_id] = self.vector_stores[doc_id]
-                else:
-                    # Try to load from disk
-                    store = self._load_vector_store(doc_id)
-                    if store:
-                        self.vector_stores[doc_id] = store
-                        stores_to_search[doc_id] = store
-        else:
-            # Search all available stores
-            stores_to_search = self.vector_stores.copy()
-
-            # Load any stores from disk
-            for doc_path in self.vector_db_path.iterdir():
-                if doc_path.is_dir():
-                    doc_id = doc_path.name
-                    if doc_id not in stores_to_search:
-                        store = self._load_vector_store(doc_id)
-                        if store:
-                            self.vector_stores[doc_id] = store
-                            stores_to_search[doc_id] = store
-
-        # Perform search on each store
-        for doc_id, store in stores_to_search.items():
-            docs_with_scores = store.similarity_search_with_score(query, k=top_k)
-
-            for doc, score in docs_with_scores:
-                results.append(RAGResult(
-                    content=doc.page_content,
-                    metadata=doc.metadata,
-                    score=float(score)
+        
+        for _, store in stores.items():
+            docs = store.similarity_search_with_score(query, k=top_k)
+            for doc, score in docs:
+                results.append(RAGDocument(
+                    content=doc.page_content, metadata=doc.metadata,
+                    score=float(score), doc_id=doc.metadata.get("doc_id"),
+                    source=doc.metadata.get("source")
                 ))
-
-        # Sort by score (lower is better for most distance metrics)
+        
         results.sort(key=lambda x: x.score)
-
         return results[:top_k]
 
-    def _load_vector_store(self, doc_id: str):
-        """Load vector store from disk"""
-        store_path = self.vector_db_path / doc_id
+    def _get_document_loader(self, file_path: Path):
+        ext = file_path.suffix.lower()
+        if ext == ".json": return lambda: self._load_json(file_path)
+        loaders = {".pdf": PyPDFLoader, ".docx": Docx2txtLoader, ".txt": TextLoader, ".xlsx": UnstructuredExcelLoader}
+        if ext not in loaders: raise ValueError(f"Unsupported file type: {ext}")
+        return loaders[ext](str(file_path))
 
-        if not store_path.exists():
-            return None
+    def _load_json(self, path: Path) -> List[Document]:
+        with open(path, "r", encoding="utf-8") as f:
+            return [Document(page_content=json.dumps(json.load(f), indent=2), metadata={"source": str(path)})]
 
+    def _update_vector_store(self, doc_id: str, chunks: List[Document]):
+        if doc_id in self.vector_stores:
+            self.vector_stores[doc_id].add_documents(chunks)
+        else:
+            if settings.vector_db_type == "faiss":
+                vs = FAISS.from_documents(chunks, self.embeddings)
+                vs.save_local(str(self.vector_db_path / doc_id))
+            else:
+                vs = Chroma.from_documents(chunks, self.embeddings, persist_directory=str(self.vector_db_path / doc_id))
+            self.vector_stores[doc_id] = vs
+
+    def _get_stores_to_search(self, doc_ids: Optional[List[str]]) -> Dict[str, Any]:
+        stores = {}
+        target_ids = doc_ids if doc_ids else [p.name for p in self.vector_db_path.iterdir() if p.is_dir()]
+        
+        for did in target_ids:
+            if did in self.vector_stores:
+                stores[did] = self.vector_stores[did]
+            else:
+                store = self._load_store(did)
+                if store: 
+                    self.vector_stores[did] = store
+                    stores[did] = store
+        return stores
+
+    def _load_store(self, doc_id: str):
+        path = self.vector_db_path / doc_id
+        if not path.exists(): return None
         try:
             if settings.vector_db_type == "faiss":
-                return FAISS.load_local(
-                    str(store_path),
-                    self.embeddings,
-                    allow_dangerous_deserialization=True
-                )
-            elif settings.vector_db_type == "chroma":
-                return Chroma(
-                    persist_directory=str(store_path),
-                    embedding_function=self.embeddings
-                )
+                return FAISS.load_local(str(path), self.embeddings, allow_dangerous_deserialization=True)
+            return Chroma(persist_directory=str(path), embedding_function=self.embeddings)
         except Exception as e:
-            print(f"Error loading vector store {doc_id}: {e}")
+            logger.error(f"Failed to load store {doc_id}: {e}")
             return None
 
-    def format_results(self, results: List[RAGResult]) -> str:
-        """Format RAG results as context text"""
+    def _format_tool_result(self, query: str, results: List[RAGDocument]) -> ToolResult:
         if not results:
-            return "No relevant information found in documents."
+            return ToolResult(success=True, output=f"No results for '{query}'", metadata={"query": query, "count": 0})
+        
+        output = f"Found {len(results)} documents for '{query}':\n\n"
+        for i, doc in enumerate(results, 1):
+            output += f"{i}. (Score: {doc.score:.2f})\n   Source: {doc.source}\n   {doc.content[:300]}...\n\n"
+            
+        return ToolResult(success=True, output=output, metadata={"query": query, "count": len(results)})
 
-        formatted = "Retrieved Information:\n\n"
+    def format_results(self, results: List[RAGDocument]) -> str:
+        """Backward compatibility."""
+        if not results: return "No relevant info."
+        return "\n".join([f"--- Excerpt {i} ---\n{r.content}\nSource: {r.source}\n" for i, r in enumerate(results, 1)])
 
-        for i, result in enumerate(results, 1):
-            formatted += f"--- Excerpt {i} ---\n"
-            formatted += f"{result.content}\n"
-            if "source" in result.metadata:
-                formatted += f"Source: {result.metadata['source']}\n"
-            formatted += "\n"
+rag_retriever_tool = RAGRetrieverTool()
 
-        return formatted
-
-
-# Global RAG retriever instance
-rag_retriever = RAGRetriever()

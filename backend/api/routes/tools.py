@@ -14,7 +14,7 @@ from backend.models.schemas import (
     RAGSearchResponse
 )
 from backend.api.dependencies import get_current_user
-from backend.tools.rag_retriever import rag_retriever
+from backend.tools.rag_retriever import rag_retriever_tool
 from backend.tools.web_search import web_search_tool
 from backend.utils.logging_utils import get_logger
 
@@ -50,30 +50,22 @@ async def list_tools(_: Dict[str, Any] = Depends(get_current_user)):
 async def tool_websearch(request: WebSearchRequest, _: Dict[str, Any] = Depends(get_current_user)):
     """
     Perform web search and generate LLM-based answer from results
-
-    Returns:
-        - results: Raw search results with title, URL, content
-        - answer: LLM-generated answer synthesizing the search results
-        - sources_used: List of URLs used as sources
     """
     logger.info(f"[Websearch Endpoint] Query: {request.query}")
 
-    # Get search results with contextual enhancement and answer generation
+    # Get search results
     results, context_metadata = await web_search_tool.search(
         request.query,
         max_results=request.max_results,
         include_context=request.include_context,
-        user_location=request.user_location,
-        generate_answer=True  # Enable answer generation in search call
+        user_location=request.user_location
     )
 
-    # Extract answer and sources from context metadata
-    answer = context_metadata.get('answer', '')
-    sources_used = context_metadata.get('sources_used', [])
+    # Generate answer
+    answer = await web_search_tool.generate_answer(request.query, results)
+    sources_used = [r.url for r in results]
 
-    logger.info(f"[Websearch Endpoint] Found {len(results)} results, generated answer with {len(sources_used)} sources")
-    if context_metadata.get('query_enhanced'):
-        logger.info(f"[Websearch Endpoint] Query enhanced: {context_metadata.get('enhanced_query')}")
+    logger.info(f"[Websearch Endpoint] Found {len(results)} results")
 
     return WebSearchResponse(
         results=results,
@@ -86,5 +78,5 @@ async def tool_websearch(request: WebSearchRequest, _: Dict[str, Any] = Depends(
 @tools_router.get("/rag/search", response_model=RAGSearchResponse)
 async def tool_rag_search(query: str, top_k: int = 5, _: Dict[str, Any] = Depends(get_current_user)):
     """Search uploaded documents using RAG retrieval"""
-    results = await rag_retriever.retrieve(query=query, top_k=top_k)
+    results = await rag_retriever_tool.retrieve(query=query, top_k=top_k)
     return RAGSearchResponse(results=results)

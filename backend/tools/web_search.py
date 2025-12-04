@@ -1,0 +1,143 @@
+"""
+Web Search Tool
+===============
+Consolidated web search tool with Tavily API integration.
+Combines searching, refinement, result processing, and answer generation.
+"""
+
+import sys
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime
+import httpx
+import logging
+
+from backend.config.settings import settings
+from backend.core import BaseTool
+from backend.models.tool_metadata import SearchResult
+from backend.utils.logging_utils import get_logger
+from backend.utils.llm_manager import LLMManager
+from langchain_core.messages import HumanMessage
+
+logger = get_logger(__name__)
+
+
+class WebSearchTool(BaseTool):
+    """
+    Web search using Tavily API with LLM-enhanced query and answer processing.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        max_results: int = 5,
+        search_depth: str = "basic"
+    ):
+        """Initialize the WebSearchTool."""
+        super().__init__()
+        self.tavily_api_key = api_key or settings.tavily_api_key
+        self.tavily_url = "https://api.tavily.com/search"
+        self.max_results = max_results
+        self.search_depth = search_depth
+        self.llm_manager = LLMManager()
+
+    async def search(
+        self,
+        query: str,
+        max_results: Optional[int] = None,
+        include_context: bool = True,
+        user_location: Optional[str] = None
+    ) -> Tuple[List[SearchResult], Dict[str, Any]]:
+        """
+        Perform web search.
+        """
+        temporal_context = self._get_temporal_context()
+        
+        # Simple context enhancement
+        search_query = query
+        if include_context:
+            search_query = f"{query} {temporal_context['month']} {temporal_context['year']}"
+            if user_location:
+                search_query += f" in {user_location}"
+
+        logger.info(f"[WebSearchTool] Searching: {search_query}")
+
+        try:
+            results = await self._tavily_search(search_query, max_results or self.max_results)
+        except Exception as e:
+            logger.warning(f"[WebSearchTool] Tavily failed: {e}. Trying fallback.")
+            results = [] 
+
+        return results, {"temporal_context": temporal_context, "enhanced_query": search_query}
+
+    async def generate_answer(self, query: str, results: List[SearchResult]) -> str:
+        """Generate a summary answer from search results."""
+        if not results:
+            return "No results found to answer the query."
+        
+        context = self.format_results(results)
+        prompt = f"""Based on the following search results, provide a concise and accurate answer to the user's query.
+
+User Query: {query}
+
+Search Results:
+{context}
+
+Answer:"""
+        
+        try:
+            response = await self.llm_manager.llm.ainvoke([HumanMessage(content=prompt)])
+            return response.content.strip()
+        except Exception as e:
+            logger.error(f"Failed to generate answer: {e}")
+            return "Failed to generate answer from results."
+
+    async def _tavily_search(self, query: str, max_results: int) -> List[SearchResult]:
+        """Execute search with Tavily."""
+        ssl_verify = "C:/DigitalCity.crt" if Path("C:/DigitalCity.crt").exists() else True
+        
+        async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as client:
+            response = await client.post(
+                self.tavily_url,
+                json={
+                    "api_key": self.tavily_api_key,
+                    "query": query,
+                    "max_results": max_results,
+                    "search_depth": self.search_depth,
+                    "include_answer": True
+                }
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Tavily API error: {response.status_code}")
+
+            data = response.json()
+            return [
+                SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", ""),
+                    content=item.get("content", ""),
+                    score=item.get("score")
+                )
+                for item in data.get("results", [])
+            ]
+
+    def _get_temporal_context(self) -> Dict[str, str]:
+        now = datetime.now()
+        return {
+            "current_date": now.strftime("%Y-%m-%d"),
+            "month": now.strftime("%B"),
+            "year": str(now.year)
+        }
+
+    def format_results(self, results: List[SearchResult]) -> str:
+        """Format search results as text."""
+        if not results:
+            return "No results found."
+        
+        parts = []
+        for i, res in enumerate(results, 1):
+            parts.append(f"[{i}] {res.title}\nURL: {res.url}\nSnippet: {res.content[:500]}...\n")
+        return "\n".join(parts)
+
+web_search_tool = WebSearchTool()

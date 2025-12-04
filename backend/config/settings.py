@@ -5,9 +5,6 @@ All settings are defined in this file with defaults
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
-import os
-import secrets
 from pathlib import Path
 
 
@@ -38,12 +35,12 @@ class Settings(BaseSettings):
 
     # Ollama service endpoint
     ollama_host: str = 'http://127.0.0.1:11434'
-    ollama_model: str = 'gpt-oss:120b'#'gpt-oss:20b'
-    agentic_classifier_model: str = 'gpt-oss:20b'#'gpt-oss:20b'
-    ollama_coder_model: str = 'GLM-4.6-REAP'#'gpt-oss:20b'
-    ollama_vision_model: str = 'gemma3:12b'
+    ollama_model: str = 'gemma3:12b-it-q8_0'#'deepseek-r1:1.5b'#'gpt-oss:120b'#'gpt-oss:20b'
+    agentic_classifier_model: str = 'gemma3:12b-it-q8_0'#'deepseek-r1:1.5b'#'gpt-oss:20b'#'gpt-oss:20b'
+    ollama_coder_model: str = 'gemma3:12b-it-q8_0'#'deepseek-r1:1.5b'#'GLM-4.6-REAP'#'gpt-oss:20b'
+    ollama_vision_model: str = 'gemma3:12b-it-q8_0'
     ollama_timeout: int = 3000000
-    ollama_num_ctx: int = 4096  # Reduced from 16384 for faster processing
+    ollama_num_ctx: int = 2048  # Optimized for faster processing (reduced from 4096)
     # Sampling parameters - optimized for coherent responses
     ollama_temperature: float = 1.0  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.95      # Nucleus sampling
@@ -66,7 +63,7 @@ class Settings(BaseSettings):
     llamacpp_n_batch: int = 512      # Batch size for prompt processing
 
     # Context and generation settings
-    llamacpp_n_ctx: int = 4096      # Context window size (reduced for faster processing)
+    llamacpp_n_ctx: int = 2048      # Context window size (optimized for faster processing)
     llamacpp_temperature: float = 1.0
     llamacpp_top_p: float = 0.95
     llamacpp_top_k: int = 40
@@ -82,9 +79,13 @@ class Settings(BaseSettings):
     # Verbose logging for debugging
     llamacpp_verbose: bool = True
 
-    react_max_iterations: int = 10  # Maximum iterations for ReAct loop
-    react_step_max_retries: int = 5  # Maximum retries per step in plan execution
-    python_code_max_iterations: int = 5
+    # ============================================================================
+    # ReAct Agent Configuration - Optimized Iteration Limits
+    # ============================================================================
+
+    react_max_iterations: int = 6  # Maximum iterations for ReAct loop (optimized from 10)
+    react_step_max_retries: int = 3  # Maximum retries per step in plan execution (optimized from 5)
+    python_code_max_iterations: int = 3  # Maximum code execution attempts (optimized from 5)
 
     # ============================================================================
     # Vision/Multimodal Configuration
@@ -168,9 +169,8 @@ class Settings(BaseSettings):
     ]
 
     model_config = SettingsConfigDict(
-        # DO NOT read from system environment variables - only use defaults from this file
-        env_prefix='NONEXISTENT_PREFIX_',  # Ignore all env vars
-        env_file=None,  # Don't load .env file
+        # Allow environment variables to override defaults (12-factor app compliant)
+        env_file='.env',  # Optional .env file
         env_file_encoding='utf-8',
         case_sensitive=False,
         extra='ignore',
@@ -180,27 +180,11 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     """
-    Load settings from settings.py defaults
-    .env file is optional - only used if present to override defaults
+    Load settings from settings.py defaults.
+    Environment variables can override defaults if needed (12-factor app compliant).
     """
-    # FORCE: Remove problematic environment variables that interfere with settings
-    problematic_vars = ['OLLAMA_HOST', 'OLLAMA_MODEL', 'SERVER_HOST', 'SERVER_PORT']
-    for var in problematic_vars:
-        if var in os.environ:
-            print(f"WARNING: Removing system env var {var}={os.environ[var]} to use settings.py defaults")
-            del os.environ[var]
-
     settings = Settings()
-    # Debug: Print loaded settings
-    print(f"DEBUG: ollama_host = '{settings.ollama_host}'")
-    print(f"DEBUG: ollama_model = '{settings.ollama_model}'")
-    print(f"DEBUG: server_host = '{settings.server_host}'")
-
-    # FORCE FIX: Override if wrong value loaded
-    if settings.ollama_host == '0.0.0.0' or not settings.ollama_host.startswith('http'):
-        print("WARNING: ollama_host has wrong value, forcing to http://127.0.0.1:11434")
-        settings.ollama_host = 'http://127.0.0.1:11434'
-
+    
     # Create necessary directories
     directories_to_create = [
         settings.conversations_path,
