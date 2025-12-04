@@ -33,6 +33,15 @@ Edit `backend/config/settings.py` or use environment variables to configure:
 
 ## Changelog
 
+### v2.0.3 - 2025-12-04
+**Bug Fixes:**
+
+1. **Ollama Model Configuration Mismatch**
+   - **Issue**: `OLLAMA CONNECTION FAILED` during startup even when Ollama is running
+   - **Root Cause**: Default model settings (`gemma3:12b-it-q8_0`) did not match installed Ollama models
+   - **Fix**: Updated default model settings to use available models (`gpt-oss:20b`, `llama3.2-vision:11b`)
+   - **Files Changed**: `backend/config/settings.py`
+
 ### v2.0.2 - 2025-01-13
 **Bug Fixes:**
 
