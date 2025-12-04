@@ -82,11 +82,16 @@ def _build_code_generation_prompt(
 
     sections.append(
         "## Response Format\n"
-        "Return valid JSON with exactly one key `code`:\n"
+        "CRITICAL: You MUST return valid JSON with exactly one key `code`:\n"
         "{\n"
-        '  "code": "<complete python script>"\n'
-        "}\n"
-        "Do not wrap the code in markdown fences."
+        '  "code": "import pandas as pd\\n\\n# Your code here\\nprint(\\'Result:\\', result)"\n'
+        "}\n\n"
+        "RULES:\n"
+        "- Return ONLY the JSON object, nothing else\n"
+        "- Do NOT return plain text calculations or results\n"
+        "- Do NOT wrap in markdown code fences\n"
+        "- The code value must be a complete Python script as a string\n"
+        "- Use \\n for newlines within the code string"
     )
 
     sections.append(
@@ -220,13 +225,26 @@ class PythonCoderTool(BaseTool):
             # Parse response
             try:
                 parsed = LLMResponseParser.extract_json(response.content)
-                if not parsed:
-                    # Try raw code block extraction
-                    code = LLMResponseParser.extract_code(response.content)
-                else:
+                if parsed and "code" in parsed:
                     code = parsed.get("code", "")
+                else:
+                    # Fallback: Try to extract code block from markdown
+                    code = LLMResponseParser.extract_code(response.content)
+
+                    # If still no code, check if LLM returned plain text (wrong format)
+                    if not code or len(code.strip()) < 10:
+                        logger.warning(
+                            f"LLM returned invalid format. Expected JSON with 'code' key, got: {response.content[:200]}"
+                        )
+                        # Try to wrap response in simple print statement as last resort
+                        if response.content.strip() and attempt == self.max_retries - 1:
+                            logger.info("Creating fallback code from LLM response")
+                            code = f"# LLM returned plain text instead of code\nresult = {response.content.strip()}\nprint('Result:', result)"
+                        else:
+                            continue
             except Exception as e:
                 logger.error(f"Parsing failed: {e}")
+                logger.debug(f"Response content: {response.content[:500]}")
                 continue
 
             if not code:

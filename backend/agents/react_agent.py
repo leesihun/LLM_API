@@ -239,14 +239,12 @@ Decide if the latest observation fully answers the query.
 
     return f"""You are a focused ReAct agent. Think, pick ONE tool, supply its input.
 {guidance_section}
-## Query
-{query}
 
 ## Context
 {context if context else 'No prior steps yet.'}
 {finish_section}
 ## Tools
-- web_search → realtime info
+- web_search → realtime or complex or specific info
 - rag_retrieval → uploaded documents
 - python_coder → run python / inspect files
 - vision_analyzer → answer image questions (only if images attached)
@@ -255,7 +253,11 @@ Decide if the latest observation fully answers the query.
 ## Response Format
 THOUGHT: short reasoning, including whether you can finish
 ACTION: tool name
-ACTION INPUT: input for the tool"""
+ACTION INPUT: input for the tool
+
+## Query
+{query}
+"""
 
 
 def _build_final_answer_prompt(query: str, context: str) -> str:
