@@ -409,8 +409,17 @@ class ThoughtActionGenerator:
                 
                 if response_text and response_text.strip():
                     logger.info(f"[ReAct] LLM response received: {len(response_text)} chars (attempt {attempt})")
-                    logger.debug(f"[ReAct] Response preview: {response_text[:500]}")
-                    return self._parse_response(response_text.strip())
+                    logger.info(f"[ReAct] Full response text:\n{response_text}")
+                    
+                    # Parse and return
+                    try:
+                        parsed = self._parse_response(response_text.strip())
+                        logger.info(f"[ReAct] Successfully parsed - thought: {parsed[0][:50]}..., action: {parsed[1]}, input: {parsed[2][:50]}...")
+                        return parsed
+                    except ValueError as parse_error:
+                        logger.error(f"[ReAct] Parse failed: {parse_error}")
+                        logger.error(f"[ReAct] Response that failed parsing:\n{response_text}")
+                        raise
                 else:
                     logger.warning(f"[ReAct] Empty response on attempt {attempt}/{max_retries}")
                     last_error = "Empty response"
@@ -429,9 +438,18 @@ class ThoughtActionGenerator:
 
     def _extract_response_content(self, response) -> str:
         """Extract text content from LLM response object."""
-        # Log raw response for debugging
-        logger.info(f"[ReAct] Raw response type: {type(response)}")
-        logger.debug(f"[ReAct] Raw response repr: {repr(response)[:1500]}")
+        # Log ALL attributes for debugging
+        logger.info(f"[ReAct] === EXTRACTING RESPONSE CONTENT ===")
+        logger.info(f"[ReAct] Response type: {type(response)}")
+        
+        # Check each possible attribute
+        has_content = hasattr(response, 'content') and response.content
+        has_tool_calls = hasattr(response, 'tool_calls') and response.tool_calls
+        has_additional = hasattr(response, 'additional_kwargs') and response.additional_kwargs
+        
+        logger.info(f"[ReAct] Has content: {has_content} (value: {repr(response.content)[:100] if hasattr(response, 'content') else 'N/A'})")
+        logger.info(f"[ReAct] Has tool_calls: {has_tool_calls} (value: {response.tool_calls if hasattr(response, 'tool_calls') else 'N/A'})")
+        logger.info(f"[ReAct] Has additional_kwargs: {has_additional}")
         
         # PRIORITY: Check for tool_calls first - Ollama returns function calls here
         if hasattr(response, 'tool_calls') and response.tool_calls:
