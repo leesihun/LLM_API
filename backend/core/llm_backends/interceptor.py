@@ -272,8 +272,54 @@ class LLMInterceptor:
 
             # Extract response content - try multiple sources
             response_content = ""
+
+            # First, check if content is already populated
             if hasattr(response, 'content') and response.content:
                 response_content = response.content
+
+            # If content is empty, check for tool_calls (Ollama tool calling)
+            elif hasattr(response, 'tool_calls') and response.tool_calls:
+                logger.debug(f"[LLMInterceptor] Response has tool_calls but empty content - formatting tool calls")
+                tool_calls = response.tool_calls
+
+                if isinstance(tool_calls, list) and len(tool_calls) > 0:
+                    tool_call = tool_calls[0]
+
+                    # Extract action and args
+                    if isinstance(tool_call, dict):
+                        action = tool_call.get('name', 'unknown')
+                        args = tool_call.get('args', {})
+                    else:
+                        # Object with attributes
+                        action = getattr(tool_call, 'name', 'unknown')
+                        args = getattr(tool_call, 'args', {})
+
+                    # Build action_input from args
+                    if isinstance(args, dict):
+                        if 'query' in args:
+                            action_input = args['query']
+                        else:
+                            action_input = ', '.join(f"{k}={v}" for k, v in args.items())
+                    elif isinstance(args, str):
+                        try:
+                            import json
+                            parsed_args = json.loads(args)
+                            if isinstance(parsed_args, dict) and 'query' in parsed_args:
+                                action_input = parsed_args['query']
+                            else:
+                                action_input = args
+                        except:
+                            action_input = args
+                    else:
+                        action_input = str(args)
+
+                    # Format as THOUGHT/ACTION/ACTION INPUT
+                    response_content = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
+                    logger.debug(f"[LLMInterceptor] Formatted tool_call as content: {response_content[:100]}...")
+                else:
+                    response_content = f"[tool_calls]: {tool_calls}"
+
+            # Fallback to other sources
             elif hasattr(response, 'additional_kwargs') and response.additional_kwargs:
                 # Ollama sometimes puts response in additional_kwargs
                 response_content = f"[additional_kwargs]: {response.additional_kwargs}"
@@ -281,7 +327,7 @@ class LLMInterceptor:
                 response_content = f"[response_metadata]: {response.response_metadata}"
             else:
                 response_content = str(response)
-            
+
             # Ensure we log something even if empty
             if not response_content:
                 response_content = f"[EMPTY RESPONSE] type={type(response).__name__}, repr={repr(response)[:500]}"
@@ -312,6 +358,37 @@ class LLMInterceptor:
             # Reset call tracking
             self._current_call_id = None
             self._call_start_time = None
+
+    def append_parsed_result(self, thought: str, action: str, action_input: str):
+        """
+        Append parsed ReAct result directly after the last response.
+        Should be called immediately after parsing the LLM response.
+        """
+        try:
+            parsed_section = f"""
+  ┌{'─'*78}┐
+  │ {'PARSED RESULT'.center(78)} │
+  └{'─'*78}┘
+
+  [THOUGHT]
+  {'·'*40}
+    {thought}
+
+  [ACTION]
+  {'·'*40}
+    {action}
+
+  [ACTION INPUT]
+  {'·'*40}
+    {action_input}
+
+"""
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(parsed_section)
+
+            logger.debug(f"[LLMInterceptor] Appended parsed result: action={action}")
+        except Exception as e:
+            logger.error(f"[LLMInterceptor] Failed to append parsed result: {e}")
 
     async def ainvoke(self, prompt, **kwargs):
         """Async invoke with prompt and response logging."""

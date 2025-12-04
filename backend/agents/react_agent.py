@@ -261,7 +261,7 @@ ACTION INPUT: input for the tool
 
 
 def _build_final_answer_prompt(query: str, context: str) -> str:
-    return f"""You are a synthesis assistant.
+    return f"""You are a assistant that answers the user's qurey based on observations The qury and observations are provided below.
 
 ## Query
 {query}
@@ -269,10 +269,7 @@ def _build_final_answer_prompt(query: str, context: str) -> str:
 ## Observations
 {context if context else 'No observations.'}
 
-## Instructions
-1. Answer the query directly in the first sentence.
-2. Support with concrete observations, numbers, or file findings.
-3. Keep the response concise but complete."""
+## Instructions: Keep the response concise but complete."""
 
 
 def _build_plan_prompt(
@@ -416,8 +413,9 @@ class ThoughtActionGenerator:
                         parsed = self._parse_response(response_text.strip())
                         logger.info(f"[ReAct] Successfully parsed - thought: {parsed[0][:50]}..., action: {parsed[1]}, input: {parsed[2][:50]}...")
 
-                        # Log parsed result to prompts.log for debugging
-                        self._log_parsed_result(parsed[0], parsed[1], parsed[2])
+                        # Append parsed result to response log (if LLM has interceptor)
+                        if hasattr(self.llm, 'append_parsed_result'):
+                            self.llm.append_parsed_result(parsed[0], parsed[1], parsed[2])
 
                         return parsed
                     except ValueError as parse_error:
@@ -460,11 +458,11 @@ class ThoughtActionGenerator:
             tool_calls = response.tool_calls
             logger.info(f"[ReAct] Found tool_calls: {tool_calls}")
             logger.info(f"[ReAct] tool_calls type: {type(tool_calls)}, first item type: {type(tool_calls[0]) if tool_calls else 'empty'}")
-            
+
             # Convert tool call to THOUGHT/ACTION/ACTION INPUT format
             if isinstance(tool_calls, list) and len(tool_calls) > 0:
                 tool_call = tool_calls[0]
-                
+
                 # Handle both dict-like and object-like tool calls
                 if isinstance(tool_call, dict):
                     action = tool_call.get('name', 'unknown')
@@ -474,7 +472,7 @@ class ThoughtActionGenerator:
                     action = getattr(tool_call, 'name', None) or getattr(tool_call, 'function', {}).get('name', 'unknown')
                     args = getattr(tool_call, 'args', None) or getattr(tool_call, 'function', {}).get('arguments', {})
                     logger.info(f"[ReAct] Extracted from object - action: {action}, args: {args}")
-                
+
                 # Build action input from args
                 if isinstance(args, dict):
                     # For web_search, use the query
@@ -496,10 +494,21 @@ class ThoughtActionGenerator:
                         action_input = args
                 else:
                     action_input = str(args)
-                
+
                 # Construct the expected format
                 formatted = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
                 logger.info(f"[ReAct] Converted tool_call to format: {formatted}")
+
+                # INJECT: Copy formatted content to response.content for logging
+                if hasattr(response, 'content') and not response.content:
+                    logger.info(f"[ReAct] Injecting formatted content into response.content")
+                    try:
+                        # Some responses allow assignment
+                        response.content = formatted
+                    except:
+                        # If immutable, we can't inject - but formatted will still be logged
+                        logger.warning(f"[ReAct] Could not inject content (response is immutable)")
+
                 return formatted
         
         # Try direct content attribute
@@ -698,41 +707,6 @@ class ThoughtActionGenerator:
     def _build_file_guidance(self) -> str:
         if not self.file_paths: return ""
         return "\nGuidelines:\n- Files available. Attempt local analysis (python_coder) first.\n- Use web_search only if local analysis fails."
-
-    def _log_parsed_result(self, thought: str, action: str, action_input: str):
-        """Log parsed thought/action/input to prompts.log for debugging."""
-        from pathlib import Path
-        from datetime import datetime
-
-        log_file = Path("data/scratch/prompts.log")
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
-        # Format as structured log entry
-        log_entry = f"""
-{'='*80}
-  📝 PARSED REACT STEP  │  {timestamp}
-{'─'*80}
-
-  [THOUGHT]
-  ········································
-    {thought}
-
-  [ACTION]
-  ········································
-    {action}
-
-  [ACTION INPUT]
-  ········································
-    {action_input}
-
-{'='*80}
-
-"""
-
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(log_entry)
 
 
 class AnswerGenerator:
