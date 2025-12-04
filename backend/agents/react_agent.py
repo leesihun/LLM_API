@@ -429,43 +429,76 @@ class ThoughtActionGenerator:
 
     def _extract_response_content(self, response) -> str:
         """Extract text content from LLM response object."""
-        # Try direct content attribute
+        # Log raw response for debugging
+        logger.debug(f"[ReAct] Raw response type: {type(response)}")
+        logger.debug(f"[ReAct] Raw response repr: {repr(response)[:1000]}")
+        
+        # Try direct content attribute first
         if hasattr(response, 'content') and response.content:
+            logger.debug(f"[ReAct] Found content attribute: {len(response.content)} chars")
             return response.content
         
         # Try text attribute
         if hasattr(response, 'text') and response.text:
+            logger.debug(f"[ReAct] Found text attribute: {len(response.text)} chars")
             return response.text
         
-        # Try additional_kwargs
-        if hasattr(response, 'additional_kwargs'):
+        # Check additional_kwargs - Ollama sometimes puts response here
+        if hasattr(response, 'additional_kwargs') and response.additional_kwargs:
             kwargs = response.additional_kwargs
-            for key in ['content', 'text', 'message', 'response']:
+            logger.info(f"[ReAct] Checking additional_kwargs: {kwargs}")
+            
+            # Common keys where content might be
+            for key in ['content', 'text', 'message', 'response', 'output', 'result']:
                 if key in kwargs and kwargs[key]:
-                    return kwargs[key]
+                    logger.info(f"[ReAct] Found content in additional_kwargs['{key}']")
+                    return str(kwargs[key])
+            
+            # If additional_kwargs has tool_calls, extract from there
+            if 'tool_calls' in kwargs:
+                tool_calls = kwargs['tool_calls']
+                logger.info(f"[ReAct] Found tool_calls in additional_kwargs: {tool_calls}")
+                # Tool calls might contain the response
+                if isinstance(tool_calls, list) and tool_calls:
+                    return str(tool_calls[0])
+            
+            # Last resort: stringify the whole additional_kwargs if it has content
+            if kwargs:
+                kwargs_str = str(kwargs)
+                if len(kwargs_str) > 10:  # Has meaningful content
+                    logger.warning(f"[ReAct] Using stringified additional_kwargs as content")
+                    return kwargs_str
         
-        # Fallback: convert to string
+        # Check response_metadata
+        if hasattr(response, 'response_metadata') and response.response_metadata:
+            meta = response.response_metadata
+            logger.info(f"[ReAct] Checking response_metadata: {meta}")
+            if 'message' in meta:
+                msg = meta['message']
+                if isinstance(msg, dict) and 'content' in msg:
+                    return msg['content']
+        
+        # Fallback: convert to string and try to extract
         response_str = str(response)
+        logger.debug(f"[ReAct] Fallback to string: {response_str[:500]}")
         
         # Try to extract content from string representation
-        # Handle: content='...' or AIMessage(content='...')
         import re
+        # Handle: content='...' or AIMessage(content='...')
         match = re.search(r"content=['\"](.+?)['\"]", response_str, re.DOTALL)
         if match:
             return match.group(1)
         
-        # Log debug info for empty responses
-        if not response_str or response_str in ['', 'None', "content=''", "content=\"\""]:
-            logger.error(f"[ReAct] Cannot extract content from response")
-            logger.error(f"[ReAct] Response type: {type(response)}")
-            logger.error(f"[ReAct] Response repr: {repr(response)[:500]}")
-            if hasattr(response, '__dict__'):
-                logger.error(f"[ReAct] Response attrs: {response.__dict__}")
-            if hasattr(response, 'response_metadata'):
-                logger.error(f"[ReAct] Metadata: {response.response_metadata}")
-            return ""
+        # Handle: AIMessage(content=..., where content might not be quoted
+        match = re.search(r"content=([^,\)]+)", response_str)
+        if match:
+            content = match.group(1).strip().strip("'\"")
+            if content and content != 'None' and content != '':
+                return content
         
-        return response_str
+        logger.error(f"[ReAct] Could not extract content from response!")
+        logger.error(f"[ReAct] Response __dict__: {getattr(response, '__dict__', 'N/A')}")
+        return ""
 
     def _parse_response(self, response: str) -> Tuple[str, str, str]:
         """Parse LLM response for THOUGHT, ACTION, and ACTION INPUT.

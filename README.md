@@ -834,9 +834,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 🔧 Enhanced LLM response handling in ThoughtActionGenerator
   - Added retry logic (3 attempts) for empty responses
   - Added comprehensive debug logging for LLM invocations
-  - Added empty response detection with detailed error logging
-  - Proper extraction of content from various AIMessage formats
+  - Fixed extraction from `additional_kwargs` (Ollama sometimes returns content here)
+  - Handles tool_calls format in additional_kwargs
   - Logs LLM type, model, prompt length for debugging
+- 🔧 Fixed LLMInterceptor response logging
+  - Now logs `additional_kwargs` and `response_metadata` when content is empty
+  - Added error handling to prevent logging failures
 
 **Planned:**
 - 🔄 Streaming responses (Server-Sent Events)

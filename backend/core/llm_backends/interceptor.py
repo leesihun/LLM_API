@@ -261,44 +261,57 @@ class LLMInterceptor:
 
     def _log_response(self, response, model: str = None):
         """Log a response with timing information."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        model_name = model or getattr(self.llm, 'model', 'unknown')
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            model_name = model or getattr(self.llm, 'model', 'unknown')
 
-        # Calculate duration
-        duration_ms = None
-        if self._call_start_time:
-            duration_ms = (datetime.now() - self._call_start_time).total_seconds() * 1000
+            # Calculate duration
+            duration_ms = None
+            if self._call_start_time:
+                duration_ms = (datetime.now() - self._call_start_time).total_seconds() * 1000
 
-        # Extract response content
-        if hasattr(response, 'content'):
-            response_content = response.content
-        else:
-            response_content = str(response)
+            # Extract response content - try multiple sources
+            response_content = ""
+            if hasattr(response, 'content') and response.content:
+                response_content = response.content
+            elif hasattr(response, 'additional_kwargs') and response.additional_kwargs:
+                # Ollama sometimes puts response in additional_kwargs
+                response_content = f"[additional_kwargs]: {response.additional_kwargs}"
+            elif hasattr(response, 'response_metadata') and response.response_metadata:
+                response_content = f"[response_metadata]: {response.response_metadata}"
+            else:
+                response_content = str(response)
+            
+            # Ensure we log something even if empty
+            if not response_content:
+                response_content = f"[EMPTY RESPONSE] type={type(response).__name__}, repr={repr(response)[:500]}"
 
-        messages = [LogMessage(role="ASSISTANT", content=response_content)]
-        token_estimate = self._estimate_tokens(response_content)
+            messages = [LogMessage(role="ASSISTANT", content=response_content)]
+            token_estimate = self._estimate_tokens(response_content)
 
-        entry = LogEntry(
-            call_id=self._current_call_id or str(uuid.uuid4()),
-            timestamp=timestamp,
-            entry_type="RESPONSE",
-            model=model_name,
-            user_id=self.user_id,
-            messages=messages,
-            token_estimate=token_estimate,
-            duration_ms=duration_ms
-        )
+            entry = LogEntry(
+                call_id=self._current_call_id or str(uuid.uuid4()),
+                timestamp=timestamp,
+                entry_type="RESPONSE",
+                model=model_name,
+                user_id=self.user_id,
+                messages=messages,
+                token_estimate=token_estimate,
+                duration_ms=duration_ms
+            )
 
-        formatted = self._format_entry(entry)
+            formatted = self._format_entry(entry)
 
-        with open(self.log_file, 'a', encoding='utf-8') as f:
-            f.write(formatted)
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(formatted)
 
-        logger.debug(f"[LLMInterceptor] Logged response for call {self._current_call_id[:8] if self._current_call_id else 'unknown'}")
-
-        # Reset call tracking
-        self._current_call_id = None
-        self._call_start_time = None
+            logger.debug(f"[LLMInterceptor] Logged response for call {self._current_call_id[:8] if self._current_call_id else 'unknown'}")
+        except Exception as e:
+            logger.error(f"[LLMInterceptor] Failed to log response: {e}")
+        finally:
+            # Reset call tracking
+            self._current_call_id = None
+            self._call_start_time = None
 
     async def ainvoke(self, prompt, **kwargs):
         """Async invoke with prompt and response logging."""
