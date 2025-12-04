@@ -359,37 +359,6 @@ class LLMInterceptor:
             self._current_call_id = None
             self._call_start_time = None
 
-    def append_parsed_result(self, thought: str, action: str, action_input: str):
-        """
-        Append parsed ReAct result directly after the last response.
-        Should be called immediately after parsing the LLM response.
-        """
-        try:
-            parsed_section = f"""
-  ┌{'─'*78}┐
-  │ {'PARSED RESULT'.center(78)} │
-  └{'─'*78}┘
-
-  [THOUGHT]
-  {'·'*40}
-    {thought}
-
-  [ACTION]
-  {'·'*40}
-    {action}
-
-  [ACTION INPUT]
-  {'·'*40}
-    {action_input}
-
-"""
-            with open(self.log_file, 'a', encoding='utf-8') as f:
-                f.write(parsed_section)
-
-            logger.debug(f"[LLMInterceptor] Appended parsed result: action={action}")
-        except Exception as e:
-            logger.error(f"[LLMInterceptor] Failed to append parsed result: {e}")
-
     async def ainvoke(self, prompt, **kwargs):
         """Async invoke with prompt and response logging."""
         self._log_request(prompt)

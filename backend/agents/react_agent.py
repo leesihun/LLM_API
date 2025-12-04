@@ -413,10 +413,6 @@ class ThoughtActionGenerator:
                         parsed = self._parse_response(response_text.strip())
                         logger.info(f"[ReAct] Successfully parsed - thought: {parsed[0][:50]}..., action: {parsed[1]}, input: {parsed[2][:50]}...")
 
-                        # Append parsed result to response log (if LLM has interceptor)
-                        if hasattr(self.llm, 'append_parsed_result'):
-                            self.llm.append_parsed_result(parsed[0], parsed[1], parsed[2])
-
                         return parsed
                     except ValueError as parse_error:
                         logger.error(f"[ReAct] Parse failed: {parse_error}")
