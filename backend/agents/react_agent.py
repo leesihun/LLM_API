@@ -251,9 +251,9 @@ Decide if the latest observation fully answers the query.
 - finish → only when you already have the final answer
 
 ## Response Format
-THOUGHT: short reasoning, including whether you can finish
+THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
 ACTION: tool name
-ACTION INPUT: input for the tool
+ACTION INPUT: DETAILED, FULL input for the tool execution
 
 ## Query
 {query}
