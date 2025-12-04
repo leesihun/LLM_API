@@ -245,8 +245,8 @@ Decide if the latest observation fully answers the query.
 {finish_section}
 ## Tools
 - web_search → realtime or complex or specific info
-- rag_retrieval → uploaded documents
-- python_coder → run python / inspect files
+- rag_retrieval → very specific infomation.... Choose only when specifically asked
+- python_coder → run python / inspect files, systemetic tasks
 - vision_analyzer → answer image questions (only if images attached)
 - finish → only when you already have the final answer
 
@@ -415,6 +415,10 @@ class ThoughtActionGenerator:
                     try:
                         parsed = self._parse_response(response_text.strip())
                         logger.info(f"[ReAct] Successfully parsed - thought: {parsed[0][:50]}..., action: {parsed[1]}, input: {parsed[2][:50]}...")
+
+                        # Log parsed result to prompts.log for debugging
+                        self._log_parsed_result(parsed[0], parsed[1], parsed[2])
+
                         return parsed
                     except ValueError as parse_error:
                         logger.error(f"[ReAct] Parse failed: {parse_error}")
@@ -694,6 +698,41 @@ class ThoughtActionGenerator:
     def _build_file_guidance(self) -> str:
         if not self.file_paths: return ""
         return "\nGuidelines:\n- Files available. Attempt local analysis (python_coder) first.\n- Use web_search only if local analysis fails."
+
+    def _log_parsed_result(self, thought: str, action: str, action_input: str):
+        """Log parsed thought/action/input to prompts.log for debugging."""
+        from pathlib import Path
+        from datetime import datetime
+
+        log_file = Path("data/scratch/prompts.log")
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+        # Format as structured log entry
+        log_entry = f"""
+{'='*80}
+  📝 PARSED REACT STEP  │  {timestamp}
+{'─'*80}
+
+  [THOUGHT]
+  ········································
+    {thought}
+
+  [ACTION]
+  ········································
+    {action}
+
+  [ACTION INPUT]
+  ········································
+    {action_input}
+
+{'='*80}
+
+"""
+
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
 
 
 class AnswerGenerator:
