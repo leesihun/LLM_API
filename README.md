@@ -33,6 +33,21 @@ Edit `backend/config/settings.py` or use environment variables to configure:
 
 ## Changelog
 
+### v2.0.2 - 2025-01-13
+**Bug Fixes:**
+
+1. **Bcrypt AttributeError**
+   - **Issue**: `AttributeError: module 'bcrypt' has no attribute '__about__'`
+   - **Root Cause**: bcrypt 5.0.0 removed the `__about__` module that passlib 1.7.4 tries to access during initialization
+   - **Fix**: Downgraded bcrypt from 5.0.0 to 4.0.1 for compatibility with passlib 1.7.4
+   - **Files Changed**: `requirements.txt`
+
+2. **StructuredLogger TypeError**
+   - **Issue**: `TypeError: StructuredLogger.info() takes 2 positional arguments but 4 were given`
+   - **Root Cause**: `StructuredLogger` methods in `logging_utils.py` didn't accept `*args` for old-style Python logging format strings (e.g., `logger.info("Message %s", value)`)
+   - **Fix**: Updated `debug()`, `info()`, `warning()`, `error()`, and `critical()` methods to accept `*args` and `**kwargs` and pass them through to the underlying logger
+   - **Files Changed**: `backend/utils/logging_utils.py`, `backend/tools/file_analyzer/__init__.py`
+
 ### v2.0.1 - 2025-12-04
 **Bug Fixes:**
 

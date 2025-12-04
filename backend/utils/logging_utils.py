@@ -309,23 +309,39 @@ class StructuredLogger:
         self.logger.info(f"Progress: {current}/{total} {item_name}(s) ({percentage:.1f}%)")
 
     # Delegate standard logging methods
-    def debug(self, msg: str):
-        self.logger.debug(msg)
+    def debug(self, msg: str, *args, **kwargs):
+        if args or kwargs:
+            self.logger.debug(msg, *args, **kwargs)
+        elif "\n" in msg:
+            self._log_lines(logging.DEBUG, LogFormatter.multiline(msg))
+        else:
+            self.logger.debug(msg)
 
-    def info(self, msg: str):
-        if "\n" in msg:
+    def info(self, msg: str, *args, **kwargs):
+        if args or kwargs:
+            self.logger.info(msg, *args, **kwargs)
+        elif "\n" in msg:
             self._log_lines(logging.INFO, LogFormatter.multiline(msg))
         else:
             self.logger.info(msg)
 
-    def warning(self, msg: str):
-        self.logger.warning(msg)
+    def warning(self, msg: str, *args, **kwargs):
+        if args or kwargs:
+            self.logger.warning(msg, *args, **kwargs)
+        else:
+            self.logger.warning(msg)
 
-    def error(self, msg: str, exc_info: bool = False):
-        self.logger.error(msg, exc_info=exc_info)
+    def error(self, msg: str, *args, exc_info: bool = False, **kwargs):
+        if args or kwargs:
+            self.logger.error(msg, *args, exc_info=exc_info, **kwargs)
+        else:
+            self.logger.error(msg, exc_info=exc_info)
 
-    def critical(self, msg: str, exc_info: bool = False):
-        self.logger.critical(msg, exc_info=exc_info)
+    def critical(self, msg: str, *args, exc_info: bool = False, **kwargs):
+        if args or kwargs:
+            self.logger.critical(msg, *args, exc_info=exc_info, **kwargs)
+        else:
+            self.logger.critical(msg, exc_info=exc_info)
 
 
 def get_logger(name: str) -> StructuredLogger:

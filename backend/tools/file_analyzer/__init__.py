@@ -125,7 +125,7 @@ class FileAnalyzerTool(BaseTool):
         try:
             details = handler.analyze(path) or {}
         except Exception as exc:
-            logger.error(f"[FileAnalyzer] Handler error for %s: %s", path.name, exc)
+            logger.error("[FileAnalyzer] Handler error for %s: %s", path.name, exc)
             return {
                 "file": path.name,
                 "full_path": str(path.resolve()),
