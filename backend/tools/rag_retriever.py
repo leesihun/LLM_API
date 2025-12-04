@@ -48,6 +48,11 @@ class RAGRetrieverTool(BaseTool):
         )
         logger.info("[RAGRetrieverTool] Initialized")
 
+    def validate_inputs(self, **kwargs) -> bool:
+        """Validate RAG inputs."""
+        query = kwargs.get("query", "")
+        return bool(query and query.strip())
+
     async def execute(
         self, query: str, context: Optional[str] = None,
         document_ids: Optional[List[str]] = None, top_k: int = 5,

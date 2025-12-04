@@ -214,9 +214,6 @@ class AgentOrchestrator:
         return "\n".join(f"{msg.role}: {msg.content}" for msg in messages)
 
 
-agent_system = AgentOrchestrator()
-
-
 def _build_thought_action_prompt(
     query: str,
     context: str,
@@ -736,6 +733,9 @@ class ReActAgentFactory:
         return ReActAgent(max_iterations=max_iterations)
 
 react_agent = ReActAgentFactory.create()
+
+# Global agent system (must be defined after ReActAgentFactory)
+agent_system = AgentOrchestrator()
 
 
 # ============================================================================

@@ -13,7 +13,7 @@ import httpx
 import logging
 
 from backend.config.settings import settings
-from backend.core import BaseTool
+from backend.core import BaseTool, ToolResult
 from backend.models.tool_metadata import SearchResult
 from backend.utils.logging_utils import get_logger
 from backend.utils.llm_manager import LLMManager
@@ -40,6 +40,72 @@ class WebSearchTool(BaseTool):
         self.max_results = max_results
         self.search_depth = search_depth
         self.llm_manager = LLMManager()
+
+    async def execute(
+        self,
+        query: str,
+        context: Optional[str] = None,
+        **kwargs
+    ) -> ToolResult:
+        """
+        Execute web search tool.
+
+        Args:
+            query: Search query
+            context: Optional context (unused)
+            **kwargs: Additional parameters (max_results, include_answer, etc.)
+
+        Returns:
+            ToolResult with search results and optional answer
+        """
+        self._log_execution_start(query=query)
+
+        if not self.validate_inputs(query=query):
+            return self._handle_validation_error("Query cannot be empty", parameter="query")
+
+        try:
+            max_results = kwargs.get('max_results', self.max_results)
+            include_answer = kwargs.get('include_answer', True)
+            user_location = kwargs.get('user_location')
+
+            results, metadata = await self.search(
+                query=query,
+                max_results=max_results,
+                user_location=user_location
+            )
+
+            if not results:
+                return ToolResult.failure_result(
+                    error="No search results found",
+                    error_type="NoResultsError",
+                    execution_time=self._elapsed_time()
+                )
+
+            output = {
+                "results": [r.model_dump() if hasattr(r, 'model_dump') else r.__dict__ for r in results],
+                "result_count": len(results),
+                "formatted_results": self.format_results(results),
+                "metadata": metadata
+            }
+
+            if include_answer:
+                answer = await self.generate_answer(query, results)
+                output["answer"] = answer
+
+            result = ToolResult.success_result(
+                output=output,
+                execution_time=self._elapsed_time()
+            )
+            self._log_execution_end(result)
+            return result
+
+        except Exception as e:
+            return self._handle_error(e, "execute")
+
+    def validate_inputs(self, **kwargs) -> bool:
+        """Validate search inputs."""
+        query = kwargs.get("query", "")
+        return bool(query and query.strip())
 
     async def search(
         self,

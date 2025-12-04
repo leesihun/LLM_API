@@ -26,8 +26,7 @@ class TextHandler(FileHandler):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            result['lines'] = len(content.split('
-'))
+            result['lines'] = len(content.split('\n'))
             result['characters'] = len(content)
             result['preview'] = content[:500]
         except Exception as e:

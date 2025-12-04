@@ -115,6 +115,56 @@ class PythonCoderTool(BaseTool):
         )
         self.max_retries = settings.python_code_max_iterations
 
+    def validate_inputs(self, **kwargs) -> bool:
+        """Validate Python coder inputs."""
+        query = kwargs.get("query", "")
+        return bool(query and query.strip())
+
+    async def execute(
+        self,
+        query: str,
+        context: Optional[str] = None,
+        **kwargs
+    ) -> ToolResult:
+        """
+        Execute Python code generation and execution.
+
+        Args:
+            query: Task description
+            context: Optional context
+            **kwargs: Additional parameters (file_paths, session_id, etc.)
+
+        Returns:
+            ToolResult with execution results
+        """
+        self._log_execution_start(query=query)
+
+        if not self.validate_inputs(query=query):
+            return self._handle_validation_error("Query cannot be empty", parameter="query")
+
+        try:
+            result = await self.execute_code_task(
+                query=query,
+                context=context,
+                **kwargs
+            )
+
+            if result.get("success"):
+                return ToolResult.success_result(
+                    output=result,
+                    execution_time=self._elapsed_time()
+                )
+            else:
+                return ToolResult.failure_result(
+                    error=result.get("error", "Code execution failed"),
+                    error_type="CodeExecutionError",
+                    metadata={"attempt_history": result.get("attempt_history", [])},
+                    execution_time=self._elapsed_time()
+                )
+
+        except Exception as e:
+            return self._handle_error(e, "execute")
+
     async def execute_code_task(
         self,
         query: str,
