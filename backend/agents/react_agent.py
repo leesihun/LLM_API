@@ -635,6 +635,36 @@ class PlanExecutor:
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
 
+    def _build_metadata(self, plan_steps: List[PlanStep], step_results: List[StepResult]) -> Dict[str, Any]:
+        """Build metadata for plan execution results."""
+        return {
+            "agent_type": "plan_execute",
+            "plan": [
+                {
+                    "step_num": step.step_num,
+                    "goal": step.goal,
+                    "primary_tools": step.primary_tools,
+                    "success_criteria": step.success_criteria
+                }
+                for step in plan_steps
+            ],
+            "results": [
+                {
+                    "step_num": result.step_num,
+                    "goal": result.goal,
+                    "success": result.success,
+                    "tool_used": result.tool_used,
+                    "attempts": result.attempts,
+                    "observation": result.observation[:500] if result.observation else None,  # Truncate for size
+                    "error": result.error
+                }
+                for result in step_results
+            ],
+            "total_steps": len(plan_steps),
+            "successful_steps": sum(1 for r in step_results if r.success),
+            "failed_steps": sum(1 for r in step_results if not r.success)
+        }
+
 
 # ============================================================================
 # ReAct Agent (Main Class)
