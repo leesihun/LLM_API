@@ -372,6 +372,7 @@ class ThoughtActionGenerator:
     def __init__(self, llm, file_paths: Optional[List[str]] = None):
         self.llm = llm
         self.file_paths = file_paths
+        logger.info(f"[ThoughtActionGenerator] Initialized with LLM: {type(llm).__name__}")
 
     async def generate(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str]:
         file_guidance = self._build_file_guidance()
@@ -385,23 +386,86 @@ class ThoughtActionGenerator:
             latest_observation=latest_observation
         )
 
-        logger.debug(f"[ReAct] Sending prompt to LLM ({len(prompt)} chars)")
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        logger.info(f"[ReAct] LLM type: {type(self.llm).__name__}")
+        logger.info(f"[ReAct] Prompt length: {len(prompt)} chars (~{len(prompt)//4} tokens)")
         
-        # Extract content from response
-        if hasattr(response, 'content'):
-            response_text = response.content
-        else:
-            response_text = str(response)
+        # Check if LLM has an underlying llm (for interceptor)
+        underlying_llm = getattr(self.llm, 'llm', self.llm)
+        logger.info(f"[ReAct] Underlying LLM: {type(underlying_llm).__name__}")
+        if hasattr(underlying_llm, 'model'):
+            logger.info(f"[ReAct] Model: {underlying_llm.model}")
         
-        # Log response details
-        logger.info(f"[ReAct] LLM response received: {len(response_text)} chars")
-        if not response_text or not response_text.strip():
-            logger.error(f"[ReAct] Empty LLM response! Response object: {type(response)}, attrs: {dir(response)}")
-            raise ValueError("LLM returned empty response")
+        # Retry logic for empty responses (up to 3 attempts)
+        max_retries = 3
+        last_error = None
         
-        logger.debug(f"[ReAct] Response preview: {response_text[:500]}")
-        return self._parse_response(response_text.strip())
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"[ReAct] Attempt {attempt}: Invoking LLM...")
+                response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+                logger.info(f"[ReAct] Attempt {attempt}: Response type: {type(response).__name__}")
+                
+                response_text = self._extract_response_content(response)
+                
+                if response_text and response_text.strip():
+                    logger.info(f"[ReAct] LLM response received: {len(response_text)} chars (attempt {attempt})")
+                    logger.debug(f"[ReAct] Response preview: {response_text[:500]}")
+                    return self._parse_response(response_text.strip())
+                else:
+                    logger.warning(f"[ReAct] Empty response on attempt {attempt}/{max_retries}")
+                    last_error = "Empty response"
+                    
+            except Exception as e:
+                logger.error(f"[ReAct] LLM invoke error on attempt {attempt}/{max_retries}: {e}")
+                import traceback
+                logger.error(f"[ReAct] Traceback: {traceback.format_exc()}")
+                last_error = str(e)
+        
+        # All retries failed
+        logger.error(f"[ReAct] All {max_retries} attempts failed. Last error: {last_error}")
+        logger.error(f"[ReAct] Prompt ({len(prompt)} chars): {prompt[:1000]}...")
+        logger.error("[ReAct] Check: 1) Is Ollama running? 2) Is model loaded? 3) Check data/scratch/prompts.log")
+        raise ValueError(f"LLM failed after {max_retries} attempts - {last_error}")
+
+    def _extract_response_content(self, response) -> str:
+        """Extract text content from LLM response object."""
+        # Try direct content attribute
+        if hasattr(response, 'content') and response.content:
+            return response.content
+        
+        # Try text attribute
+        if hasattr(response, 'text') and response.text:
+            return response.text
+        
+        # Try additional_kwargs
+        if hasattr(response, 'additional_kwargs'):
+            kwargs = response.additional_kwargs
+            for key in ['content', 'text', 'message', 'response']:
+                if key in kwargs and kwargs[key]:
+                    return kwargs[key]
+        
+        # Fallback: convert to string
+        response_str = str(response)
+        
+        # Try to extract content from string representation
+        # Handle: content='...' or AIMessage(content='...')
+        import re
+        match = re.search(r"content=['\"](.+?)['\"]", response_str, re.DOTALL)
+        if match:
+            return match.group(1)
+        
+        # Log debug info for empty responses
+        if not response_str or response_str in ['', 'None', "content=''", "content=\"\""]:
+            logger.error(f"[ReAct] Cannot extract content from response")
+            logger.error(f"[ReAct] Response type: {type(response)}")
+            logger.error(f"[ReAct] Response repr: {repr(response)[:500]}")
+            if hasattr(response, '__dict__'):
+                logger.error(f"[ReAct] Response attrs: {response.__dict__}")
+            if hasattr(response, 'response_metadata'):
+                logger.error(f"[ReAct] Metadata: {response.response_metadata}")
+            return ""
+        
+        return response_str
 
     def _parse_response(self, response: str) -> Tuple[str, str, str]:
         """Parse LLM response for THOUGHT, ACTION, and ACTION INPUT.

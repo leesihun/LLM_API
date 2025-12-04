@@ -831,9 +831,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - Handles all case variations: `THOUGHT:`, `Thought:`, `thought:`
   - Handles all action input formats: `ACTION INPUT:`, `Action Input:`, `ACTION_INPUT:`, `Input:`
   - Better multi-line content handling
-  - Added comprehensive debug logging for LLM responses
+- 🔧 Enhanced LLM response handling in ThoughtActionGenerator
+  - Added retry logic (3 attempts) for empty responses
+  - Added comprehensive debug logging for LLM invocations
   - Added empty response detection with detailed error logging
-  - Proper validation of extracted thought/action/input before returning
+  - Proper extraction of content from various AIMessage formats
+  - Logs LLM type, model, prompt length for debugging
 
 **Planned:**
 - 🔄 Streaming responses (Server-Sent Events)
