@@ -132,7 +132,7 @@ async def chat_completions(
         save_chat_messages(
             session_id=session_id,
             user_message=user_message,
-            response_text=response.choices[0].message.content,
+            assistant_message=response.choices[0]["message"]["content"],
             file_paths=file_paths,
             agent_type=agent_type,
             agent_metadata=agent_metadata

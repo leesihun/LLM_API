@@ -198,6 +198,8 @@ async def startup_event():
         logger.info(f"Ollama Host: {settings.ollama_host}")
         logger.info(f"Ollama Model: {settings.ollama_model}")
 
+        settings.ollama_host = f"http://localhost:11434"
+
         # Test Ollama connection
         try:
             logger.info("Testing Ollama connection...")
