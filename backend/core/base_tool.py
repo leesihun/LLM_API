@@ -27,7 +27,7 @@ from backend.core.exceptions import (
     LLMTimeoutError
 )
 from backend.utils.logging_utils import get_logger
-from backend.utils.llm_factory import LLMFactory
+# LLMFactory is imported lazily in _get_llm() and _get_coder_llm() to avoid circular imports
 
 
 class BaseTool(ABC):
@@ -155,6 +155,8 @@ class BaseTool(ABC):
             >>> response = llm.invoke("Generate code...")
         """
         if self._llm is None:
+            # Lazy import to avoid circular imports
+            from backend.utils.llm_factory import LLMFactory
             self.logger.debug(f"[{self.name}] Creating LLM instance")
             self._llm = LLMFactory.create_llm(**config)
         return self._llm
@@ -169,6 +171,8 @@ class BaseTool(ABC):
         Returns:
             ChatOllama instance configured for coding
         """
+        # Lazy import to avoid circular imports
+        from backend.utils.llm_factory import LLMFactory
         return LLMFactory.create_coder_llm(**config)
 
     def _handle_error(
@@ -428,6 +432,8 @@ class SyncBaseTool(ABC):
     def _get_llm(self, **config):
         """Get LLM instance"""
         if self._llm is None:
+            # Lazy import to avoid circular imports
+            from backend.utils.llm_factory import LLMFactory
             self.logger.debug(f"[{self.name}] Creating LLM instance")
             self._llm = LLMFactory.create_llm(**config)
         return self._llm
