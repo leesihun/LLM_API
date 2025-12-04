@@ -80,19 +80,19 @@ def _build_code_generation_prompt(
         "- Never invent filenames or schema."
     )
 
-    sections.append(
-        "## Response Format\n"
-        "CRITICAL: You MUST return valid JSON with exactly one key `code`:\n"
-        "{\n"
-        '  "code": "import pandas as pd\\n\\n# Your code here\\nprint(\\'Result:\\', result)"\n'
-        "}\n\n"
-        "RULES:\n"
-        "- Return ONLY the JSON object, nothing else\n"
-        "- Do NOT return plain text calculations or results\n"
-        "- Do NOT wrap in markdown code fences\n"
-        "- The code value must be a complete Python script as a string\n"
-        "- Use \\n for newlines within the code string"
-    )
+    # Response format instruction - simplified to avoid escaping issues
+    response_format = """## Response Format
+CRITICAL: You MUST return valid JSON with exactly one key "code".
+
+Example: {"code": "import pandas as pd\\ndf = pd.read_csv(path)\\nprint(df.head())"}
+
+RULES:
+- Return ONLY the JSON object, nothing else
+- Do NOT return plain text calculations or results
+- Do NOT wrap in markdown code fences
+- The code value must be a complete Python script as a string
+- Use \\n for newlines within the code string"""
+    sections.append(response_format)
 
     sections.append(
         "## Self-Verification Checklist\n"
