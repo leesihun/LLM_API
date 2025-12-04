@@ -48,6 +48,12 @@ Edit `backend/config/settings.py` or use environment variables to configure:
    - **Fix**: Updated `debug()`, `info()`, `warning()`, `error()`, and `critical()` methods to accept `*args` and `**kwargs` and pass them through to the underlying logger
    - **Files Changed**: `backend/utils/logging_utils.py`, `backend/tools/file_analyzer/__init__.py`
 
+3. **Ollama Connection Protocol Error**
+   - **Issue**: `Request URL is missing an 'http://' or 'https://' protocol`
+   - **Root Cause**: `ollama_host` setting could be overridden by environment variable without protocol prefix (e.g., `OLLAMA_HOST=127.0.0.1:11434`)
+   - **Fix**: Added `field_validator` to automatically prepend `http://` if protocol is missing from `ollama_host` setting
+   - **Files Changed**: `backend/config/settings.py`
+
 ### v2.0.1 - 2025-12-04
 **Bug Fixes:**
 
