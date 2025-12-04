@@ -437,29 +437,48 @@ class ThoughtActionGenerator:
         if hasattr(response, 'tool_calls') and response.tool_calls:
             tool_calls = response.tool_calls
             logger.info(f"[ReAct] Found tool_calls: {tool_calls}")
+            logger.info(f"[ReAct] tool_calls type: {type(tool_calls)}, first item type: {type(tool_calls[0]) if tool_calls else 'empty'}")
             
             # Convert tool call to THOUGHT/ACTION/ACTION INPUT format
             if isinstance(tool_calls, list) and len(tool_calls) > 0:
                 tool_call = tool_calls[0]
+                
+                # Handle both dict-like and object-like tool calls
                 if isinstance(tool_call, dict):
                     action = tool_call.get('name', 'unknown')
                     args = tool_call.get('args', {})
-                    
-                    # Build action input from args
-                    if isinstance(args, dict):
-                        # For web_search, use the query
-                        if 'query' in args:
-                            action_input = args['query']
-                        else:
-                            # Stringify all args
-                            action_input = ', '.join(f"{k}={v}" for k, v in args.items())
+                else:
+                    # Object with attributes (LangChain ToolCall)
+                    action = getattr(tool_call, 'name', None) or getattr(tool_call, 'function', {}).get('name', 'unknown')
+                    args = getattr(tool_call, 'args', None) or getattr(tool_call, 'function', {}).get('arguments', {})
+                    logger.info(f"[ReAct] Extracted from object - action: {action}, args: {args}")
+                
+                # Build action input from args
+                if isinstance(args, dict):
+                    # For web_search, use the query
+                    if 'query' in args:
+                        action_input = args['query']
                     else:
-                        action_input = str(args)
-                    
-                    # Construct the expected format
-                    formatted = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
-                    logger.info(f"[ReAct] Converted tool_call to format: {formatted}")
-                    return formatted
+                        # Stringify all args
+                        action_input = ', '.join(f"{k}={v}" for k, v in args.items())
+                elif isinstance(args, str):
+                    # Args might be a JSON string
+                    try:
+                        import json
+                        parsed_args = json.loads(args)
+                        if isinstance(parsed_args, dict) and 'query' in parsed_args:
+                            action_input = parsed_args['query']
+                        else:
+                            action_input = args
+                    except:
+                        action_input = args
+                else:
+                    action_input = str(args)
+                
+                # Construct the expected format
+                formatted = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
+                logger.info(f"[ReAct] Converted tool_call to format: {formatted}")
+                return formatted
         
         # Try direct content attribute
         if hasattr(response, 'content') and response.content:
