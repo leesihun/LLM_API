@@ -430,8 +430,15 @@ class ThoughtActionGenerator:
     def _extract_response_content(self, response) -> str:
         """Extract text content from LLM response object."""
         # Log raw response for debugging
-        logger.debug(f"[ReAct] Raw response type: {type(response)}")
-        logger.debug(f"[ReAct] Raw response repr: {repr(response)[:1000]}")
+        logger.info(f"[ReAct] Raw response type: {type(response)}")
+        logger.info(f"[ReAct] Raw response repr: {repr(response)[:1500]}")
+        
+        # Log all attributes of the response
+        if hasattr(response, '__dict__'):
+            logger.info(f"[ReAct] Response __dict__ keys: {response.__dict__.keys()}")
+            for key, value in response.__dict__.items():
+                val_str = str(value)[:200] if value else 'None/Empty'
+                logger.info(f"[ReAct] Response.{key} = {val_str}")
         
         # Try direct content attribute first
         if hasattr(response, 'content') and response.content:
@@ -469,14 +476,26 @@ class ThoughtActionGenerator:
                     logger.warning(f"[ReAct] Using stringified additional_kwargs as content")
                     return kwargs_str
         
-        # Check response_metadata
+        # Check response_metadata - Ollama puts message here
         if hasattr(response, 'response_metadata') and response.response_metadata:
             meta = response.response_metadata
-            logger.info(f"[ReAct] Checking response_metadata: {meta}")
+            logger.info(f"[ReAct] Checking response_metadata keys: {meta.keys() if isinstance(meta, dict) else type(meta)}")
+            logger.info(f"[ReAct] Full response_metadata: {meta}")
+            
+            # Try message.content
             if 'message' in meta:
                 msg = meta['message']
-                if isinstance(msg, dict) and 'content' in msg:
+                logger.info(f"[ReAct] Found message in metadata: {msg}")
+                if isinstance(msg, dict) and 'content' in msg and msg['content']:
                     return msg['content']
+            
+            # Try direct content in metadata
+            if 'content' in meta and meta['content']:
+                return meta['content']
+            
+            # Try response field
+            if 'response' in meta and meta['response']:
+                return meta['response']
         
         # Fallback: convert to string and try to extract
         response_str = str(response)
