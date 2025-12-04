@@ -1024,13 +1024,42 @@ class ReActAgent:
         if not final_answer:
             final_answer = await self.answer_generator.generate(user_query, self.steps)
 
+        # Build response with ReAct reasoning steps included
+        response_with_reasoning = self._format_response_with_steps(final_answer)
+
         # Build Metadata
         metadata = {
             "agent_type": "react",
             "steps": [s.to_dict() for s in self.steps],
             "total_steps": len(self.steps)
         }
-        return final_answer, metadata
+        return response_with_reasoning, metadata
+
+    def _format_response_with_steps(self, final_answer: str) -> str:
+        """Format the response to include ReAct reasoning steps."""
+        if not self.steps:
+            return final_answer
+        
+        parts = ["## ReAct Reasoning Process\n"]
+        
+        for step in self.steps:
+            parts.append(f"### Step {step.step_num}")
+            parts.append(f"**THOUGHT:** {step.thought}")
+            parts.append(f"**ACTION:** {step.action}")
+            parts.append(f"**ACTION INPUT:** {step.action_input}")
+            
+            # Truncate long observations for readability
+            observation = step.observation
+            if len(observation) > 1000:
+                observation = observation[:1000] + "... [truncated]"
+            parts.append(f"**OBSERVATION:** {observation}")
+            parts.append("")  # Empty line between steps
+        
+        parts.append("---")
+        parts.append("## Final Answer\n")
+        parts.append(final_answer)
+        
+        return "\n".join(parts)
 
     async def execute_with_plan(self, plan_steps: List[PlanStep], messages: List[ChatMessage], session_id: str, user_id: str, file_paths: List[str], max_iterations_per_step: int = 3) -> Tuple[str, List[StepResult]]:
         """Execute a pre-defined plan."""

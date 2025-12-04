@@ -814,7 +814,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version: 2.0.5
+### Current Version: 2.0.6
 
 **Completed:**
 - ✅ Dual backend support (Ollama + llama.cpp)
@@ -824,6 +824,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ Vision analysis capabilities
 - ✅ OpenAI-compatible API
 - ✅ JWT authentication
+
+**v2.0.6 Changes:**
+- 🔧 **ReAct reasoning steps now included in response output**
+  - Added `_format_response_with_steps()` method to `ReActAgent`
+  - Response now shows full reasoning process: THOUGHT → ACTION → ACTION INPUT → OBSERVATION
+  - Each step is clearly formatted with step numbers and headers
+  - Final answer is separated with a clear "---" divider
+  - Long observations are truncated to 1000 chars for readability
+  - This makes the agent's reasoning transparent to the user
 
 **v2.0.5 Changes:**
 - 🔧 **Fixed Tavily SSL certificate verification issues**
@@ -864,5 +873,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by HE Team**
 
-**Version:** 2.0.5
+**Version:** 2.0.6
 **Last Updated:** 2025-12-04
