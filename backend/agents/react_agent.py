@@ -335,6 +335,7 @@ Decide if the latest observation fully answers the query.
 THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
 ACTION: tool name
 ACTION INPUT: DETAILED, FULL input for the tool execution
+CONTENTS: Detailed explanation of the action and input, including the result of the action
 
 ## Query
 {query}
