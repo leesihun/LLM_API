@@ -40,6 +40,99 @@ class ToolName(str, Enum):
     FINISH = "finish"
 
 
+# ============================================================================
+# Native Tool Definitions (for Ollama/OpenAI function calling)
+# ============================================================================
+
+NATIVE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for real-time information. Use for current events, news, or facts that may have changed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rag_retrieval",
+            "description": "Search through uploaded documents and knowledge base for specific information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query for document retrieval"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "python_coder",
+            "description": "Execute Python code. Use for calculations, data analysis, file processing, and creating visualizations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Complete Python code to execute. Must be valid, runnable Python."
+                    }
+                },
+                "required": ["code"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "vision_analyzer",
+            "description": "Analyze images to understand their content, extract text, or answer questions about them.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Question or task about the image(s)"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finish",
+            "description": "Complete the task and provide the final answer. Only use when you have gathered all necessary information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "string",
+                        "description": "The final answer to the user's question"
+                    }
+                },
+                "required": ["answer"]
+            }
+        }
+    }
+]
+
+
 class ReActStep:
     """Represents a single Thought-Action-Observation cycle."""
 
@@ -340,7 +433,7 @@ ACTION INPUT:
 import pandas as pd
 df = pd.read_csv('data.csv')
 print(df.head())
-print(f"Shape: {df.shape}")
+print(f"Shape: df.shape")
 
 ## Query
 {query}
@@ -449,16 +542,122 @@ class ContextFormatter:
 
 
 class ThoughtActionGenerator:
-    """Generates thought and action from LLM."""
+    """Generates thought and action from LLM.
+    
+    Supports two modes:
+    - 'react': Text-based THOUGHT/ACTION/OBSERVATION prompting (works with all backends)
+    - 'native': Ollama/OpenAI function calling with structured JSON (best with Ollama)
+    """
     
     VALID_ACTIONS = {tool.value for tool in ToolName}
 
     def __init__(self, llm, file_paths: Optional[List[str]] = None):
         self.llm = llm
         self.file_paths = file_paths
-        logger.info(f"[ThoughtActionGenerator] Initialized with LLM: {type(llm).__name__}")
+        self.mode = settings.tool_calling_mode  # 'react' or 'native'
+        logger.info(f"[ThoughtActionGenerator] Initialized with LLM: {type(llm).__name__}, mode: {self.mode}")
+        
+        # For native mode, bind tools to LLM
+        if self.mode == 'native':
+            self._setup_native_tools()
+    
+    def _setup_native_tools(self):
+        """Setup native tool calling for Ollama/OpenAI."""
+        try:
+            # Get the underlying LLM (unwrap interceptor if present)
+            underlying_llm = getattr(self.llm, 'llm', self.llm)
+            
+            # Check if LLM supports tool binding
+            if hasattr(underlying_llm, 'bind_tools'):
+                self.llm_with_tools = underlying_llm.bind_tools(NATIVE_TOOLS)
+                logger.info(f"[ThoughtActionGenerator] Native tools bound successfully ({len(NATIVE_TOOLS)} tools)")
+            else:
+                logger.warning(f"[ThoughtActionGenerator] LLM does not support bind_tools, falling back to 'react' mode")
+                self.mode = 'react'
+                self.llm_with_tools = None
+        except Exception as e:
+            logger.error(f"[ThoughtActionGenerator] Failed to bind tools: {e}, falling back to 'react' mode")
+            self.mode = 'react'
+            self.llm_with_tools = None
 
     async def generate(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str]:
+        """Generate thought and action using configured mode."""
+        if self.mode == 'native':
+            return await self._generate_native(user_query, steps, context, include_finish_check)
+        else:
+            return await self._generate_react(user_query, steps, context, include_finish_check)
+    
+    async def _generate_native(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str]:
+        """Generate using native Ollama/OpenAI function calling."""
+        file_guidance = self._build_file_guidance()
+        
+        # Build a simpler prompt for native mode (tools are defined in schema)
+        prompt = self._build_native_prompt(user_query, steps, context, file_guidance, include_finish_check)
+        
+        logger.info(f"[ReAct-Native] Invoking LLM with tools...")
+        logger.info(f"[ReAct-Native] Prompt length: {len(prompt)} chars")
+        
+        try:
+            response = await self.llm_with_tools.ainvoke([HumanMessage(content=prompt)])
+            
+            # Extract tool call from response
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                tool_call = response.tool_calls[0]
+                
+                # Extract action and arguments
+                if isinstance(tool_call, dict):
+                    action = tool_call.get('name', 'finish')
+                    args = tool_call.get('args', {})
+                else:
+                    action = getattr(tool_call, 'name', 'finish')
+                    args = getattr(tool_call, 'args', {})
+                
+                # Build action_input based on tool type
+                if action == 'python_coder':
+                    action_input = args.get('code', '')
+                elif action == 'finish':
+                    action_input = args.get('answer', '')
+                else:
+                    action_input = args.get('query', str(args))
+                
+                # Generate thought from content or synthesize
+                thought = response.content if response.content else f"Using {action} tool to complete the task."
+                
+                logger.info(f"[ReAct-Native] Tool call: {action}, input length: {len(action_input)}")
+                return thought, action, action_input
+            
+            # No tool call - check if it's a direct response (treat as finish)
+            if response.content:
+                logger.info(f"[ReAct-Native] No tool call, treating as finish")
+                return response.content, "finish", response.content
+            
+            raise ValueError("No tool call or content in response")
+            
+        except Exception as e:
+            logger.error(f"[ReAct-Native] Error: {e}, falling back to react mode for this call")
+            return await self._generate_react(user_query, steps, context, include_finish_check)
+    
+    def _build_native_prompt(self, query: str, steps: List[ReActStep], context: str, file_guidance: str, include_finish_check: bool) -> str:
+        """Build prompt for native tool calling mode."""
+        parts = [f"Answer the user's query by calling the appropriate tool.\n"]
+        
+        if file_guidance:
+            parts.append(f"## Available Files\n{file_guidance}\n")
+        
+        if context:
+            parts.append(f"## Previous Steps\n{context}\n")
+        
+        if include_finish_check and steps:
+            latest = steps[-1].observation[:2000]
+            parts.append(f"## Latest Result\n{latest}\n")
+            parts.append("If this answers the query, call 'finish'. Otherwise, call another tool.\n")
+        
+        parts.append(f"## User Query\n{query}")
+        
+        return "\n".join(parts)
+
+    async def _generate_react(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str]:
+        """Generate using ReAct text-based prompting."""
         file_guidance = self._build_file_guidance()
         latest_observation = steps[-1].observation if steps else ""
 

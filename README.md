@@ -18,6 +18,9 @@ A comprehensive FastAPI-based LLM backend featuring sophisticated agentic workfl
 - **Plan-Execute Mode**: Structured multi-step task decomposition and execution
 - **Auto Mode**: Automatically chooses optimal execution strategy
 - **Context-Aware**: Maintains conversation history and session state
+- **Dual Tool Calling Modes**:
+  - `react`: Text-based prompting (THOUGHT/ACTION/OBSERVATION) - works with all backends
+  - `native`: Ollama/OpenAI structured function calling - more reliable with compatible models
 
 ### 🛠️ **Powerful Tool Ecosystem**
 - **🐍 Python Code Execution**: Direct code execution in sandboxed environment
@@ -356,6 +359,9 @@ SECRET_KEY=your-secret-key-change-in-production
 REACT_MAX_ITERATIONS=6
 PYTHON_CODE_MAX_ITERATIONS=3
 PYTHON_CODE_TIMEOUT=3000
+
+# Tool Calling Mode
+TOOL_CALLING_MODE=react  # 'react' (text-based) or 'native' (Ollama function calling)
 
 # Logging
 LOG_LEVEL=INFO
@@ -814,16 +820,28 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version: 2.1.0
+### Current Version: 2.2.0
 
 **Completed:**
 - ✅ Dual backend support (Ollama + llama.cpp)
 - ✅ ReAct agent with tool orchestration
 - ✅ Direct Python code execution (modern tool calling pattern)
+- ✅ **Dual tool calling modes** (ReAct prompting + Native function calling)
 - ✅ File handling for multiple formats
 - ✅ Vision analysis capabilities
 - ✅ OpenAI-compatible API
 - ✅ JWT authentication
+
+**v2.2.0 Changes:**
+- 🚀 **Dual Tool Calling Mode Support**
+  - New setting: `tool_calling_mode` in settings.py
+  - **'react' mode**: Text-based THOUGHT/ACTION/OBSERVATION prompting (works with all backends)
+  - **'native' mode**: Ollama/OpenAI structured function calling (JSON-based, more reliable with Ollama)
+  - Automatic fallback to 'react' mode if LLM doesn't support tool binding
+  - Native mode uses `bind_tools()` with structured tool definitions
+- 🔧 **Native Tool Definitions**
+  - Added `NATIVE_TOOLS` schema for web_search, rag_retrieval, python_coder, vision_analyzer, finish
+  - OpenAI-compatible function calling format
 
 **v2.1.0 Changes:**
 - 🚀 **Major Refactor: python_coder now uses modern tool calling pattern**
@@ -897,5 +915,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by HE Team**
 
-**Version:** 2.1.0
+**Version:** 2.2.0
 **Last Updated:** 2025-12-05

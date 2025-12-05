@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     react_max_iterations: int = 6  # Maximum iterations for ReAct loop (optimized from 10)
     react_step_max_retries: int = 3  # Maximum retries per step in plan execution (optimized from 5)
     python_code_max_iterations: int = 3  # Maximum code execution attempts (optimized from 5)
+    
+    # Tool calling mode: 'react' (text-based prompting) or 'native' (Ollama/OpenAI function calling)
+    # - 'react': Works with all backends (Ollama, llama.cpp), uses THOUGHT/ACTION/OBSERVATION format
+    # - 'native': Uses structured JSON tool calling, best with Ollama (llama.cpp support is limited)
+    tool_calling_mode: str = 'react'
 
     # ============================================================================
     # Vision/Multimodal Configuration
