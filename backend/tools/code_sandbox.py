@@ -49,9 +49,60 @@ class CodeSandbox:
         self.execution_base_dir = Path(execution_base_dir).resolve()
         self.execution_base_dir.mkdir(parents=True, exist_ok=True)
 
-    def validate_imports(self, code: str) -> Tuple[bool, List[str]]:
-        """Check code for unsafe imports using AST."""
+    def _validate_characters(self, code: str) -> Tuple[bool, List[str]]:
+        """
+        Validate that code only contains valid Python characters.
+        Blocks problematic Unicode characters that cause parsing issues.
+
+        This is a simplified check that blocks known problematic characters.
+        Unicode in strings/comments is generally safe and allowed by Python's parser.
+        """
         issues = []
+
+        # Problematic characters that cause parsing/security issues
+        # These should NEVER appear in code, even in strings
+        problematic = {
+            0x00B7: 'MIDDLE DOT',            # Often mistaken for multiplication
+            0x00D7: 'MULTIPLICATION SIGN',   # Often mistaken for 'x'
+            0x2022: 'BULLET',                # Can cause issues
+            0x2024: 'ONE DOT LEADER',        # Can cause issues
+            0x2027: 'HYPHENATION POINT',     # Can cause issues
+            0x00A0: 'NON-BREAKING SPACE',    # Invisible, causes weird errors
+            0x2019: 'RIGHT SINGLE QUOTATION MARK',  # Looks like ' but isn't
+            0x201C: 'LEFT DOUBLE QUOTATION MARK',   # Looks like " but isn't
+            0x201D: 'RIGHT DOUBLE QUOTATION MARK',  # Looks like " but isn't
+            0x2013: 'EN DASH',               # Can be mistaken for minus
+            0x2014: 'EM DASH',               # Can be mistaken for minus
+            0x2212: 'MINUS SIGN',            # Looks like - but isn't
+        }
+
+        for i, char in enumerate(code):
+            char_code = ord(char)
+
+            # Check for problematic characters
+            if char_code in problematic:
+                line_num = code[:i].count('\n') + 1
+                col_num = i - code[:i].rfind('\n')
+                char_name = problematic[char_code]
+                issues.append(
+                    f"Invalid character '{char}' (U+{char_code:04X} {char_name}) "
+                    f"at line {line_num}, column {col_num}. "
+                    f"Use standard ASCII equivalent instead."
+                )
+
+        return len(issues) == 0, issues
+
+    def validate_imports(self, code: str) -> Tuple[bool, List[str]]:
+        """Check code for unsafe imports and invalid characters using AST."""
+        issues = []
+
+        # First validate characters
+        chars_valid, char_issues = self._validate_characters(code)
+        if not chars_valid:
+            issues.extend(char_issues)
+            return False, issues
+
+        # Then validate AST and imports
         try:
             tree = ast.parse(code)
             for node in ast.walk(tree):
@@ -64,6 +115,7 @@ class CodeSandbox:
                         issues.append(f"Import from '{node.module}' is blocked")
         except SyntaxError as e:
             issues.append(f"Syntax error: {e}")
+
         return len(issues) == 0, issues
 
     def execute(

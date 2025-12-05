@@ -409,7 +409,7 @@ Decide if the latest observation fully answers the query.
 
     guidance_section = f"\n{file_guidance}\n" if file_guidance else ""
 
-    return f"""You are a focused ReAct agent. Think, pick ONE tool, supply its input.
+    return f"""You are a focused ReAct agent. Think, pick ONE tool, supply its input. If you think the given observation is not enough to answer the query, you can pick another tool. If you have enough information, you can finish.
 {guidance_section}
 
 ## Context
@@ -422,7 +422,7 @@ Decide if the latest observation fully answers the query.
 - vision_analyzer → answer image questions (only if images attached)
 - finish → only when you already have the final answer
 
-## Response Format
+## Response Format: Strictly follow the format.
 THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
 ACTION: tool name
 ACTION INPUT: For python_coder, write complete Python code. For others, write the query/description.
