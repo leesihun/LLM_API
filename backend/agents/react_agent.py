@@ -327,7 +327,7 @@ Decide if the latest observation fully answers the query.
 ## Tools
 - web_search → realtime or complex or specific info
 - rag_retrieval → very specific infomation.... Choose only when specifically asked
-- python_coder → run python / inspect files, systemetic tasks
+- python_coder → run python / inspect files, systemetic tasks **ONLY MAKE PYTHON CODES, NO OTHER TASKS**
 - vision_analyzer → answer image questions (only if images attached)
 - finish → only when you already have the final answer
 
