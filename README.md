@@ -20,10 +20,10 @@ A comprehensive FastAPI-based LLM backend featuring sophisticated agentic workfl
 - **Context-Aware**: Maintains conversation history and session state
 
 ### 🛠️ **Powerful Tool Ecosystem**
-- **🐍 Python Code Generation**: Autonomous code writing, execution, and debugging
-  - Session-based variable persistence
+- **🐍 Python Code Execution**: Direct code execution in sandboxed environment
+  - ReAct agent generates code directly (no nested LLM calls)
   - Automatic file handling (CSV, Excel, JSON, PDF, images)
-  - Sandboxed execution with retry logic
+  - Sandboxed execution with security validation
 - **🔍 Web Search**: Real-time information retrieval via Tavily API
 - **📚 RAG Retrieval**: FAISS-based document search and retrieval
 - **📊 File Analysis**: Smart metadata extraction and analysis
@@ -421,13 +421,13 @@ Expected response:
 ```python
 from backend.tools.python_coder import python_coder_tool
 
-result = await python_coder_tool.execute_code_task(
-    query="Calculate the sum of numbers 1 to 100",
-    file_paths=[],
+# python_coder now takes code directly (no LLM generation)
+result = await python_coder_tool.execute_code(
+    code="print(sum(range(1, 101)))",
     session_id="test-session"
 )
 
-print(result["output"])
+print(result["output"])  # Output: 5050
 ```
 
 ---
@@ -814,16 +814,28 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version: 2.0.6
+### Current Version: 2.1.0
 
 **Completed:**
 - ✅ Dual backend support (Ollama + llama.cpp)
 - ✅ ReAct agent with tool orchestration
-- ✅ Python code generation with session persistence
+- ✅ Direct Python code execution (modern tool calling pattern)
 - ✅ File handling for multiple formats
 - ✅ Vision analysis capabilities
 - ✅ OpenAI-compatible API
 - ✅ JWT authentication
+
+**v2.1.0 Changes:**
+- 🚀 **Major Refactor: python_coder now uses modern tool calling pattern**
+  - Previously: ReAct LLM → python_coder internal LLM → code generation → execution (2 LLM calls)
+  - Now: ReAct LLM directly generates Python code → python_coder executes it (1 LLM call)
+  - ~50% faster execution, lower cost, simpler architecture
+  - ReAct agent prompt updated to generate complete Python code in ACTION INPUT
+  - Removed internal LLM dependency from python_coder tool
+  - python_coder is now a pure code executor (no code generation)
+- 🗑️ **Removed unused imports and methods**
+  - Removed `SessionFileLoader`, `ConversationLoader` from react_agent.py
+  - Removed `_build_python_context()` and `_build_react_history()` methods
 
 **v2.0.6 Changes:**
 - 🔧 **ReAct reasoning steps now included in response output**
@@ -885,5 +897,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by HE Team**
 
-**Version:** 2.0.6
-**Last Updated:** 2025-12-04
+**Version:** 2.1.0
+**Last Updated:** 2025-12-05

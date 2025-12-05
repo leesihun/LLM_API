@@ -12,8 +12,6 @@ from backend.models.schemas import ChatMessage, PlanStep, StepResult
 from backend.utils.logging_utils import get_logger
 from backend.utils.llm_manager import LLMManager, SimpleLLMManager
 from backend.utils.llm_response_parser import LLMResponseParser
-from backend.utils.session_file_loader import SessionFileLoader
-from backend.utils.conversation_loader import ConversationLoader
 from backend.storage.conversation_store import conversation_store
 
 # Tools
@@ -304,8 +302,8 @@ def _build_thought_action_prompt(
 ) -> str:
     finish_section = ""
     if include_finish_check and latest_observation:
-        snippet = latest_observation[:500]
-        if len(latest_observation) > 500:
+        snippet = latest_observation[:50000]
+        if len(latest_observation) > 50000:
             snippet += "... (truncated)"
         finish_section = f"""
 ## Latest Observation
@@ -327,15 +325,22 @@ Decide if the latest observation fully answers the query.
 ## Tools
 - web_search → realtime or complex or specific info
 - rag_retrieval → very specific infomation.... Choose only when specifically asked
-- python_coder → run python / inspect files, systemetic tasks **ONLY MAKE PYTHON CODES, NO OTHER TASKS**
+- python_coder → execute Python code. **ACTION INPUT must be valid Python code (not description)**
 - vision_analyzer → answer image questions (only if images attached)
 - finish → only when you already have the final answer
 
 ## Response Format
-CONTENTS: What you are going to do with what tools.
 THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
 ACTION: tool name
-ACTION INPUT: DETAILED, FULL input for the tool execution
+ACTION INPUT: For python_coder, write complete Python code. For others, write the query/description.
+
+## python_coder Example
+ACTION: python_coder
+ACTION INPUT:
+import pandas as pd
+df = pd.read_csv('data.csv')
+print(df.head())
+print(f"Shape: {df.shape}")
 
 ## Query
 {query}
@@ -890,26 +895,24 @@ class ToolExecutor:
         results = await rag_retriever_tool.retrieve(query, top_k=5)
         return rag_retriever_tool.format_results(results) or "No relevant documents found."
 
-    async def _execute_python(self, query: str, file_paths: List[str], session_id: str, steps: List[ReActStep], plan_context: dict) -> str:
-        # Build robust context
-        context_str = self._build_python_context(steps)
-        react_context = self._build_react_history(steps, session_id)
-        
-        conversation_history = ConversationLoader.load_as_dicts(session_id, limit=10)
+    async def _execute_python(self, code: str, file_paths: List[str], session_id: str, steps: List[ReActStep], plan_context: dict) -> str:
+        """Execute Python code directly in sandbox."""
         current_step_num = len(steps) + 1 if steps else 1
-        
-        plan_step_num = plan_context.get('current_step') if plan_context else None
 
-        result = await python_coder_tool.execute_code_task(
-            query=query, file_paths=file_paths, session_id=session_id,
-            context=context_str, stage_prefix=f"step{current_step_num}",
-            react_context=react_context, plan_context=plan_context,
-            conversation_history=conversation_history,
-            react_step=current_step_num, plan_step=plan_step_num
+        result = await python_coder_tool.execute_code(
+            code=code,
+            file_paths=file_paths,
+            session_id=session_id,
+            stage_prefix=f"step{current_step_num}"
         )
         
         if result["success"]:
-            return f"Code executed successfully:\n{result['output']}"
+            output = result.get('output', '')
+            created_files = result.get('created_files', [])
+            response = f"Code executed successfully:\n{output}"
+            if created_files:
+                response += f"\nCreated files: {', '.join(created_files)}"
+            return response
         return f"Code execution failed: {result.get('error', 'Unknown error')}"
 
     async def _execute_file_analysis(self, query: str, file_paths: List[str]) -> str:
@@ -922,41 +925,6 @@ class ToolExecutor:
         result = await vision_analyzer_tool(query=query, file_paths=file_paths, user_id=self.user_id)
         return result.get('analysis') if result.get('success') else f"Vision failed: {result.get('error')}"
 
-    def _build_python_context(self, steps: List[ReActStep]) -> str:
-        if not steps: return ""
-        return "\n".join([f"Step {s.step_num}: {s.thought} -> {s.action} -> {s.observation[:200]}..." for s in steps[-3:]])
-
-    def _build_react_history(self, steps: List[ReActStep], session_id: str) -> Dict:
-        """Builds simplified react context with previous code attempts."""
-        if not steps and not session_id: return None
-        
-        # Load historical code files
-        all_session_code = []
-        if session_id:
-            loader = SessionFileLoader(session_id)
-            entries = loader.load_files_by_pattern("script_*.py", sort_reverse=True)
-            for e in entries:
-                all_session_code.append({
-                    'code': e.content,
-                    'filename': e.path.name,
-                    'timestamp': e.timestamp
-                })
-
-        history = []
-        for step in (steps or []):
-            item = {
-                'thought': step.thought,
-                'action': step.action,
-                'observation': step.observation,
-                'status': 'error' if 'error' in step.observation.lower() else 'success'
-            }
-            history.append(item)
-
-        return {
-            'iteration': len(steps) + 1 if steps else 1,
-            'history': history,
-            'session_code_history': all_session_code
-        }
 
 
 # ============================================================================
