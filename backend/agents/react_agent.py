@@ -332,10 +332,10 @@ Decide if the latest observation fully answers the query.
 - finish → only when you already have the final answer
 
 ## Response Format
+CONTENTS: What you are going to do with what tools.
 THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
 ACTION: tool name
 ACTION INPUT: DETAILED, FULL input for the tool execution
-CONTENTS: Detailed explanation of the action and input, including the result of the action
 
 ## Query
 {query}
