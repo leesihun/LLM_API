@@ -49,7 +49,7 @@ USERS_FILE = Path(settings.users_path)
 def create_user_session(user_id: str) -> str:
     """Create a new chat session for the given user."""
     session_id = conversation_store.create_session(user_id)
-    logger.info("Created session %s for %s", session_id, user_id)
+    logger.info(f"Created session {session_id} for {user_id}")
     return session_id
 
 
@@ -96,7 +96,7 @@ def save_chat_messages(
             metadata=assistant_meta,
         )
     except Exception as exc:  # pragma: no cover - logging only
-        logger.error("Failed to save conversation for %s: %s", session_id, exc)
+        logger.error(f"Failed to save conversation for {session_id}: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ async def handle_file_uploads(
             content = await file.read()
             target.write_bytes(content)
             new_paths.append(str(target))
-            logger.info("[Uploads] Saved %s", target.name)
+            logger.info(f"[Uploads] Saved {target.name}")
 
         if old_files:
             cleanup_temp_files(old_files)
@@ -143,7 +143,7 @@ def cleanup_temp_files(file_paths: Optional[List[str]]) -> None:
         try:
             Path(temp_path).unlink(missing_ok=True)
         except Exception as exc:  # pragma: no cover - logging only
-            logger.warning("Failed to cleanup %s: %s", temp_path, exc)
+            logger.warning(f"Failed to cleanup {temp_path}: {exc}")
 
 
 def _load_previous_file_paths(session_id: Optional[str]) -> List[str]:
@@ -160,7 +160,7 @@ def _load_previous_file_paths(session_id: Optional[str]) -> List[str]:
             if message.role == "user" and file_paths:
                 return file_paths
     except Exception as exc:  # pragma: no cover - logging only
-        logger.warning("Failed to load previous file paths: %s", exc)
+        logger.warning(f"Failed to load previous file paths: {exc}")
     return []
 
 
