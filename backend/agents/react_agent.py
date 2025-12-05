@@ -189,6 +189,9 @@ class AgentOrchestrator:
         # Extract content using the same method as ReAct (handles tool_calls)
         response_content = self._extract_plan_response_content(response)
 
+        # Strip markdown code blocks (```json ... ```)
+        response_content = self._strip_markdown_code_blocks(response_content)
+
         try:
             plan_data = json.loads(response_content.strip())
         except json.JSONDecodeError as exc:
@@ -216,6 +219,19 @@ class AgentOrchestrator:
         if not messages:
             return ""
         return "\n".join(f"{msg.role}: {msg.content}" for msg in messages)
+
+    def _strip_markdown_code_blocks(self, content: str) -> str:
+        """Remove markdown code blocks (```json ... ``` or ```...```)."""
+        if not content:
+            return content
+
+        # Pattern: ```json\n...\n``` or ```\n...\n```
+        # Remove opening fence
+        content = re.sub(r'^```(?:json)?\s*\n', '', content, flags=re.IGNORECASE)
+        # Remove closing fence
+        content = re.sub(r'\n```\s*$', '', content)
+
+        return content.strip()
 
     def _extract_plan_response_content(self, response) -> str:
         """Extract text content from LLM response (handles tool_calls, content, etc.)."""
@@ -559,17 +575,6 @@ class ThoughtActionGenerator:
                 # Construct the expected format
                 formatted = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
                 logger.info(f"[ReAct] Converted tool_call to format: {formatted}")
-
-                # INJECT: Copy formatted content to response.content for logging
-                if hasattr(response, 'content') and not response.content:
-                    logger.info(f"[ReAct] Injecting formatted content into response.content")
-                    try:
-                        # Some responses allow assignment
-                        response.content = formatted
-                    except:
-                        # If immutable, we can't inject - but formatted will still be logged
-                        logger.warning(f"[ReAct] Could not inject content (response is immutable)")
-
                 return formatted
         
         # Try direct content attribute
@@ -1174,44 +1179,15 @@ class ReActAgent:
         for idx, s in enumerate(self.steps):
             logger.info(f"[ReActAgent] Step {idx + 1}: action={s.action}, thought={s.thought[:50]}...")
 
-        # Build response with ReAct reasoning steps included
-        response_with_reasoning = self._format_response_with_steps(final_answer)
-        logger.info(f"[ReActAgent] Final response with reasoning ({len(response_with_reasoning)} chars)")
-
-        # Build Metadata
+        # Build Metadata (steps included here for debugging/analysis)
         metadata = {
             "agent_type": "react",
             "steps": [s.to_dict() for s in self.steps],
             "total_steps": len(self.steps)
         }
-        return response_with_reasoning, metadata
 
-    def _format_response_with_steps(self, final_answer: str) -> str:
-        """Format the response to include ReAct reasoning steps."""
-        if not self.steps:
-            logger.warning("[ReActAgent] No steps to format, returning final_answer only")
-            return final_answer or "No response generated."
-        
-        parts = ["## ReAct Reasoning Process\n"]
-        
-        for step in self.steps:
-            parts.append(f"### Step {step.step_num}")
-            parts.append(f"**THOUGHT:** {step.thought or 'N/A'}")
-            parts.append(f"**ACTION:** {step.action or 'N/A'}")
-            parts.append(f"**ACTION INPUT:** {step.action_input or 'N/A'}")
-            
-            # Truncate long observations for readability (handle None)
-            observation = step.observation or "No observation"
-            if len(observation) > 1000:
-                observation = observation[:1000] + "... [truncated]"
-            parts.append(f"**OBSERVATION:** {observation}")
-            parts.append("")  # Empty line between steps
-        
-        parts.append("---")
-        parts.append("## Final Answer\n")
-        parts.append(final_answer or "No final answer generated.")
-        
-        return "\n".join(parts)
+        # Return only final answer (not the full reasoning process)
+        return final_answer, metadata
 
     async def execute_with_plan(self, plan_steps: List[PlanStep], messages: List[ChatMessage], session_id: str, user_id: str, file_paths: List[str], max_iterations_per_step: int = 3) -> Tuple[str, List[StepResult]]:
         """Execute a pre-defined plan."""
