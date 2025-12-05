@@ -409,7 +409,7 @@ Decide if the latest observation fully answers the query.
 
     guidance_section = f"\n{file_guidance}\n" if file_guidance else ""
 
-    return f"""You are a focused ReAct agent. Think, pick ONE tool, supply its input. If you think the given observation is not enough to answer the query, you can pick another tool. If you have enough information, you can finish.
+    return f"""You are a focused ReAct agent. Think, pick ONE tool or FINISH, supply its input. If you think the given observation is not enough to answer the query, you can pick another tool. If you have enough information, you can finish.
 {guidance_section}
 
 ## Context
@@ -422,11 +422,6 @@ Decide if the latest observation fully answers the query.
 - vision_analyzer → answer image questions (only if images attached)
 - finish → only when you already have the final answer
 
-## Response Format: Strictly follow the format.
-THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
-ACTION: tool name
-ACTION INPUT: For python_coder, write complete Python code. For others, write the query/description.
-
 ## python_coder Example
 ACTION: python_coder
 ACTION INPUT:
@@ -434,6 +429,14 @@ import pandas as pd
 df = pd.read_csv('data.csv')
 print(df.head())
 print(f"Shape: df.shape")
+
+
+## IMPORTANT:
+## Response Format: Strictly follow the format.
+THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
+ACTION: tool name
+ACTION INPUT: For python_coder, write complete Python code. For others, write the query/description.
+
 
 ## Query
 {query}
@@ -963,9 +966,15 @@ class ThoughtActionGenerator:
         if not action:
             logger.warning(f"[ReAct] Could not extract ACTION from: {response[:300]}")
             raise ValueError("Could not parse ACTION from LLM response")
+
+        # ACTION INPUT is optional for "finish" action
         if not action_input:
-            logger.warning(f"[ReAct] Could not extract ACTION INPUT from: {response[:300]}")
-            raise ValueError("Could not parse ACTION INPUT from LLM response")
+            if action == 'finish':
+                logger.info("[ReAct] ACTION is 'finish', using empty ACTION INPUT")
+                action_input = ""  # Allow empty input for finish
+            else:
+                logger.warning(f"[ReAct] Could not extract ACTION INPUT from: {response[:300]}")
+                raise ValueError("Could not parse ACTION INPUT from LLM response")
         
         # Validate action is a known tool
         if action not in self.VALID_ACTIONS:
