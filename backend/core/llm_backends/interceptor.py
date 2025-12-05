@@ -295,14 +295,27 @@ class LLMInterceptor:
                         args = getattr(tool_call, 'args', {})
 
                     # Build action_input from args
+                    # Check if args contains plan/steps (JSON plan generation)
                     if isinstance(args, dict):
-                        if 'query' in args:
+                        # Plan generation: args contains 'plan', 'steps', etc.
+                        if 'plan' in args or 'steps' in args:
+                            plan_data = args.get('plan') or args.get('steps')
+                            if isinstance(plan_data, (list, dict)):
+                                response_content = json.dumps(plan_data, indent=2)
+                                logger.debug(f"[LLMInterceptor] Formatted tool_call as JSON plan")
+                            else:
+                                response_content = str(plan_data)
+                        # ReAct: args contains 'query'
+                        elif 'query' in args:
                             action_input = args['query']
+                            response_content = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
+                            logger.debug(f"[LLMInterceptor] Formatted tool_call as THOUGHT/ACTION/INPUT")
+                        # Generic: stringify all args
                         else:
                             action_input = ', '.join(f"{k}={v}" for k, v in args.items())
+                            response_content = f"THOUGHT: Using {action} tool.\nACTION: {action}\nACTION INPUT: {action_input}"
                     elif isinstance(args, str):
                         try:
-                            import json
                             parsed_args = json.loads(args)
                             if isinstance(parsed_args, dict) and 'query' in parsed_args:
                                 action_input = parsed_args['query']
@@ -310,12 +323,10 @@ class LLMInterceptor:
                                 action_input = args
                         except:
                             action_input = args
+                        response_content = f"THOUGHT: Using {action} tool.\nACTION: {action}\nACTION INPUT: {action_input}"
                     else:
                         action_input = str(args)
-
-                    # Format as THOUGHT/ACTION/ACTION INPUT
-                    response_content = f"THOUGHT: Using {action} tool to answer the query.\nACTION: {action}\nACTION INPUT: {action_input}"
-                    logger.debug(f"[LLMInterceptor] Formatted tool_call as content: {response_content[:100]}...")
+                        response_content = f"THOUGHT: Using {action} tool.\nACTION: {action}\nACTION INPUT: {action_input}"
                 else:
                     response_content = f"[tool_calls]: {tool_calls}"
 

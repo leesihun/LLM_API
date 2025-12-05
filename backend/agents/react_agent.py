@@ -186,9 +186,13 @@ class AgentOrchestrator:
 
         response = await llm.ainvoke([HumanMessage(content=planning_prompt)])
 
+        # Extract content using the same method as ReAct (handles tool_calls)
+        response_content = self._extract_plan_response_content(response)
+
         try:
-            plan_data = json.loads(response.content.strip())
+            plan_data = json.loads(response_content.strip())
         except json.JSONDecodeError as exc:
+            logger.error(f"[Planner] Failed to parse JSON from response: {response_content[:500]}")
             raise ValueError(f"Plan generation returned invalid JSON: {exc}") from exc
 
         if not isinstance(plan_data, list) or not plan_data:
@@ -212,6 +216,67 @@ class AgentOrchestrator:
         if not messages:
             return ""
         return "\n".join(f"{msg.role}: {msg.content}" for msg in messages)
+
+    def _extract_plan_response_content(self, response) -> str:
+        """Extract text content from LLM response (handles tool_calls, content, etc.)."""
+        # Direct content
+        if hasattr(response, 'content') and response.content:
+            return response.content
+
+        # Tool calls (Ollama tool calling) - extract JSON from args
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            tool_calls = response.tool_calls
+            logger.info(f"[Planner] Found tool_calls: {tool_calls}")
+
+            if isinstance(tool_calls, list) and len(tool_calls) > 0:
+                tool_call = tool_calls[0]
+
+                # Extract args
+                if isinstance(tool_call, dict):
+                    args = tool_call.get('args', {})
+                else:
+                    args = getattr(tool_call, 'args', {})
+
+                # If args contains a 'plan' or 'steps' field with JSON
+                if isinstance(args, dict):
+                    for key in ['plan', 'steps', 'response', 'output']:
+                        if key in args:
+                            value = args[key]
+                            # If it's already a list/dict, convert to JSON string
+                            if isinstance(value, (list, dict)):
+                                return json.dumps(value)
+                            # If it's a string, return as-is
+                            return str(value)
+
+                # Fallback: return entire args as JSON
+                if isinstance(args, (list, dict)):
+                    return json.dumps(args)
+                return str(args)
+
+        # Text attribute
+        if hasattr(response, 'text') and response.text:
+            return response.text
+
+        # Additional kwargs
+        if hasattr(response, 'additional_kwargs') and response.additional_kwargs:
+            kwargs = response.additional_kwargs
+            for key in ['content', 'text', 'message', 'response', 'output']:
+                if key in kwargs and kwargs[key]:
+                    return str(kwargs[key])
+
+        # Response metadata
+        if hasattr(response, 'response_metadata') and response.response_metadata:
+            meta = response.response_metadata
+            if isinstance(meta, dict):
+                if 'message' in meta and isinstance(meta['message'], dict):
+                    if 'content' in meta['message'] and meta['message']['content']:
+                        return meta['message']['content']
+                if 'content' in meta and meta['content']:
+                    return meta['content']
+
+        # Fallback
+        logger.error(f"[Planner] Could not extract content from response!")
+        return str(response)
 
 
 def _build_thought_action_prompt(
