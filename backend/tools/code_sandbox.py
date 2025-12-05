@@ -196,17 +196,27 @@ class CodeSandbox:
             return {"success": False, "error": f"Execution error: {str(e)}"}
 
     def _prepare_files(self, exec_dir: Path, input_files: Optional[Dict[str, str]]):
-        if not input_files: return
-        for original_path_str, filename in input_files.items():
+        """
+        Copy input files to execution directory.
+
+        Args:
+            exec_dir: Execution directory
+            input_files: Dict mapping temp file paths to original filenames
+        """
+        if not input_files:
+            return
+        for temp_path_str, original_filename in input_files.items():
             try:
-                src = Path(original_path_str)
-                dst = exec_dir / filename
+                src = Path(temp_path_str)
+                # Use original filename as destination
+                dst = exec_dir / original_filename
                 if src.exists():
-                    # Copy file if not already there
+                    # Copy file if not already there or source is newer
                     if not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime:
                         shutil.copy2(src, dst)
+                        logger.debug(f"Copied {src.name} -> {original_filename}")
             except Exception as e:
-                logger.warning(f"Failed to copy input file {filename}: {e}")
+                logger.warning(f"Failed to copy input file {original_filename}: {e}")
 
     def _capture_variables(self, exec_dir: Path, code: str) -> Dict[str, Any]:
         """Run introspection script to capture variables."""

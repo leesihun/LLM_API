@@ -104,6 +104,35 @@ def save_chat_messages(
 # ---------------------------------------------------------------------------
 
 
+def extract_original_filename(temp_file_path: str) -> str:
+    """
+    Extract original filename from temp file path.
+
+    Temp files MUST be named: temp_{uuid}_{original_filename}
+    Example: temp_a1b2c3d4_data.csv -> data.csv
+
+    Args:
+        temp_file_path: Path to temp file (can be absolute or just filename)
+
+    Returns:
+        Original filename without the temp prefix
+
+    Raises:
+        ValueError: If filename doesn't match expected temp_ pattern
+    """
+    filename = Path(temp_file_path).name
+
+    # Match pattern: temp_{8_hex_chars}_{original_name}
+    if not filename.startswith("temp_"):
+        raise ValueError(f"Invalid temp file format: {filename}. Expected format: temp_{{uuid}}_{{original_filename}}")
+
+    parts = filename.split("_", 2)  # Split into max 3 parts: ["temp", "{uuid}", "{original}"]
+    if len(parts) < 3:
+        raise ValueError(f"Invalid temp file format: {filename}. Expected format: temp_{{uuid}}_{{original_filename}}")
+
+    return parts[2]  # Return everything after "temp_{uuid}_"
+
+
 async def handle_file_uploads(
     user_id: str,
     files: Optional[List[UploadFile]],
@@ -286,6 +315,7 @@ __all__ = [
     "save_chat_messages",
     "handle_file_uploads",
     "cleanup_temp_files",
+    "extract_original_filename",
     "list_session_artifacts",
     "download_session_artifact",
 ]

@@ -37,6 +37,7 @@ class ToolName(str, Enum):
     PYTHON_CODER = "python_coder"
     FILE_ANALYZER = "file_analyzer"
     VISION_ANALYZER = "vision_analyzer"
+    NO_TOOLS = "no_tools"
     FINISH = "finish"
 
 
@@ -83,16 +84,16 @@ NATIVE_TOOLS = [
         "type": "function",
         "function": {
             "name": "python_coder",
-            "description": "Execute Python code. Use for calculations, data analysis, file processing, and creating visualizations.",
+            "description": "Generate and execute Python code based on a task description. Use for calculations, data analysis, file processing, and creating visualizations.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "code": {
+                    "task": {
                         "type": "string",
-                        "description": "Complete Python code to execute. Must be valid, runnable Python."
+                        "description": "Clear description of what you want the code to accomplish. The system will generate and execute the appropriate Python code."
                     }
                 },
-                "required": ["code"]
+                "required": ["task"]
             }
         }
     },
@@ -110,6 +111,23 @@ NATIVE_TOOLS = [
                     }
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "no_tools",
+            "description": "Think and reason without using any external tools. Use this when no suitable tool is available or when you need to synthesize information from previous steps.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Your reasoning or analysis of the current situation"
+                    }
+                },
+                "required": ["reasoning"]
             }
         }
     },
@@ -418,24 +436,21 @@ Decide if the latest observation fully answers the query.
 ## Tools
 - web_search → realtime or complex or specific info
 - rag_retrieval → very specific infomation.... Choose only when specifically asked
-- python_coder → execute Python code. **ACTION INPUT must be valid Python code (not description)**
+- python_coder → generate and execute Python code based on task description
 - vision_analyzer → answer image questions (only if images attached)
+- no_tools → think and reason without external tools (use when no tool fits or need to synthesize)
 - finish → only when you already have the final answer
 
 ## python_coder Example
 ACTION: python_coder
-ACTION INPUT:
-import pandas as pd
-df = pd.read_csv('data.csv')
-print(df.head())
-print(f"Shape: df.shape")
+ACTION INPUT: Load the CSV file and print its shape, column names, and first 5 rows
 
 
 ## IMPORTANT:
 ## Response Format: Strictly follow the format.
 THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
 ACTION: tool name
-ACTION INPUT: For python_coder, write complete Python code. For others, write the query/description.
+ACTION INPUT: For web_search and rag_retrieval, write the search query. For python_coder, write a clear task description (what you want the code to do). For vision_analyzer, write the question. For no_tools, write your reasoning.
 
 
 ## Query
@@ -617,7 +632,7 @@ class ThoughtActionGenerator:
                 
                 # Build action_input based on tool type
                 if action == 'python_coder':
-                    action_input = args.get('code', '')
+                    action_input = args.get('task', args.get('query', ''))
                 elif action == 'finish':
                     action_input = args.get('answer', '')
                 else:
@@ -985,8 +1000,18 @@ class ThoughtActionGenerator:
         return thought, action, action_input
 
     def _build_file_guidance(self) -> str:
-        if not self.file_paths: return ""
-        return "\nGuidelines:\n- Files available. Attempt local analysis (python_coder) first.\n- Use web_search only if local analysis fails."
+        """Build file guidance showing original filenames (without temp prefix)."""
+        if not self.file_paths:
+            return ""
+
+        # Import here to avoid circular dependency
+        from backend.runtime import extract_original_filename
+
+        # Extract original filenames
+        original_names = [extract_original_filename(fp) for fp in self.file_paths]
+        filenames_list = ", ".join(original_names)
+
+        return f"\nGuidelines:\n- Files available: {filenames_list}\n- Attempt local analysis (python_coder) first.\n- Use web_search only if local analysis fails."
 
 
 class AnswerGenerator:
@@ -1073,8 +1098,8 @@ class ToolExecutor:
         self.user_id = user_id
 
     async def execute(
-        self, action: str, action_input: str, 
-        file_paths: Optional[List[str]] = None, 
+        self, action: str, action_input: str,
+        file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
         steps: Optional[List[ReActStep]] = None,
         plan_context: Optional[dict] = None
@@ -1090,6 +1115,8 @@ class ToolExecutor:
                 return await self._execute_file_analysis(action_input, file_paths)
             elif action == ToolName.VISION_ANALYZER:
                 return await self._execute_vision(action_input, file_paths)
+            elif action == ToolName.NO_TOOLS:
+                return await self._execute_no_tools(action_input, steps)
             return "Invalid action."
         except Exception as e:
             logger.error(f"Tool execution error ({action}): {e}")
@@ -1103,25 +1130,63 @@ class ToolExecutor:
         results = await rag_retriever_tool.retrieve(query, top_k=5)
         return rag_retriever_tool.format_results(results) or "No relevant documents found."
 
-    async def _execute_python(self, code: str, file_paths: List[str], session_id: str, steps: List[ReActStep], plan_context: dict) -> str:
-        """Execute Python code directly in sandbox."""
+    async def _execute_python(self, task_description: str, file_paths: List[str], session_id: str, steps: List[ReActStep], plan_context: dict) -> str:
+        """Execute Python code task with LLM-based code generation."""
         current_step_num = len(steps) + 1 if steps else 1
 
-        result = await python_coder_tool.execute_code(
-            code=code,
+        # Build conversation history from session
+        conversation_history = None
+        if session_id:
+            from backend.storage.conversation_store import conversation_store
+            messages = conversation_store.get_messages(session_id, limit=10)
+            conversation_history = [{"role": msg.role, "content": msg.content} for msg in messages]
+
+        # Build react context from previous steps
+        react_context = None
+        if steps:
+            react_context = {
+                "previous_steps": [
+                    {
+                        "step": s.step_num,
+                        "action": s.action,
+                        "observation": s.observation[:500] if s.observation else ""
+                    }
+                    for s in steps[-3:]  # Last 3 steps
+                ],
+                "total_steps": len(steps)
+            }
+
+        # Call the updated python_coder tool with task description
+        tool_result = await python_coder_tool.execute(
+            query=task_description,
+            context=None,
             file_paths=file_paths,
             session_id=session_id,
-            stage_prefix=f"step{current_step_num}"
+            stage_prefix=f"step{current_step_num}",
+            conversation_history=conversation_history,
+            plan_context=plan_context,
+            react_context=react_context
         )
-        
-        if result["success"]:
+
+        # Format observation from ToolResult
+        if tool_result.success:
+            result = tool_result.output
             output = result.get('output', '')
             created_files = result.get('created_files', [])
-            response = f"Code executed successfully:\n{output}"
+            attempts = result.get('attempts', 1)
+
+            response = f"Code generation and execution successful (attempt {attempts}/{settings.python_code_max_iterations}):\n{output}"
             if created_files:
-                response += f"\nCreated files: {', '.join(created_files)}"
+                response += f"\n\nCreated files: {', '.join(created_files)}"
             return response
-        return f"Code execution failed: {result.get('error', 'Unknown error')}"
+        else:
+            error_msg = tool_result.error or "Unknown error"
+            attempt_history = tool_result.metadata.get('attempt_history', [])
+
+            response = f"Code generation/execution failed: {error_msg}"
+            if attempt_history:
+                response += f"\n\nAttempted {len(attempt_history)} time(s). Last attempt error: {attempt_history[-1].get('error', 'Unknown')}"
+            return response
 
     async def _execute_file_analysis(self, query: str, file_paths: List[str]) -> str:
         if not file_paths: return "No files attached."
@@ -1132,6 +1197,22 @@ class ToolExecutor:
         if not file_paths: return "No files attached."
         result = await vision_analyzer_tool(query=query, file_paths=file_paths, user_id=self.user_id)
         return result.get('analysis') if result.get('success') else f"Vision failed: {result.get('error')}"
+
+    async def _execute_no_tools(self, reasoning: str, steps: Optional[List[ReActStep]] = None) -> str:
+        """
+        Execute no_tools action - just return the LLM's reasoning without using external tools.
+        This allows the agent to think and synthesize information from previous steps.
+        """
+        logger.info(f"[NO_TOOLS] LLM reasoning: {reasoning[:200]}...")
+
+        # Format the observation to show this was a thinking step
+        observation = f"Reasoning: {reasoning}"
+
+        # Optionally, you could enhance this with context from previous steps
+        if steps and len(steps) > 0:
+            observation += f"\n(Based on {len(steps)} previous step(s))"
+
+        return observation
 
 
 
@@ -1179,7 +1260,14 @@ class PlanExecutor:
         
         tool_name = plan_step.primary_tools[0] if plan_step.primary_tools else "web_search"
         # Map common names to enum
-        tool_map = {"python_code": ToolName.PYTHON_CODER, "python_coder": ToolName.PYTHON_CODER, "web_search": ToolName.WEB_SEARCH}
+        tool_map = {
+            "python_code": ToolName.PYTHON_CODER,
+            "python_coder": ToolName.PYTHON_CODER,
+            "web_search": ToolName.WEB_SEARCH,
+            "rag_retrieval": ToolName.RAG_RETRIEVAL,
+            "vision_analyzer": ToolName.VISION_ANALYZER,
+            "no_tools": ToolName.NO_TOOLS
+        }
         tool_enum = tool_map.get(tool_name, ToolName.WEB_SEARCH)
 
         max_retries = settings.react_step_max_retries

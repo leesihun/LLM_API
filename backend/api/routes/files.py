@@ -45,9 +45,9 @@ async def upload_files(
 
     for file in files:
         try:
-            # Generate unique filename
+            # Generate unique filename with temp_ prefix (consistent with chat uploads)
             file_id = uuid.uuid4().hex[:8]
-            filename = f"{file_id}_{file.filename}"
+            filename = f"temp_{file_id}_{file.filename}"
             file_path = uploads_path / filename
 
             # Save file
