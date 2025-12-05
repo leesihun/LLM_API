@@ -7,6 +7,7 @@ Coordinates generation, execution (via CodeSandbox), and error handling.
 
 import json
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
@@ -120,6 +121,31 @@ class PythonCoderTool(BaseTool):
         )
         self.max_retries = settings.python_code_max_iterations
 
+        # Create a coder LLM with extended timeout
+        from backend.utils.llm_factory import LLMFactory
+
+        logger.info("[PythonCoder] Initializing coder LLM with extended timeout (300s)...")
+        try:
+            self.llm = LLMFactory.create_coder_llm(
+                timeout=300000,  # 5 minutes timeout for code generation
+                user_id="python_coder"
+            )
+
+            # Verify Ollama connection if using Ollama backend
+            if settings.llm_backend == 'ollama':
+                if not LLMFactory.check_connection(timeout=10000):
+                    logger.warning(
+                        "[PythonCoder] Ollama connection check failed. "
+                        "Ensure Ollama is running: 'ollama serve'"
+                    )
+        except Exception as e:
+            logger.error(f"[PythonCoder] Failed to initialize LLM: {e}")
+            # Continue anyway - will retry on actual use
+            self.llm = LLMFactory.create_coder_llm(
+                timeout=300000,
+                user_id="python_coder"
+            )
+
     def validate_inputs(self, **kwargs) -> bool:
         """Validate Python coder inputs."""
         query = kwargs.get("query", "")
@@ -185,7 +211,8 @@ class PythonCoderTool(BaseTool):
         """
         Execute a code task with retries.
         """
-        self.llm = self.llm_manager.llm # Ensure current LLM
+        # Use pre-configured LLM with extended timeout
+        # Note: self.llm is already initialized in __init__ with proper timeout
         
         # Prepare files
         input_files = {}
@@ -214,13 +241,45 @@ class PythonCoderTool(BaseTool):
                 plan_context=plan_context,
                 react_context=react_context
             )
-            
+
             # Add retry context
             if attempt > 0:
                 prev_error = attempt_history[-1]["error"]
                 prompt += f"\n\nPREVIOUS ATTEMPT FAILED. Error:\n{prev_error}\n\nFIX THE CODE."
 
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            # Retry LLM invocation with exponential backoff for connection errors
+            max_llm_retries = 3
+            response = None
+            last_error = None
+
+            for llm_retry in range(max_llm_retries):
+                try:
+                    response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+                    break  # Success
+                except Exception as e:
+                    last_error = e
+                    error_msg = str(e).lower()
+
+                    # Check if it's a connection error
+                    if any(keyword in error_msg for keyword in [
+                        'connection', 'timeout', 'refused', 'unreachable',
+                        'network', 'http', 'socket'
+                    ]):
+                        wait_time = 2 ** llm_retry  # Exponential backoff: 1s, 2s, 4s
+                        logger.warning(
+                            f"[PythonCoder] LLM connection error (retry {llm_retry + 1}/{max_llm_retries}): {e}. "
+                            f"Retrying in {wait_time}s..."
+                        )
+                        if llm_retry < max_llm_retries - 1:
+                            await asyncio.sleep(wait_time)
+                    else:
+                        # Non-connection error, re-raise immediately
+                        raise
+
+            # If all retries failed, raise the last error
+            if response is None:
+                logger.error(f"[PythonCoder] All LLM connection attempts failed: {last_error}")
+                raise Exception(f"Failed to connect to LLM after {max_llm_retries} attempts: {last_error}")
             
             # Parse response
             try:

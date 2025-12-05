@@ -36,9 +36,9 @@ class Settings(BaseSettings):
 
     # Ollama service endpoint
     ollama_host: str = 'http://127.0.0.1:11434'
-    ollama_model: str = 'gpt-oss:20b'  # Available: gpt-oss:20b, deepseek-r1:1.5b, llama3.2-vision:11b
-    agentic_classifier_model: str = 'gpt-oss:20b'
-    ollama_coder_model: str = 'gpt-oss:20b'
+    ollama_model: str = 'gpt-oss:20b'  # Available: gpt-oss:20b (13GB), deepseek-r1:1.5b (1.1GB), llama3.2-vision:11b (7.8GB)
+    agentic_classifier_model: str = 'gpt-oss:20b'  # Use lightweight model for classification
+    ollama_coder_model: str = 'gpt-oss:20b'  # Use lightweight model for code generation
     ollama_vision_model: str = 'llama3.2-vision:11b'  # Vision model for image analysis
     ollama_timeout: int = 3000000
     ollama_num_ctx: int = 2048  # Optimized for faster processing (reduced from 4096)
