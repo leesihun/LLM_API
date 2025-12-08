@@ -86,7 +86,7 @@ class Settings(BaseSettings):
 
     react_max_iterations: int = 6  # Maximum iterations for ReAct loop (optimized from 10)
     react_step_max_retries: int = 3  # Maximum retries per step in plan execution (optimized from 5)
-    python_code_max_iterations: int = 3  # Maximum code execution attempts (optimized from 5)
+    python_code_max_iterations: int = 1  # Single-shot code execution; iteration handled by agent
     
     # Tool calling mode: 'react' (text-based prompting) or 'native' (Ollama/OpenAI function calling)
     # - 'react': Works with all backends (Ollama, llama.cpp), uses THOUGHT/ACTION/OBSERVATION format
@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     # ============================================================================
 
     # Available tools
-    available_tools: list[str] = ['web_search', 'rag', 'python_coder', 'vision_analyzer']
+    available_tools: list[str] = ['web_search', 'rag', 'python_coder', 'vision_analyzer', 'shell']
 
     # ============================================================================
     # Python Code Execution - Sandbox Configuration
@@ -173,6 +173,13 @@ class Settings(BaseSettings):
         'matplotlib.pyplot as plt',
         'matplotlib',  # For matplotlib.use('Agg') configuration
     ]
+
+    # ============================================================================
+    # Shell Tool - Safe command execution for navigation and inspection
+    # ============================================================================
+    shell_tool_enabled: bool = True
+    shell_tool_timeout: int = 30  # seconds
+    shell_windows_mode: bool = True  # If True on Windows, map to native commands (dir/cd/type/findstr)
 
     model_config = SettingsConfigDict(
         # Allow environment variables to override defaults (12-factor app compliant)

@@ -143,7 +143,11 @@ server_port = 1007
 
 # Agent Configuration
 react_max_iterations = 6
-python_code_max_iterations = 3
+python_code_max_iterations = 1
+
+# Shell Tool
+shell_tool_enabled = True
+shell_tool_timeout = 30  # seconds
 ```
 
 ### Run the Server
@@ -160,6 +164,16 @@ Server will be available at:
 - **API**: `http://localhost:1007`
 - **Swagger UI**: `http://localhost:1007/docs`
 - **ReDoc**: `http://localhost:1007/redoc`
+
+---
+
+## Updates (2025-12-08)
+- Added `FileAnalyzerTool` wrapper (v1.1.0) with BaseTool integration and async execute support; fixes `backend.tools` exports and keeps `quick_mode` for agents.
+- Improved `shell_tool` Windows compatibility (auto-maps `ls`→`dir`, `pwd`→`cd` when `shell_windows_mode` is enabled in settings).
+
+## Updates (2025-12-07)
+- Added `shell_tool` (v0.1.0) for safe in-sandbox navigation and inspection commands.
+- Switched `python_coder_tool` to single-shot execution by default (`python_code_max_iterations = 1`) to let the agent drive retries.
 
 ---
 
@@ -244,6 +258,7 @@ AgentOrchestrator (Auto-routing)
     │       ↓
     │   ├── web_search_tool
     │   ├── python_coder_tool
+    │   ├── shell_tool
     │   ├── rag_retriever_tool
     │   ├── file_analyzer
     │   └── vision_analyzer_tool
@@ -268,6 +283,7 @@ AgentOrchestrator (Auto-routing)
 **Tool System** (`backend/tools/`)
 - `BaseTool`: Abstract base class for all tools
 - `python_coder_tool`: Autonomous code generation and execution
+- `shell_tool`: Safe shell navigation and file inspection within sandbox
 - `web_search_tool`: Tavily API integration
 - `rag_retriever_tool`: FAISS-based retrieval
 - `file_analyzer`: File metadata extraction
@@ -820,17 +836,46 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version: 2.2.0
+### Current Version: 2.3.1
 
 **Completed:**
 - ✅ Dual backend support (Ollama + llama.cpp)
 - ✅ ReAct agent with tool orchestration
-- ✅ Direct Python code execution (modern tool calling pattern)
+- ✅ **Python Coder Tool with Sandbox** (LLM-powered code generation + secure execution)
 - ✅ **Dual tool calling modes** (ReAct prompting + Native function calling)
 - ✅ File handling for multiple formats
 - ✅ Vision analysis capabilities
 - ✅ OpenAI-compatible API
 - ✅ JWT authentication
+
+**v2.3.1 Changes:**
+- 🔧 **File Analyzer Tool Export Fix**
+  - Added BaseTool-compatible `FileAnalyzerTool` wrapper around the rich analyzer implementation
+  - Preserves `quick_mode` flag for agent pre-analysis
+  - Fixes `backend.tools.__init__` imports and async `execute` entrypoint
+
+**v2.3.0 Changes:**
+- 🚀 **Complete Python Coder Tool Rewrite**
+  - New `code_sandbox.py`: Secure Python execution environment
+    - AST-based code validation (blocks dangerous imports/calls)
+    - Session-based isolation with variable persistence
+    - Pre-loaded common libraries (pandas, numpy, matplotlib)
+    - Timeout and memory controls
+    - File system restrictions to working directory
+  - New `python_coder.py`: LLM-powered code generation tool
+    - Generates Python code from task descriptions using coder LLM
+    - Automatic error detection and iterative fixing (up to N attempts)
+    - Observation generation for agent integration
+    - File context awareness (CSV, Excel, JSON analysis)
+    - Session persistence for variables and files
+- 🔧 **Security Enhancements**
+  - Blocked dangerous imports: subprocess, pickle, eval, exec, socket, etc.
+  - AST validation before execution
+  - Working directory sandboxing
+- 🔧 **Tool Integration**
+  - Updated `backend/tools/__init__.py` with new exports
+  - Singleton `python_coder_tool` for agent integration
+  - `SandboxManager` for session-based sandbox pooling
 
 **v2.2.0 Changes:**
 - 🚀 **Dual Tool Calling Mode Support**
@@ -915,5 +960,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by HE Team**
 
-**Version:** 2.2.0
-**Last Updated:** 2025-12-05
+**Version:** 2.3.1
+**Last Updated:** 2025-12-08

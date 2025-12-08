@@ -18,6 +18,7 @@ from backend.storage.conversation_store import conversation_store
 from backend.tools.web_search import web_search_tool
 from backend.tools.rag_retriever import rag_retriever_tool
 from backend.tools.python_coder import python_coder_tool
+from backend.tools.shell_tool import shell_tool
 from backend.tools.file_analyzer import file_analyzer
 from backend.tools.vision_analyzer import vision_analyzer_tool
 
@@ -35,6 +36,7 @@ class ToolName(str, Enum):
     WEB_SEARCH = "web_search"
     RAG_RETRIEVAL = "rag_retrieval"
     PYTHON_CODER = "python_coder"
+    SHELL = "shell"
     FILE_ANALYZER = "file_analyzer"
     VISION_ANALYZER = "vision_analyzer"
     NO_TOOLS = "no_tools"
@@ -111,6 +113,23 @@ NATIVE_TOOLS = [
                     }
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shell",
+            "description": "Run safe shell commands (ls/dir, pwd, cd, cat/head/tail, find, grep, wc, echo) inside the sandbox working directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to run for navigation or inspection"
+                    }
+                },
+                "required": ["command"]
             }
         }
     },
@@ -437,6 +456,7 @@ Decide if the latest observation fully answers the query.
 - web_search → realtime or complex or specific info
 - rag_retrieval → very specific infomation.... Choose only when specifically asked
 - python_coder → generate and execute Python code based on task description
+- shell → run safe shell commands (ls/dir/pwd/cd/cat/head/tail/find/grep/wc/echo) inside the sandbox
 - vision_analyzer → answer image questions (only if images attached)
 - no_tools → think and reason without external tools (use when no tool fits or need to synthesize)
 - finish → only when you already have the final answer
@@ -444,6 +464,10 @@ Decide if the latest observation fully answers the query.
 ## python_coder Example
 ACTION: python_coder
 ACTION INPUT: Load the CSV file and print its shape, column names, and first 5 rows
+
+## shell Example
+ACTION: shell
+ACTION INPUT: ls
 
 
 ## IMPORTANT:
@@ -1111,6 +1135,8 @@ class ToolExecutor:
                 return await self._execute_rag(action_input)
             elif action == ToolName.PYTHON_CODER:
                 return await self._execute_python(action_input, file_paths, session_id, steps, plan_context)
+            elif action == ToolName.SHELL:
+                return await self._execute_shell(action_input, session_id)
             elif action == ToolName.FILE_ANALYZER:
                 return await self._execute_file_analysis(action_input, file_paths)
             elif action == ToolName.VISION_ANALYZER:
@@ -1187,6 +1213,16 @@ class ToolExecutor:
             if attempt_history:
                 response += f"\n\nAttempted {len(attempt_history)} time(s). Last attempt error: {attempt_history[-1].get('error', 'Unknown')}"
             return response
+
+    async def _execute_shell(self, command: str, session_id: Optional[str]) -> str:
+        """Execute safe shell command inside the sandbox working directory."""
+        if isinstance(command, dict):
+            command = command.get("command") or command.get("query") or ""
+
+        tool_result = await shell_tool.execute(command, session_id=session_id)
+        if tool_result.success:
+            return tool_result.output or "(no output)"
+        return f"Shell command failed: {tool_result.error or 'Unknown error'}"
 
     async def _execute_file_analysis(self, query: str, file_paths: List[str]) -> str:
         if not file_paths: return "No files attached."
@@ -1266,6 +1302,7 @@ class PlanExecutor:
             "web_search": ToolName.WEB_SEARCH,
             "rag_retrieval": ToolName.RAG_RETRIEVAL,
             "vision_analyzer": ToolName.VISION_ANALYZER,
+            "shell": ToolName.SHELL,
             "no_tools": ToolName.NO_TOOLS
         }
         tool_enum = tool_map.get(tool_name, ToolName.WEB_SEARCH)
@@ -1392,9 +1429,36 @@ class ReActAgent:
         user_query = messages[-1].content
         self.steps = []
         final_answer = ""
-        
+
         logger.info(f"[ReActAgent] Starting execute for query: {user_query[:100]}...")
-        
+
+        # Step 0: Automatically run file_analyzer if files are attached
+        if file_paths and len(file_paths) > 0:
+            logger.info(f"[ReActAgent] Step 0: Running file_analyzer for {len(file_paths)} file(s)")
+            step0 = ReActStep(0)
+            step0.thought = "Files are attached. I need to analyze their structure and content first."
+            step0.action = ToolName.FILE_ANALYZER
+            step0.action_input = f"Analyze the attached files to understand their structure and content"
+
+            try:
+                # Run file analyzer
+                analysis_result = file_analyzer.analyze(file_paths=file_paths, user_query=user_query, quick_mode=False)
+
+                if analysis_result.get('success'):
+                    # Use the LLM-friendly context for the observation
+                    step0.observation = analysis_result.get('llm_context', analysis_result.get('summary', 'File analysis completed'))
+                    logger.info(f"[ReActAgent] Step 0 completed: {len(step0.observation)} chars of file analysis")
+                else:
+                    step0.observation = f"File analysis failed: {analysis_result.get('error', 'Unknown error')}"
+                    logger.warning(f"[ReActAgent] Step 0 failed: {step0.observation}")
+
+                self.steps.append(step0)
+
+            except Exception as e:
+                logger.error(f"[ReActAgent] Step 0 error: {e}")
+                step0.observation = f"File analysis error: {str(e)}"
+                self.steps.append(step0)
+
         # Standard ReAct Loop
         for i in range(self.max_iterations):
             step = ReActStep(i + 1)
