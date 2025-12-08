@@ -237,7 +237,7 @@ class AgentOrchestrator:
         file_paths: Optional[List[str]] = None,
         agent_type: str = "auto",
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        resolved_type = self._resolve_agent_type(agent_type, messages, file_paths)
+        resolved_type = await self._resolve_agent_type(agent_type, messages, file_paths, user_id)
 
         if resolved_type == AgentType.CHAT:
             response = await self.chat_agent.run(messages, session_id, user_id)
@@ -257,28 +257,63 @@ class AgentOrchestrator:
         metadata = self.react_agent.plan_executor._build_metadata(plan_steps, step_results)
         return final_answer, metadata
 
-    def _resolve_agent_type(
+    async def _resolve_agent_type(
         self,
         agent_type: str,
         messages: List[ChatMessage],
         file_paths: Optional[List[str]],
+        user_id: str,
     ) -> AgentType:
         try:
             requested = AgentType(agent_type)
         except ValueError:
             requested = AgentType.AUTO
 
-        if requested == AgentType.AUTO:
-            if file_paths:
-                return AgentType.REACT
-            last_message = messages[-1].content if messages else ""
-            if len(last_message) > 120 or any(
-                keyword in last_message.lower() for keyword in ("analyze", "search", "report")
-            ):
-                return AgentType.REACT
-            return AgentType.CHAT
+        if requested != AgentType.AUTO:
+            return requested
 
-        return requested
+        return await self._llm_route_agent(messages, file_paths, user_id)
+
+    async def _llm_route_agent(
+        self,
+        messages: List[ChatMessage],
+        file_paths: Optional[List[str]],
+        user_id: str,
+    ) -> AgentType:
+        """Use the LLM to choose chat vs react vs plan_execute when in AUTO."""
+        user_query = messages[-1].content if messages else ""
+        has_files = bool(file_paths)
+        serialized_query = json.dumps(user_query)
+
+        routing_prompt = (
+            "You are an agent router. Choose exactly one execution mode.\n"
+            "- chat: direct, single-step answer with no external tools.\n"
+            "- react: needs tool use (web search, python code, shell, file/vision analysis) "
+            "or ad-hoc multi-hop reasoning without a pre-plan.\n"
+            "- plan_execute: task requires a structured multi-step plan (reports, multi-file edits, "
+            "pipelines, research + synthesis) before tool execution.\n"
+            "Respond ONLY with JSON: {\"agent_type\": \"chat|react|plan_execute\"}.\n"
+            f"Has_files: {has_files}\n"
+            f"User_request: {serialized_query}\n"
+        )
+
+        self.react_agent.llm_manager.ensure_user_id(user_id)
+        llm = self.react_agent.llm_manager.llm
+        response = await llm.ainvoke([HumanMessage(content=routing_prompt)])
+
+        content = getattr(response, "content", "") or ""
+        content = self._strip_markdown_code_blocks(content)
+
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Routing LLM returned invalid JSON: {content}") from exc
+
+        agent_value = parsed.get("agent_type")
+        if agent_value not in {AgentType.CHAT.value, AgentType.REACT.value, AgentType.PLAN_EXECUTE.value}:
+            raise ValueError(f"Routing LLM returned unsupported agent_type: {agent_value}")
+
+        return AgentType(agent_value)
 
     async def _create_plan(
         self,
@@ -1227,9 +1262,19 @@ class ToolExecutor:
         return f"Shell command failed: {tool_result.error or 'Unknown error'}"
 
     async def _execute_file_analysis(self, query: str, file_paths: List[str]) -> str:
-        if not file_paths: return "No files attached."
+        if not file_paths:
+            return "No files attached."
+
         result = file_analyzer.analyze(file_paths=file_paths, user_query=query)
-        return result.get('summary') if result.get('success') else f"Analysis failed: {result.get('error')}"
+        if not result.get("success"):
+            return f"Analysis failed: {result.get('error')}"
+
+        summary = result.get("summary") or ""
+        access_help = self._build_file_access_help(result, file_paths)
+        llm_context = result.get("llm_context") or result.get("context") or ""
+
+        sections = [section for section in (summary, access_help, llm_context) if section]
+        return "\n\n".join(sections) if sections else "File analysis completed but no details were returned."
 
     async def _execute_vision(self, query: str, file_paths: List[str]) -> str:
         if not file_paths: return "No files attached."
@@ -1251,6 +1296,59 @@ class ToolExecutor:
             observation += f"\n(Based on {len(steps)} previous step(s))"
 
         return observation
+
+    def _build_file_access_help(self, result: Dict[str, Any], file_paths: List[str]) -> str:
+        """
+        Provide concrete guidance on how to read the analyzed files.
+        Uses whichever structure the analyzer returns (analyses/results).
+        """
+        analyses = result.get("analyses") or result.get("results") or []
+        if not analyses:
+            return ""
+
+        lines = [
+            "How to access the attached files:",
+            "- Files are already present in the sandbox; read them by path without downloading again.",
+        ]
+
+        for item in analyses:
+            if not isinstance(item, dict) or not item.get("success", True):
+                continue
+
+            metadata = item.get("metadata") or {}
+            path = item.get("file_path") or item.get("full_path") or metadata.get("file_path")
+            name = item.get("original_name") or item.get("file") or path or "file"
+            file_type = (metadata.get("file_type")
+                         or item.get("format")
+                         or item.get("extension")
+                         or "file").lower()
+
+            hint = self._reader_hint(file_type)
+            target = path or name
+            lines.append(f"- {target}: {hint}")
+
+        return "\n".join(lines)
+
+    def _reader_hint(self, file_type: str) -> str:
+        """Return a short, direct instruction for loading the file type."""
+        ft = file_type.lower()
+        if ft in ("csv",):
+            return "load with pandas.read_csv(path) and remember to set encoding if needed."
+        if ft in ("excel", "xls", "xlsx"):
+            return "use pandas.read_excel(path); specify sheet_name when multiple sheets exist."
+        if ft == "json":
+            return "open with json.load(open(path, 'r', encoding='utf-8')) or pandas.read_json(path) for records."
+        if ft in ("parquet",):
+            return "read via pandas.read_parquet(path)."
+        if ft in ("pdf",):
+            return "extract text with pdfplumber or PyPDF2 using the provided path."
+        if ft in ("docx", "word"):
+            return "load with python-docx (Document(path)) to read paragraphs and tables."
+        if ft in ("image", "png", "jpg", "jpeg", "gif", "webp"):
+            return "open with PIL.Image.open(path) or cv2.imread(path)."
+        if ft in ("text", "txt", "md"):
+            return "read with open(path, 'r', encoding='utf-8') for plain text."
+        return "use standard file IO (open(path, 'rb' or 'r')) appropriate to the format."
 
 
 
