@@ -282,6 +282,31 @@ class FileAnalyzer:
                 f"with open('{original_name}', 'r', encoding='utf-8') as f: "
                 f"data = json.load(f)`"
             )
+            structure = metadata.get('structure')
+            if structure == 'list':
+                lines.append(
+                    "  - Inspect the root value before processing: "
+                    "`if isinstance(data, list): ...`"
+                )
+                lines.append(
+                    "  - If it is a list of dicts, you can tabularize: "
+                    "`df = pd.DataFrame(data)`"
+                )
+            elif structure == 'dict':
+                top_keys = metadata.get('top_level_keys') or []
+                preview_keys = ", ".join(str(k) for k in top_keys[:5])
+                suffix = "" if len(top_keys) <= 5 else f" ... (+{len(top_keys) - 5} more)"
+                if preview_keys:
+                    lines.append(f"  - Top-level keys: {preview_keys}{suffix}")
+                lines.append(
+                    "  - Access values with type checks: "
+                    "`val = data['key']; "
+                    "assert isinstance(val, (str, int, float, list, dict))`"
+                )
+            lines.append(
+                "  - Always branch by runtime type: "
+                "`if isinstance(data, dict): ... elif isinstance(data, list): ... else: ...`"
+            )
         elif file_type == 'text':
             lines.append(
                 f"  - Read text: `with open('{original_name}', 'r', encoding='utf-8') "
