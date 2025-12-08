@@ -51,27 +51,20 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 {additional_context}
 
 ## Requirements
-1. Write clean, efficient Python code
+1. Write a clean, efficient Python code that accomplishes the given Task.
 2. When asked, use matplotlib for visualizations (save to file, don't use plt.show())
-3. Print results that should be visible to the user
-4. Handle potential errors gracefully
-5. Comment complex logic
-6. Always use the exact filenames of the files provided to you. Do not create new files.
-
-## Pre-loaded Libraries (already imported)
-- pandas as pd
-- numpy as np
-- matplotlib.pyplot as plt
+3. Print results that should be visible to the user, otherwise, you may write a file.
+4. Always use the exact filenames of the files provided to you. Do not create new files.
 
 ## CRITICAL INSTRUCTIONS
 - Output ONLY Python code, absolutely NO explanations before or after
-- Do NOT use markdown code blocks (no ```)
+- Do NOT use markdown code blocks (no ```python ... ```)
 - Start immediately with import statements or code
-- Use print() for all outputs that should be visible
+- Use print() for all outputs that should be visible if not viable, you may write a file.
 - Save visualizations with plt.savefig('output.png') and print the filename
-- Keep code under 500 lines
 
-Code:"""
+Code:
+"""
 
 CODE_FIX_PROMPT = """You are an expert Python programmer. The following code failed with an error. Fix the code.
 
@@ -89,18 +82,14 @@ CODE_FIX_PROMPT = """You are an expert Python programmer. The following code fai
 ## Available Files
 {file_context}
 
-## Pre-loaded Libraries (already imported)
-- pandas as pd
-- numpy as np
-- matplotlib.pyplot as plt
-
 ## CRITICAL INSTRUCTIONS
 1. Analyze the error and fix the root cause
 2. Fix the error while maintaining the original intent
-3. Make the code more robust
-4. Output ONLY the fixed Python code, NO explanations
-5. Do NOT use markdown code blocks (no ```)
+3. Make the code more robust and efficient
+4. Output ONLY the fixed Python code, absolutely NO explanations before or after
+5. Do NOT use markdown code blocks (no ```python ... ```)
 6. Start directly with the fixed code
+7. Always use the exact filenames of the files provided to you. Do not create new files.
 
 Fixed Code:"""
 
@@ -121,8 +110,8 @@ OBSERVATION_PROMPT = """Based on the code execution results, generate a concise 
 {created_files}
 
 ## Instructions
-Write a brief observation (2-3 sentences) summarizing:
-1. What the code did
+Write a comprehensive observation that includes:
+1. What the code did, and what the results are.
 2. Key results or findings
 3. Any files created
 

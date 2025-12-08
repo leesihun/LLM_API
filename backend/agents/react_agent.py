@@ -290,8 +290,9 @@ class AgentOrchestrator:
             "- chat: direct, single-step answer with no external tools required.\n"
             "- react: needs tool use for more specific information (web search, python code, shell, file/vision analysis) "
             "or ad-hoc multi-hop reasoning without a pre-plan.\n"
-            "- plan_execute: task requires a structured multi-step plan (reports, multi-file edits, "
+            "- plan_execute: A detailed task requires a structured multi-step plan (reports, multi-file edits, "
             "pipelines, research + synthesis) before tool execution.\n"
+            "Prefer plan_execute when the task is not simple & trivial."
             "Respond ONLY with JSON: {\"agent_type\": \"chat|react|plan_execute\"}.\n"
             f"Has_files: {has_files}\n"
             f"User_request: {serialized_query}\n"
@@ -467,7 +468,8 @@ Decide if the latest observation fully answers the query.
 
     guidance_section = f"\n{file_guidance}\n" if file_guidance else ""
 
-    return f"""You are a focused ReAct agent. Think, pick ONE tool when needed, and use the FINISH flag instead of a finish tool. If you have enough information, set FINISH: true and skip tool calls. Otherwise set FINISH: false and pick the single best tool. Do not call the same tool with the same or trivially modified input unless you clearly need new information and explain what that is.
+    return f"""You are a focused ReAct agent. Think, pick ONE tool when needed, and use the FINISH flag when you have enough information to answer the query, set FINISH: true and skip tool calls. 
+    Otherwise set FINISH: false and pick the single best tool.
 {guidance_section}
 
 ## Context
@@ -481,21 +483,19 @@ Decide if the latest observation fully answers the query.
 - vision_analyzer → answer image questions (only if images attached)
 - no_tools → think and reason without external tools (use when no tool fits or need to synthesize)
 
-## python_coder Example
-ACTION: python_coder
-ACTION INPUT: Load the CSV file and print its shape, column names, and first 5 rows
-
-## shell Example
-ACTION: shell
-ACTION INPUT: ls
-
-
 ## IMPORTANT:
-## Response Format: Strictly follow the format.
-THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish. If you consider repeating a tool, state what new information you need and why the prior result was insufficient.
-ACTION: tool name (use 'none' or leave empty when FINISH is true)
-ACTION INPUT: For web_search and rag_retrieval, write the search query. For python_coder, write a clear task description (what you want the code to do). For vision_analyzer, write the question. For no_tools, write your reasoning. Do not repeat the same tool/input unless justified as above.
-FINISH: true or false (true only when the final answer can be produced without another tool)
+## Response Format: Strictly follow the format: Must have THOUGHT, ACTION, ACTION INPUT, and FINISH.
+
+THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish.
+
+ACTION: tool name (Leave it empty when FINISH is true)
+
+ACTION INPUT: For web_search and rag_retrieval, write the search query. 
+For python_coder, write a clear task description in natural language (what you want the code to do). 
+For vision_analyzer, write the question. 
+For no_tools, write your reasoning. 
+
+FINISH: true or false (true only when you have enough information to answer the query)
 
 
 ## Query
