@@ -1446,11 +1446,6 @@ class PlanExecutor:
             if not step_result.success and i < len(plan_steps) - 1:
                 logger.warning(f"Step {plan_step.step_num} failed. Continuing with best effort.")
 
-            # Early stop if the observation explicitly signaled completion
-            if step_result.metadata and step_result.metadata.get("finish"):
-                logger.info(f"[PlanExecutor] Finish detected at plan step {plan_step.step_num}; stopping remaining steps.")
-                break
-
         final_answer = await self._generate_final_answer(user_query, plan_steps, results, accumulated_obs, react_steps_history)
         return final_answer, results
 
