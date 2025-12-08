@@ -303,7 +303,7 @@ class AgentOrchestrator:
             "or ad-hoc multi-hop reasoning without a pre-plan.\n"
             "- plan_execute: A detailed task requires a structured multi-step plan (reports, multi-file edits, "
             "pipelines, research + synthesis) before tool execution.\n"
-            "Prefer plan_execute when the task is not simple & trivial."
+            "Prefer plan_execute when the task is not simple & trivial.\n"
             "Respond ONLY with JSON: {\"agent_type\": \"chat|react|plan_execute\"}.\n"
             f"Has_files: {has_files}\n"
             f"User_request: {serialized_query}\n"
@@ -359,17 +359,44 @@ class AgentOrchestrator:
             logger.error(f"[Planner] Failed to parse JSON from response: {response_content[:500]}")
             raise ValueError(f"Plan generation returned invalid JSON: {exc}") from exc
 
+        # Handle common structured wrappers: {"steps": [...]} or {"plan": [...]}
+        if isinstance(plan_data, str):
+            try:
+                plan_data = json.loads(plan_data)
+            except json.JSONDecodeError:
+                pass  # keep original for error message below
+
+        if isinstance(plan_data, dict):
+            for key in ("steps", "plan"):
+                if key in plan_data and isinstance(plan_data[key], list):
+                    plan_data = plan_data[key]
+                    break
+
         if not isinstance(plan_data, list) or not plan_data:
-            raise ValueError("Plan generation must return a list of steps.")
+            raise ValueError(
+                f"Plan generation must return a non-empty list of steps; got {type(plan_data).__name__}."
+            )
 
         plan_steps: List[PlanStep] = []
         for idx, step_data in enumerate(plan_data, start=1):
+            if not isinstance(step_data, dict):
+                raise ValueError(f"Plan step {idx} is not an object: {step_data!r}")
+
+            goal = step_data.get("goal", "").strip()
+            primary_tools = step_data.get("primary_tools", [])
+            success_criteria = step_data.get("success_criteria", "").strip()
+
+            if not goal or not isinstance(primary_tools, list):
+                raise ValueError(
+                    f"Plan step {idx} is missing required fields (goal, primary_tools)."
+                )
+
             plan_steps.append(
                 PlanStep(
                     step_num=step_data.get("step_num", idx),
-                    goal=step_data.get("goal", "").strip(),
-                    primary_tools=step_data.get("primary_tools", []),
-                    success_criteria=step_data.get("success_criteria", "").strip(),
+                    goal=goal,
+                    primary_tools=primary_tools,
+                    success_criteria=success_criteria,
                     context=step_data.get("context"),
                 )
             )
