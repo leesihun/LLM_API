@@ -149,23 +149,6 @@ NATIVE_TOOLS = [
                 "required": ["reasoning"]
             }
         }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "finish",
-            "description": "Complete the task and provide the final answer. Only use when you have gathered all necessary information.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "answer": {
-                        "type": "string",
-                        "description": "The final answer to the user's question"
-                    }
-                },
-                "required": ["answer"]
-            }
-        }
     }
 ]
 
@@ -179,6 +162,7 @@ class ReActStep:
         self.action: str = ""
         self.action_input: str = ""
         self.observation: str = ""
+        self.finish: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -187,6 +171,7 @@ class ReActStep:
             "action": self.action,
             "action_input": self.action_input,
             "observation": self.observation,
+            "finish": self.finish,
         }
 
     def __str__(self) -> str:
@@ -195,6 +180,7 @@ class ReActStep:
             f"Thought: {self.thought}\n"
             f"Action: {self.action}\n"
             f"Input: {self.action_input}\n"
+            f"Finish: {self.finish}\n"
             f"Observation: {self.observation}"
         )
 
@@ -441,12 +427,12 @@ def _build_thought_action_prompt(
 
 ## Completion Assessment
 Decide if the latest observation fully answers the query.
-- If YES → you must choose **finish** and draft the final answer. Do not rerun tools.
-- If NO → pick the single tool that will move you closer, but only if it gathers new information."""
+- If YES → set **FINISH: true** and do not call another tool.
+- If NO → set **FINISH: false** and pick the single tool that will gather new information."""
 
     guidance_section = f"\n{file_guidance}\n" if file_guidance else ""
 
-    return f"""You are a focused ReAct agent. Think, pick ONE tool or FINISH, supply its input. If you have enough information, you must finish. Do not call the same tool with the same or trivially modified input unless you clearly need new information and explain what that is.
+    return f"""You are a focused ReAct agent. Think, pick ONE tool when needed, and use the FINISH flag instead of a finish tool. If you have enough information, set FINISH: true and skip tool calls. Otherwise set FINISH: false and pick the single best tool. Do not call the same tool with the same or trivially modified input unless you clearly need new information and explain what that is.
 {guidance_section}
 
 ## Context
@@ -459,7 +445,6 @@ Decide if the latest observation fully answers the query.
 - shell → run safe shell commands (ls/dir/pwd/cd/cat/head/tail/find/grep/wc/echo) inside the sandbox
 - vision_analyzer → answer image questions (only if images attached)
 - no_tools → think and reason without external tools (use when no tool fits or need to synthesize)
-- finish → only when you already have the final answer
 
 ## python_coder Example
 ACTION: python_coder
@@ -473,8 +458,9 @@ ACTION INPUT: ls
 ## IMPORTANT:
 ## Response Format: Strictly follow the format.
 THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish. If you consider repeating a tool, state what new information you need and why the prior result was insufficient.
-ACTION: tool name
+ACTION: tool name (use 'none' or leave empty when FINISH is true)
 ACTION INPUT: For web_search and rag_retrieval, write the search query. For python_coder, write a clear task description (what you want the code to do). For vision_analyzer, write the question. For no_tools, write your reasoning. Do not repeat the same tool/input unless justified as above.
+FINISH: true or false (true only when the final answer can be produced without another tool)
 
 
 ## Query
@@ -558,6 +544,7 @@ class ContextFormatter:
                 f"- Action: {step.action}",
                 f"- Input: {step.action_input}",
                 f"- Result: {step.observation}",
+                f"- Finish: {getattr(step, 'finish', False)}",
                 ""
             ])
         return "\n".join(parts)
@@ -578,6 +565,7 @@ class ContextFormatter:
                 f"Thought: {step.thought}",
                 f"Action: {step.action}",
                 f"Result: {obs}",
+                f"Finish: {getattr(step, 'finish', False)}",
                 ""
             ])
         return "\n".join(parts)
@@ -622,14 +610,14 @@ class ThoughtActionGenerator:
             self.mode = 'react'
             self.llm_with_tools = None
 
-    async def generate(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str]:
-        """Generate thought and action using configured mode."""
+    async def generate(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str, bool]:
+        """Generate thought, action, input, and finish flag using configured mode."""
         if self.mode == 'native':
             return await self._generate_native(user_query, steps, context, include_finish_check)
         else:
             return await self._generate_react(user_query, steps, context, include_finish_check)
     
-    async def _generate_native(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str]:
+    async def _generate_native(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str, bool]:
         """Generate using native Ollama/OpenAI function calling."""
         file_guidance = self._build_file_guidance()
         
@@ -654,6 +642,7 @@ class ThoughtActionGenerator:
                     action = getattr(tool_call, 'name', 'finish')
                     args = getattr(tool_call, 'args', {})
                 
+                finish_flag = action == 'finish'
                 # Build action_input based on tool type
                 if action == 'python_coder':
                     action_input = args.get('task', args.get('query', ''))
@@ -665,13 +654,13 @@ class ThoughtActionGenerator:
                 # Generate thought from content or synthesize
                 thought = response.content if response.content else f"Using {action} tool to complete the task."
                 
-                logger.info(f"[ReAct-Native] Tool call: {action}, input length: {len(action_input)}")
-                return thought, action, action_input
+                logger.info(f"[ReAct-Native] Tool call: {action}, input length: {len(action_input)}, finish={finish_flag}")
+                return thought, action, action_input, finish_flag
             
             # No tool call - check if it's a direct response (treat as finish)
             if response.content:
                 logger.info(f"[ReAct-Native] No tool call, treating as finish")
-                return response.content, "finish", response.content
+                return response.content, "finish", response.content, True
             
             raise ValueError("No tool call or content in response")
             
@@ -692,13 +681,13 @@ class ThoughtActionGenerator:
         if include_finish_check and steps:
             latest = steps[-1].observation[:2000]
             parts.append(f"## Latest Result\n{latest}\n")
-            parts.append("If this answers the query, call 'finish'. Otherwise, call another tool.\n")
+            parts.append("If this answers the query, respond directly (no tool call). Otherwise, call another tool.\n")
         
         parts.append(f"## User Query\n{query}")
         
         return "\n".join(parts)
 
-    async def _generate_react(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str]:
+    async def _generate_react(self, user_query: str, steps: List[ReActStep], context: str, include_finish_check: bool = False) -> Tuple[str, str, str, bool]:
         """Generate using ReAct text-based prompting."""
         file_guidance = self._build_file_guidance()
         latest_observation = steps[-1].observation if steps else ""
@@ -738,10 +727,10 @@ class ThoughtActionGenerator:
                     
                     # Parse and return
                     try:
-                        parsed = self._parse_response(response_text.strip())
-                        logger.info(f"[ReAct] Successfully parsed - thought: {parsed[0][:50]}..., action: {parsed[1]}, input: {parsed[2][:50]}...")
+                        thought, action, action_input, finish_flag = self._parse_response(response_text.strip())
+                        logger.info(f"[ReAct] Successfully parsed - thought: {thought[:50]}..., action: {action}, finish: {finish_flag}, input: {action_input[:50]}...")
 
-                        return parsed
+                        return thought, action, action_input, finish_flag
                     except ValueError as parse_error:
                         logger.error(f"[ReAct] Parse failed: {parse_error}")
                         logger.error(f"[ReAct] Response that failed parsing:\n{response_text}")
@@ -903,8 +892,8 @@ class ThoughtActionGenerator:
         logger.error(f"[ReAct] Response __dict__: {getattr(response, '__dict__', 'N/A')}")
         return ""
 
-    def _parse_response(self, response: str) -> Tuple[str, str, str]:
-        """Parse LLM response for THOUGHT, ACTION, and ACTION INPUT.
+    def _parse_response(self, response: str) -> Tuple[str, str, str, bool]:
+        """Parse LLM response for THOUGHT, ACTION, ACTION INPUT, and FINISH flag.
         
         Handles various LLM output formats including:
         - THOUGHT: / Thought: / thought:
@@ -926,6 +915,13 @@ class ThoughtActionGenerator:
         
         # Strategy 1: Try structured extraction with flexible patterns
         thought = action = action_input = None
+        finish_flag = False
+
+        # FINISH: Parse bool flag if present
+        finish_match = re.search(r'finish\s*:\s*(true|false|yes|no|1|0)', normalized, re.IGNORECASE)
+        if finish_match:
+            finish_value = finish_match.group(1).lower()
+            finish_flag = finish_value in ['true', 'yes', '1']
         
         # THOUGHT: Extract everything between THOUGHT: and ACTION: (case insensitive)
         thought_patterns = [
@@ -1002,14 +998,20 @@ class ThoughtActionGenerator:
         if not thought:
             logger.warning(f"[ReAct] Could not extract THOUGHT from: {response[:300]}")
             raise ValueError("Could not parse THOUGHT from LLM response")
+        if action and action.lower() == 'finish':
+            finish_flag = True
+
+        if finish_flag and (not action or action.lower() == 'none'):
+            action = ToolName.FINISH.value
+
         if not action:
             logger.warning(f"[ReAct] Could not extract ACTION from: {response[:300]}")
             raise ValueError("Could not parse ACTION from LLM response")
 
-        # ACTION INPUT is optional for "finish" action
+        # ACTION INPUT is optional for finish when finish_flag is True
         if not action_input:
-            if action == 'finish':
-                logger.info("[ReAct] ACTION is 'finish', using empty ACTION INPUT")
+            if finish_flag or action == 'finish':
+                logger.info("[ReAct] Finish indicated, using empty ACTION INPUT")
                 action_input = ""  # Allow empty input for finish
             else:
                 logger.warning(f"[ReAct] Could not extract ACTION INPUT from: {response[:300]}")
@@ -1020,8 +1022,8 @@ class ThoughtActionGenerator:
             logger.warning(f"[ReAct] Unknown action '{action}'. Valid: {self.VALID_ACTIONS}")
             raise ValueError(f"Unsupported action requested: {action}")
         
-        logger.debug(f"[ReAct] Parsed - Thought: {thought[:50]}... Action: {action}, Input: {action_input[:50]}...")
-        return thought, action, action_input
+        logger.debug(f"[ReAct] Parsed - Thought: {thought[:50]}... Action: {action}, Finish: {finish_flag}, Input: {action_input[:50]}...")
+        return thought, action, action_input, finish_flag
 
     def _build_file_guidance(self) -> str:
         """Build file guidance showing original filenames (without temp prefix)."""
@@ -1468,10 +1470,10 @@ class ReActAgent:
             
             # Generate
             try:
-                thought, action, action_input = await self.thought_generator.generate(
+                thought, action, action_input, finish_flag = await self.thought_generator.generate(
                     user_query, self.steps, context, include_finish_check=(i > 2)
                 )
-                logger.info(f"[ReActAgent] Generated - Thought: {thought[:50]}..., Action: {action}, Input: {action_input[:50]}...")
+                logger.info(f"[ReActAgent] Generated - Thought: {thought[:50]}..., Action: {action}, Finish: {finish_flag}, Input: {action_input[:50]}...")
             except ValueError as exc:
                 logger.error(f"[ReActAgent] Failed to parse thought/action: {exc}")
                 step.observation = f"Failed to parse thought/action: {exc}"
@@ -1479,17 +1481,19 @@ class ReActAgent:
                 break
             
             step.thought = thought
-            step.action = action
             step.action_input = action_input
+            step.finish = bool(finish_flag or action == ToolName.FINISH or action == "finish")
             
-            if action == ToolName.FINISH or action == "finish":
-                logger.info(f"[ReActAgent] FINISH action detected. Current steps count: {len(self.steps)}")
+            if step.finish:
+                step.action = ToolName.FINISH
+                logger.info(f"[ReActAgent] FINISH flag detected. Current steps count: {len(self.steps)}")
                 final_answer = await self.answer_generator.generate(user_query, self.steps)
                 logger.info(f"[ReActAgent] Generated final answer ({len(final_answer)} chars): {final_answer[:200]}...")
                 step.observation = "Task completed"
                 self.steps.append(step)
                 break
                 
+            step.action = action
             # Execute
             logger.info(f"[ReActAgent] Executing tool: {action}")
             observation = await self.tool_executor.execute(
