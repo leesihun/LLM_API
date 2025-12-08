@@ -114,7 +114,8 @@ Write a comprehensive observation that includes:
 1. What the code did, and what the results are.
 2. Key results or findings
 3. Any files created
-4. If the task appears fully answered, end with 'FINISH: true'. Otherwise, use 'FINISH: false'.
+4. If the task appears fully answered, end with 'FINISH: true'. Otherwise, use 'FINISH: false'
+5. If the task is not finished, explain what is missing, why, and what you will do next.
 
 Keep it factual and concise. This will be used by the agent to decide next steps.
 
