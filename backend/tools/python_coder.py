@@ -107,12 +107,16 @@ OBSERVATION_PROMPT = """Based on the code execution results, generate a concise 
 ----------------------------------------------------------
 ## Current Given Task
 {task}
+
 ----------------------------------------------------------
+
 ## Executed Code
 ```python
 {code}
 ```
+
 ----------------------------------------------------------
+
 ## Execution Output
 {output}
 
@@ -130,6 +134,11 @@ If the task appears fully answered, end with 'FINISH: true'. Otherwise, use 'FIN
 If the task is not finished, explain what is missing, why, and what you will do next.
 
 Keep it HELPFUL, factual and concise. This will be used by the agent to decide next steps.
+
+Answer in the following format:
+
+Observation: <your observation here>
+FINISH: true or false
 
 ## Observation:
 """
