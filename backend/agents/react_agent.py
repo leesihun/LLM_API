@@ -287,8 +287,8 @@ class AgentOrchestrator:
 
         routing_prompt = (
             "You are an agent router. Choose exactly one execution mode.\n"
-            "- chat: direct, single-step answer with no external tools.\n"
-            "- react: needs tool use (web search, python code, shell, file/vision analysis) "
+            "- chat: direct, single-step answer with no external tools required.\n"
+            "- react: needs tool use for more specific information (web search, python code, shell, file/vision analysis) "
             "or ad-hoc multi-hop reasoning without a pre-plan.\n"
             "- plan_execute: task requires a structured multi-step plan (reports, multi-file edits, "
             "pipelines, research + synthesis) before tool execution.\n"
