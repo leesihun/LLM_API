@@ -220,6 +220,9 @@ class FileAnalyzer:
                 lines.append("")
                 continue
 
+            # Access and loading guidance
+            self._add_access_instructions(lines, original_name, file_type, metadata)
+
             # Type-specific details
             if file_type == 'csv' or file_type == 'excel':
                 self._add_tabular_context(lines, metadata)
@@ -242,6 +245,63 @@ class FileAnalyzer:
             lines.append("")
 
         return "\n".join(lines)
+
+    def _add_access_instructions(
+        self,
+        lines: List[str],
+        original_name: str,
+        file_type: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """
+        Add explicit loading/access patterns so the LLM knows how to open files.
+        """
+        lines.append(
+            f"- **Access**: File is available in the sandbox working directory "
+            f"as `{original_name}`. Use relative paths only."
+        )
+
+        if file_type == 'csv':
+            lines.append(
+                f"  - Load with pandas: `import pandas as pd; "
+                f"df = pd.read_csv('{original_name}')`"
+            )
+        elif file_type == 'excel':
+            lines.append(
+                f"  - Load with pandas: `import pandas as pd; "
+                f"df = pd.read_excel('{original_name}', sheet_name=0)`"
+            )
+            sheet_names = metadata.get('sheet_names')
+            if sheet_names:
+                preview = ", ".join(str(s) for s in sheet_names[:5])
+                suffix = "" if len(sheet_names) <= 5 else f" ... (+{len(sheet_names) - 5} more)"
+                lines.append(f"  - Sheets: {preview}{suffix}")
+        elif file_type == 'json':
+            lines.append(
+                f"  - Load with json: `import json; "
+                f"with open('{original_name}', 'r', encoding='utf-8') as f: "
+                f"data = json.load(f)`"
+            )
+        elif file_type == 'text':
+            lines.append(
+                f"  - Read text: `with open('{original_name}', 'r', encoding='utf-8') "
+                f"as f: content = f.read()`"
+            )
+        elif file_type == 'image':
+            lines.append(
+                f"  - Load with Pillow: `from PIL import Image; "
+                f"img = Image.open('{original_name}')`"
+            )
+        elif file_type == 'pdf':
+            lines.append(
+                f"  - Read in binary: `from PyPDF2 import PdfReader; "
+                f"with open('{original_name}', 'rb') as f: "
+                f"reader = PdfReader(f)`"
+            )
+        else:
+            lines.append(
+                f"  - Load with a relative path: `with open('{original_name}', 'rb') as f: ...`"
+            )
 
     def _add_tabular_context(self, lines: List[str], metadata: Dict[str, Any]):
         """Add context for CSV/Excel files."""

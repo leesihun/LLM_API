@@ -44,17 +44,22 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 ## Available files
 {file_context}
 
+----------------------------------------------------------
 ## Previous conversation
 {previous_conversation}
 
+----------------------------------------------------------
 ## Plans
 {plan_context}
 
-## Task
+----------------------------------------------------------
+## Current Given Task
 {task}
 
+----------------------------------------------------------
 ## Instruction
 {instructions}
+----------------------------------------------------------
 
 ## Requirements
 1. Write clean, efficient Python that completes the Task.
@@ -99,30 +104,32 @@ CODE_FIX_PROMPT = """You are an expert Python programmer. The following code fai
 Fixed Code:"""
 
 OBSERVATION_PROMPT = """Based on the code execution results, generate a concise observation for the agent.
-
-## Task
+----------------------------------------------------------
+## Current Given Task
 {task}
-
+----------------------------------------------------------
 ## Executed Code
 ```python
 {code}
 ```
-
+----------------------------------------------------------
 ## Execution Output
 {output}
 
 ## Created Files
 {created_files}
 
-## Instructions
-Write a comprehensive observation that includes:
-1. What the code did, and what the results are.
-2. Key results or findings
-3. Any files created
-4. If the task appears fully answered, end with 'FINISH: true'. Otherwise, use 'FINISH: false'
-5. If the task is not finished, explain what is missing, why, and what you will do next.
+----------------------------------------------------------
+Write a comprehensive observation for the ReAct agent to be helpful for next step.
+A good examples are:
+1. What the code did, and what the results are, with the actual code.
+2. Key results or findings, with the actual code.
+3. Any files created, with the actual code.
+Also,
+If the task appears fully answered, end with 'FINISH: true'. Otherwise, use 'FINISH: false'
+If the task is not finished, explain what is missing, why, and what you will do next.
 
-Keep it factual and concise. This will be used by the agent to decide next steps.
+Keep it HELPFUL, factual and concise. This will be used by the agent to decide next steps.
 
 ## Observation:
 """
@@ -585,14 +592,28 @@ class PythonCoderTool(BaseTool):
             analysis = file_analyzer.analyze(file_paths, quick_mode=True)
             
             if analysis.get('success'):
-                return analysis.get('llm_context', analysis.get('summary', ''))
+                base_note = (
+                    "Files are copied to the sandbox working directory using their "
+                    "original filenames. Access them with relative paths only (e.g., "
+                    "'sales.csv')."
+                )
+                llm_context = analysis.get('llm_context', analysis.get('summary', ''))
+                return f"{base_note}\n\n{llm_context}".strip()
             else:
                 # Fallback to simple listing
-                return f"Files: {', '.join(file_paths)}"
+                return (
+                    "Files are copied to the sandbox working directory using their "
+                    "original filenames. Access them with relative paths only. "
+                    f"Files: {', '.join(file_paths)}"
+                )
                 
         except Exception as e:
             logger.warning(f"[PythonCoder] File analysis failed: {e}")
-            return f"Files: {', '.join(file_paths)}"
+            return (
+                "Files are copied to the sandbox working directory using their "
+                "original filenames. Access them with relative paths only. "
+                f"Files: {', '.join(file_paths)}"
+            )
     
     def _build_additional_context(
         self,

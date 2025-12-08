@@ -564,19 +564,25 @@ def _build_plan_prompt(
     tools_line = ", ".join(available_tools) if available_tools else "python_coder, web_search, rag_retrieval, vision_analyzer"
     history = conversation_history or "No previous conversation."
     files_note = "yes" if has_files else "no"
-    return f"""You are a strict planning assistant. Design a concise, multi-step plan the agent will execute.
+    return f"""You are a planning assistant. Design a multi-step plan the agents will execute.
 
 Inputs:
+----------------------------------------------------------
 - User Query (Original inquire): {query}
-- Conversation history: {history}
+----------------------------------------------------------
+- Conversation history (Past history): {history}
+----------------------------------------------------------
 - Files attached: {files_note}
+----------------------------------------------------------
 - Available tools: {tools_line}
+----------------------------------------------------------
 
 Guidelines:
 - Output ONLY valid JSON (no prose) representing baby incremental steps of the plan.
 - Use only the available tools; prefer python_coder for local/file analysis and reserve web_search for live or external data.
 - Provide context; include hints.
 
+----------------------------------------------------------
 JSON schema:
 [
   {{
