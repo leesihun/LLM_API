@@ -367,14 +367,20 @@ class AgentOrchestrator:
                 pass  # keep original for error message below
 
         if isinstance(plan_data, dict):
+            # Preferred: explicit steps/plan field
             for key in ("steps", "plan"):
                 if key in plan_data and isinstance(plan_data[key], list):
                     plan_data = plan_data[key]
                     break
+            else:
+                # Fallback: single list-valued entry (e.g., {"0": [{...}]})
+                list_values = [v for v in plan_data.values() if isinstance(v, list)]
+                if len(list_values) == 1:
+                    plan_data = list_values[0]
 
         if not isinstance(plan_data, list) or not plan_data:
             raise ValueError(
-                f"Plan generation must return a non-empty list of steps; got {type(plan_data).__name__}."
+                f"Plan generation must return a non-empty list of steps; got {type(plan_data).__name__} with keys {getattr(plan_data, 'keys', lambda: [])()}."
             )
 
         plan_steps: List[PlanStep] = []
@@ -515,7 +521,7 @@ Guidelines:
 - When FINISH is true, leave ACTION empty and ACTION INPUT blank.
 {guidance_section}{finish_section}
 
-## Query (Original inquire)
+## User Query (Original inquire)
 {query}
 
 ## Context
@@ -561,17 +567,15 @@ def _build_plan_prompt(
     return f"""You are a strict planning assistant. Design a concise, multi-step plan the agent will execute.
 
 Inputs:
-- Query (Original inquire): {query}
+- User Query (Original inquire): {query}
 - Conversation history: {history}
 - Files attached: {files_note}
 - Available tools: {tools_line}
 
 Guidelines:
-- Output ONLY valid JSON (no prose) representing 2-6 atomic steps.
+- Output ONLY valid JSON (no prose) representing baby incremental steps of the plan.
 - Use only the available tools; prefer python_coder for local/file analysis and reserve web_search for live or external data.
-- Each goal is outcome-based and non-overlapping; keep steps minimal but sufficient.
-- success_criteria must be measurable and state what proves the step succeeded.
-- context is optional; include only terse, actionable hints.
+- Provide context; include hints.
 
 JSON schema:
 [
@@ -580,7 +584,7 @@ JSON schema:
     "goal": "short, outcome-focused objective",
     "primary_tools": ["tool_name"],
     "success_criteria": "objective check that confirms success",
-    "context": "optional, concise guidance"
+    "context": "concise guidance for the next step"
   }}
 ]"""
 # ============================================================================
