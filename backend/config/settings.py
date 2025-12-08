@@ -181,6 +181,7 @@ class Settings(BaseSettings):
     shell_tool_timeout: int = 30  # seconds
     shell_windows_mode: bool = True  # If True on Windows, map to native commands (dir/cd/type/findstr)
 
+
     model_config = SettingsConfigDict(
         # Allow environment variables to override defaults (12-factor app compliant)
         env_file='.env',  # Optional .env file

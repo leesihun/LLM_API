@@ -29,6 +29,7 @@ from backend.core.result_types import ToolResult
 from backend.config.settings import settings
 from backend.utils.logging_utils import get_logger
 from backend.tools.code_sandbox import CodeSandbox, SandboxManager, ExecutionResult
+from backend.runtime import extract_original_filename
 from backend.tools.file_analyzer import file_analyzer
 
 logger = get_logger(__name__)
@@ -51,11 +52,11 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 
 ## Requirements
 1. Write clean, efficient Python code
-2. Use pandas for data manipulation when working with CSV/Excel files
-3. Use matplotlib for visualizations (save to file, don't use plt.show())
-4. Print results that should be visible to the user
-5. Handle potential errors gracefully
-6. Comment complex logic
+2. When asked, use matplotlib for visualizations (save to file, don't use plt.show())
+3. Print results that should be visible to the user
+4. Handle potential errors gracefully
+5. Comment complex logic
+6. Always use the exact filenames of the files provided to you. Do not create new files.
 
 ## Pre-loaded Libraries (already imported)
 - pandas as pd
@@ -237,7 +238,7 @@ class PythonCoderTool(BaseTool):
         
         try:
             # Setup session
-            session_id = session_id or f"temp_{int(self._start_time)}"
+            session_id = session_id or f"session_{int(self._start_time)}"
             sandbox = SandboxManager.get_sandbox(session_id)
             
             # Build file context
@@ -658,10 +659,15 @@ class PythonCoderTool(BaseTool):
         for file_path in file_paths:
             src = Path(file_path)
             if src.exists():
-                dst = sandbox.working_dir / src.name
+                try:
+                    original_name = extract_original_filename(src.name)
+                except Exception:
+                    original_name = src.name
+
+                dst = sandbox.working_dir / original_name
                 try:
                     shutil.copy2(src, dst)
-                    logger.debug(f"[PythonCoder] Copied {src.name} to sandbox")
+                    logger.debug(f"[PythonCoder] Copied {src.name} to sandbox as {original_name}")
                 except Exception as e:
                     logger.warning(f"[PythonCoder] Failed to copy {src.name}: {e}")
     

@@ -52,7 +52,7 @@ class PhaseManager:
         phase2_prompt = manager.create_handoff_phase_prompt(
             phase_name="Visualization",
             task="Create charts based on Phase 1 findings...",
-            expected_outputs=["Charts in temp_charts/"]
+            expected_outputs=["Charts in charts/"]
         )
 
         # Execute phase 2...

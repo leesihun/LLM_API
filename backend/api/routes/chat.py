@@ -32,7 +32,7 @@ from backend.api.dependencies import get_current_user
 from backend.config.settings import settings
 from backend.agents.react_agent import agent_system
 from backend.runtime import (
-    cleanup_temp_files,
+    cleanup_uploaded_files,
     create_user_session,
     get_session_history,
     handle_file_uploads,
@@ -107,7 +107,7 @@ async def chat_completions(
         session_id = create_user_session(user_id)
 
     # ====== PHASE 1: FILE HANDLING ======
-    file_paths, new_files_uploaded = await handle_file_uploads(user_id, files, session_id)
+    file_paths, uploaded_paths, new_files_uploaded = await handle_file_uploads(user_id, files, session_id)
 
     # Save LLM input: parsed_messages into a file
     Path(f"data/scratch/{user_id}").mkdir(parents=True, exist_ok=True)
@@ -155,11 +155,11 @@ async def chat_completions(
         )
 
     finally:
-        # ====== CLEANUP: Always delete temp files from uploads folder ======
-        # Files have been copied to scratch folder, so temp files in uploads are no longer needed
+        # ====== CLEANUP: Always delete uploaded files from the user uploads folder ======
+        # Files have been copied to scratch folder, so uploads are no longer needed
         if new_files_uploaded:
-            cleanup_temp_files(file_paths)
-            logger.info(f"[Chat] Cleaned up {len(file_paths)} temp files from uploads folder")
+            cleanup_uploaded_files(uploaded_paths)
+            logger.info(f"[Chat] Cleaned up {len(uploaded_paths)} uploaded files from user folder")
 
 
 # Chat Management Endpoints
@@ -202,7 +202,7 @@ async def _execute_chat_completion(
 ) -> Tuple[ChatCompletionResponse, Optional[Dict[str, Any]]]:
     response_text, agent_metadata = await agent_system.execute(
         messages=messages,
-        session_id=session_id or "temp_session",
+        session_id=session_id or "session",
         user_id=user_id,
         file_paths=file_paths,
         agent_type=agent_type,

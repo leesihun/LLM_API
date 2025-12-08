@@ -264,7 +264,7 @@ class AgentOrchestrator:
         final_answer, step_results = await self.react_agent.execute_with_plan(
             plan_steps=plan_steps,
             messages=messages,
-            session_id=session_id or "temp_session",
+            session_id=session_id or "session",
             user_id=user_id,
             file_paths=file_paths or [],
         )
@@ -441,12 +441,12 @@ def _build_thought_action_prompt(
 
 ## Completion Assessment
 Decide if the latest observation fully answers the query.
-- If YES → choose **finish** and draft the final answer.
-- If NO → pick the single tool that will move you closer."""
+- If YES → you must choose **finish** and draft the final answer. Do not rerun tools.
+- If NO → pick the single tool that will move you closer, but only if it gathers new information."""
 
     guidance_section = f"\n{file_guidance}\n" if file_guidance else ""
 
-    return f"""You are a focused ReAct agent. Think, pick ONE tool or FINISH, supply its input. If you think the given observation is not enough to answer the query, you can pick another tool. If you have enough information, you can finish.
+    return f"""You are a focused ReAct agent. Think, pick ONE tool or FINISH, supply its input. If you have enough information, you must finish. Do not call the same tool with the same or trivially modified input unless you clearly need new information and explain what that is.
 {guidance_section}
 
 ## Context
@@ -472,9 +472,9 @@ ACTION INPUT: ls
 
 ## IMPORTANT:
 ## Response Format: Strictly follow the format.
-THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish
+THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish. If you consider repeating a tool, state what new information you need and why the prior result was insufficient.
 ACTION: tool name
-ACTION INPUT: For web_search and rag_retrieval, write the search query. For python_coder, write a clear task description (what you want the code to do). For vision_analyzer, write the question. For no_tools, write your reasoning.
+ACTION INPUT: For web_search and rag_retrieval, write the search query. For python_coder, write a clear task description (what you want the code to do). For vision_analyzer, write the question. For no_tools, write your reasoning. Do not repeat the same tool/input unless justified as above.
 
 
 ## Query

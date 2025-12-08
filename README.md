@@ -168,8 +168,12 @@ Server will be available at:
 ---
 
 ## Updates (2025-12-08)
+- Fixed file upload handling to return session scratch paths (v1.1.2), keeping uploads only for cleanup and matching runtime behavior/paths shown to users.
+- Patched legacy `file_analyzer` wrapper to accept `quick_mode` and return quick metadata via the shared registry (v1.1.1); resolves `unexpected keyword argument 'quick_mode'` errors.
 - Added `FileAnalyzerTool` wrapper (v1.1.0) with BaseTool integration and async execute support; fixes `backend.tools` exports and keeps `quick_mode` for agents.
 - Improved `shell_tool` Windows compatibility (auto-maps `ls`→`dir`, `pwd`→`cd` when `shell_windows_mode` is enabled in settings).
+- Sandbox file copies now strip temp prefixes and preserve original filenames when attaching files to the API (Python coder).
+- ReAct agent prompt refined to discourage repeating the same tool without new information and to finish after sufficient observations.
 
 ## Updates (2025-12-07)
 - Added `shell_tool` (v0.1.0) for safe in-sandbox navigation and inspection commands.
@@ -836,7 +840,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### Current Version: 2.3.1
+### Current Version: 2.3.3
 
 **Completed:**
 - ✅ Dual backend support (Ollama + llama.cpp)
@@ -847,6 +851,20 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ Vision analysis capabilities
 - ✅ OpenAI-compatible API
 - ✅ JWT authentication
+
+**v2.3.3 Changes:**
+- 🧹 **Removed all `temp_` fallbacks**
+  - File uploads now always use provided names; legacy temp parsing removed
+  - Session fallbacks no longer use `temp_session`; default is `session`
+  - Cleanup helper renamed to `cleanup_uploaded_files`
+- 📊 **Docs/examples**
+  - Updated PhaseManager example to avoid `temp_charts/`
+
+**v2.3.2 Changes:**
+- 🔧 **Uploads keep original filenames**
+  - Removed `temp_` prefixing for file uploads (chat + file APIs now store per-user files using provided names)
+  - Updated filename extraction helper to handle legacy prefixed names while defaulting to originals
+  - Cleanup logging now reflects uploaded file removal rather than temp files
 
 **v2.3.1 Changes:**
 - 🔧 **File Analyzer Tool Export Fix**
@@ -960,5 +978,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by HE Team**
 
-**Version:** 2.3.1
+**Version:** 2.3.3
 **Last Updated:** 2025-12-08

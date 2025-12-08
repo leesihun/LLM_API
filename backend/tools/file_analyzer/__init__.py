@@ -32,6 +32,7 @@ class FileAnalyzerTool(BaseTool):
         *,
         file_paths: Optional[List[str]] = None,
         user_query: Optional[str] = None,
+        quick_mode: bool = False,
         **_: Any,
     ) -> ToolResult:
         """Async entrypoint for BaseTool compatibility."""
@@ -42,7 +43,11 @@ class FileAnalyzerTool(BaseTool):
             )
 
         try:
-            result = self.analyze(file_paths=file_paths or [], user_query=user_query or query)
+            result = self.analyze(
+                file_paths=file_paths or [],
+                user_query=user_query or query,
+                quick_mode=quick_mode,
+            )
             return ToolResult.success_result(
                 output=result["summary"],
                 metadata=result,
@@ -55,7 +60,12 @@ class FileAnalyzerTool(BaseTool):
         file_paths = kwargs.get("file_paths")
         return isinstance(file_paths, list) and len(file_paths) > 0
 
-    def analyze(self, file_paths: List[str], user_query: str = "") -> Dict[str, Any]:
+    def analyze(
+        self,
+        file_paths: List[str],
+        user_query: str = "",
+        quick_mode: bool = False,
+    ) -> Dict[str, Any]:
         """Synchronous helper used by agents."""
         normalized_paths = self._normalize_paths(file_paths)
         if not normalized_paths:
@@ -68,7 +78,7 @@ class FileAnalyzerTool(BaseTool):
                 "error": "No files provided",
             }
 
-        results = [self._analyze_single(path) for path in normalized_paths]
+        results = [self._analyze_single(path, quick_mode=quick_mode) for path in normalized_paths]
         summary = self._build_summary(results, user_query)
         success = any(item["success"] for item in results)
 
@@ -101,7 +111,7 @@ class FileAnalyzerTool(BaseTool):
                 normalized.append(resolved)
         return normalized
 
-    def _analyze_single(self, file_path: str) -> Dict[str, Any]:
+    def _analyze_single(self, file_path: str, quick_mode: bool = False) -> Dict[str, Any]:
         path = Path(file_path)
         if not path.exists():
             return {
@@ -111,6 +121,30 @@ class FileAnalyzerTool(BaseTool):
                 "format": "unknown",
                 "error": "File not found",
             }
+
+        if quick_mode:
+            try:
+                metadata = file_handler_registry.extract_metadata(
+                    path,
+                    quick_mode=True,
+                    use_cache=True,
+                )
+            except Exception as exc:
+                logger.error(f"[FileAnalyzer] Quick metadata failed for {path.name}: {exc}")
+                metadata = {"error": str(exc)}
+
+            size_bytes = path.stat().st_size
+            result = {
+                "file": path.name,
+                "full_path": str(path.resolve()),
+                "extension": path.suffix.lstrip(".").lower(),
+                "size_bytes": size_bytes,
+                "size_human": self._human_size(size_bytes),
+                "format": metadata.get("file_type") or path.suffix.lstrip(".") or "unknown",
+                "success": metadata.get("error") is None,
+            }
+            result.update(metadata)
+            return result
 
         handler = file_handler_registry.get_handler(path)
         if handler is None:

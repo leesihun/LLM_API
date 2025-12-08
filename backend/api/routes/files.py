@@ -6,7 +6,6 @@ Handles file upload, download, and management operations
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from typing import Dict, Any, List
 from pathlib import Path
-import uuid
 
 from backend.api.dependencies import get_current_user
 from backend.config.settings import settings
@@ -45,10 +44,9 @@ async def upload_files(
 
     for file in files:
         try:
-            # Generate unique filename with temp_ prefix (consistent with chat uploads)
-            file_id = uuid.uuid4().hex[:8]
-            filename = f"temp_{file_id}_{file.filename}"
-            file_path = uploads_path / filename
+            # Save with the original filename (user directory scopes uniqueness)
+            safe_name = Path(file.filename).name
+            file_path = uploads_path / safe_name
 
             # Save file
             with open(file_path, "wb") as f:
@@ -56,13 +54,13 @@ async def upload_files(
                 f.write(content)
 
             uploaded_files.append({
-                "filename": file.filename,
+                "filename": safe_name,
                 "file_path": str(file_path),
                 "size": len(content),
                 "content_type": file.content_type
             })
 
-            logger.info(f"[Files] Uploaded: {filename} ({len(content)} bytes)")
+            logger.info(f"[Files] Uploaded: {safe_name} ({len(content)} bytes)")
 
         except Exception as e:
             logger.error(f"[Files] Error uploading {file.filename}: {e}")

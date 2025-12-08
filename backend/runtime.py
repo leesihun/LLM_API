@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -104,75 +103,67 @@ def save_chat_messages(
 # ---------------------------------------------------------------------------
 
 
-def extract_original_filename(temp_file_path: str) -> str:
-    """
-    Extract original filename from temp file path.
-
-    Temp files MUST be named: temp_{uuid}_{original_filename}
-    Example: temp_a1b2c3d4_data.csv -> data.csv
-
-    Args:
-        temp_file_path: Path to temp file (can be absolute or just filename)
-
-    Returns:
-        Original filename without the temp prefix
-
-    Raises:
-        ValueError: If filename doesn't match expected temp_ pattern
-    """
-    filename = Path(temp_file_path).name
-
-    # Match pattern: temp_{8_hex_chars}_{original_name}
-    if not filename.startswith("temp_"):
-        raise ValueError(f"Invalid temp file format: {filename}. Expected format: temp_{{uuid}}_{{original_filename}}")
-
-    parts = filename.split("_", 2)  # Split into max 3 parts: ["temp", "{uuid}", "{original}"]
-    if len(parts) < 3:
-        raise ValueError(f"Invalid temp file format: {filename}. Expected format: temp_{{uuid}}_{{original_filename}}")
-
-    return parts[2]  # Return everything after "temp_{uuid}_"
+def extract_original_filename(file_path: str) -> str:
+    """Return the base filename (no prefix handling)."""
+    return Path(file_path).name
 
 
 async def handle_file_uploads(
     user_id: str,
     files: Optional[List[UploadFile]],
     session_id: Optional[str],
-) -> Tuple[List[str], bool]:
+) -> Tuple[List[str], List[str], bool]:
     """
-    Store uploaded files and/or reuse the last file bundle referenced in the session.
-    Returns (file_paths, new_files_uploaded).
+    Store uploaded files, copy them into the session scratch dir, and return paths.
+
+    Returns:
+        - scratch_paths: Paths inside the per-session scratch directory
+        - uploaded_paths: Paths in the user uploads directory (for cleanup)
+        - new_files_uploaded: Whether new files were provided in this request
     """
     uploads_dir = UPLOAD_ROOT / user_id
+    scratch_dir = SCRATCH_ROOT / (session_id or "temp_session")
     uploads_dir.mkdir(parents=True, exist_ok=True)
+    scratch_dir.mkdir(parents=True, exist_ok=True)
 
     old_files = _load_previous_file_paths(session_id)
     if files:
-        new_paths: List[str] = []
-        for file in files:
-            temp_name = f"temp_{uuid.uuid4().hex[:8]}_{file.filename}"
-            target = uploads_dir / temp_name
-            content = await file.read()
-            target.write_bytes(content)
-            new_paths.append(str(target))
-            logger.info(f"[Uploads] Saved {target.name}")
-
+        # Remove previous uploads before saving new ones to avoid overwriting collisions
         if old_files:
-            cleanup_temp_files(old_files)
+            cleanup_uploaded_files(old_files)
 
-        return new_paths, True
+        scratch_paths: List[str] = []
+        upload_paths: List[str] = []
+        for file in files:
+            safe_name = Path(file.filename).name
 
-    return (old_files, False) if old_files else ([], False)
+            content = await file.read()
+
+            upload_target = uploads_dir / safe_name
+            scratch_target = scratch_dir / safe_name
+
+            upload_target.write_bytes(content)
+            scratch_target.write_bytes(content)
+
+            upload_paths.append(str(upload_target))
+            scratch_paths.append(str(scratch_target))
+
+            logger.info(f"[Uploads] Saved {upload_target.name} -> {scratch_target}")
+
+        return scratch_paths, upload_paths, True
+
+    return (old_files, [], False) if old_files else ([], [], False)
 
 
-def cleanup_temp_files(file_paths: Optional[List[str]]) -> None:
-    """Delete temporary files, ignoring missing paths."""
+def cleanup_uploaded_files(file_paths: Optional[List[str]]) -> None:
+    """Delete uploaded files, ignoring missing paths."""
     if not file_paths:
         return
-    for temp_path in file_paths:
+    for upload_path in file_paths:
         try:
-            Path(temp_path).unlink(missing_ok=True)
+            Path(upload_path).unlink(missing_ok=True)
         except Exception as exc:  # pragma: no cover - logging only
-            logger.warning(f"Failed to cleanup {temp_path}: {exc}")
+            logger.warning(f"Failed to cleanup {upload_path}: {exc}")
 
 
 def _load_previous_file_paths(session_id: Optional[str]) -> List[str]:
@@ -314,7 +305,7 @@ __all__ = [
     "get_session_history",
     "save_chat_messages",
     "handle_file_uploads",
-    "cleanup_temp_files",
+    "cleanup_uploaded_files",
     "extract_original_filename",
     "list_session_artifacts",
     "download_session_artifact",
