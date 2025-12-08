@@ -32,6 +32,7 @@ class JSONHandler(FileHandler):
 
             # Structure type (list, dict, str, etc.)
             metadata['structure'] = type(data).__name__
+            metadata['all_keys'] = self._collect_all_keys(data)
 
             # For lists of objects (most common case: like CSV rows)
             if isinstance(data, list):
@@ -138,6 +139,7 @@ class JSONHandler(FileHandler):
                 data = json.load(f)
 
             result['structure'] = type(data).__name__
+            result['all_keys'] = self._collect_all_keys(data)
 
             # Detailed analysis for list of objects
             if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
@@ -326,6 +328,36 @@ class JSONHandler(FileHandler):
         result['unique_keys'] = len(all_keys)
 
         return result
+
+    def _collect_all_keys(self, data: Any, max_items: int = 50000, depth_limit: int = 20) -> List[str]:
+        """
+        Traverse JSON data and collect all dictionary keys without truncation,
+        with safety caps to avoid runaway traversal.
+        """
+        collected = []
+        seen = set()
+
+        def visit(node: Any, depth: int, remaining: List[int]) -> None:
+            if depth > depth_limit or remaining[0] <= 0:
+                return
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    if k not in seen:
+                        seen.add(k)
+                        collected.append(k)
+                    remaining[0] -= 1
+                    if remaining[0] <= 0:
+                        return
+                    visit(v, depth + 1, remaining)
+            elif isinstance(node, list):
+                for item in node:
+                    if remaining[0] <= 0:
+                        return
+                    remaining[0] -= 1
+                    visit(item, depth + 1, remaining)
+
+        visit(data, 0, [max_items])
+        return collected
 
     def build_context_section(
         self,

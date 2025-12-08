@@ -778,6 +778,11 @@ class PythonCoderTool(BaseTool):
         if top_keys:
             keys.extend(list(top_keys))
 
+        # All keys from metadata (full traversal)
+        all_keys = metadata.get("all_keys")
+        if all_keys:
+            keys.extend(list(all_keys))
+
         # Schema keys (list of objects)
         schema = metadata.get("schema")
         if schema and isinstance(schema, dict):
