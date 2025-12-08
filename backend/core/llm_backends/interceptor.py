@@ -166,12 +166,18 @@ class LLMInterceptor:
         """Format entry in human-readable structured format."""
         lines = []
 
-        # Header box
-        type_icon = "📤" if entry.entry_type == "REQUEST" else "📥"
-        type_color = "REQUEST " if entry.entry_type == "REQUEST" else "RESPONSE"
+        # Header box with sensible defaults for new entry types
+        etype = (entry.entry_type or "").upper()
+        icon_map = {
+            "REQUEST": ("📤", "REQUEST"),
+            "RESPONSE": ("📥", "RESPONSE"),
+            "TOOL": ("🛠", "TOOL"),
+            "TOOL_OUTPUT": ("🛠", "TOOL"),
+        }
+        type_icon, type_label = icon_map.get(etype, ("❔", etype or "LOG"))
 
         lines.append(f"\n{'═'*80}")
-        lines.append(f"  {type_icon} {type_color}  │  ID: {entry.call_id[:8]}  │  {entry.timestamp}")
+        lines.append(f"  {type_icon} {type_label}  │  ID: {entry.call_id[:8]}  │  {entry.timestamp}")
         lines.append(f"{'─'*80}")
         lines.append(f"  Model: {entry.model:<30}  User: {entry.user_id}")
 
@@ -210,7 +216,15 @@ class LLMInterceptor:
 
     def _format_compact(self, entry: LogEntry) -> str:
         """Format entry in compact format."""
-        type_marker = ">>>" if entry.entry_type == "REQUEST" else "<<<"
+        etype = (entry.entry_type or "").upper()
+        marker_map = {
+            "REQUEST": ">>>",
+            "RESPONSE": "<<<",
+            "TOOL": "⚙",
+            "TOOL_OUTPUT": "⚙",
+        }
+        type_marker = marker_map.get(etype, "?")
+
         content_preview = entry.messages[0].content[:100] if entry.messages else ""
         content_preview = content_preview.replace('\n', ' ')
         if len(entry.messages[0].content if entry.messages else "") > 100:
@@ -369,6 +383,51 @@ class LLMInterceptor:
             # Reset call tracking
             self._current_call_id = None
             self._call_start_time = None
+
+    def log_tool_output(self, tool_name: str, action_input: str, output: str):
+        """
+        Log tool observations (python coder, web_search, etc.) to prompts.log.
+
+        Args:
+            tool_name: Name of the tool that produced the output
+            action_input: Raw input provided to the tool
+            output: Tool output or observation text
+        """
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            call_id = str(uuid.uuid4())
+
+            input_text = action_input if isinstance(action_input, str) else json.dumps(action_input, ensure_ascii=False, default=str)
+            output_text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False, default=str)
+
+            content = (
+                f"Tool: {tool_name}\n"
+                f"INPUT:\n{input_text or '[empty]'}\n\n"
+                f"OUTPUT:\n{output_text or '[empty]'}"
+            )
+
+            messages = [LogMessage(role="TOOL", content=content)]
+            token_estimate = self._estimate_tokens(content)
+
+            entry = LogEntry(
+                call_id=call_id,
+                timestamp=timestamp,
+                entry_type="TOOL",
+                model=f"tool:{tool_name}",
+                user_id=self.user_id,
+                messages=messages,
+                token_estimate=token_estimate,
+                duration_ms=None
+            )
+
+            formatted = self._format_entry(entry)
+
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(formatted)
+
+            logger.debug(f"[LLMInterceptor] Logged tool output for {tool_name}")
+        except Exception as e:
+            logger.error(f"[LLMInterceptor] Failed to log tool output: {e}")
 
     async def ainvoke(self, prompt, **kwargs):
         """Async invoke with prompt and response logging."""

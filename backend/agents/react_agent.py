@@ -1165,25 +1165,31 @@ class ToolExecutor:
         steps: Optional[List[ReActStep]] = None,
         plan_context: Optional[dict] = None
     ) -> str:
+        observation = ""
         try:
             if action == ToolName.WEB_SEARCH:
-                return await self._execute_web_search(action_input)
+                observation = await self._execute_web_search(action_input)
             elif action == ToolName.RAG_RETRIEVAL:
-                return await self._execute_rag(action_input)
+                observation = await self._execute_rag(action_input)
             elif action == ToolName.PYTHON_CODER:
-                return await self._execute_python(action_input, file_paths, session_id, steps, plan_context)
+                observation = await self._execute_python(action_input, file_paths, session_id, steps, plan_context)
             elif action == ToolName.SHELL:
-                return await self._execute_shell(action_input, session_id)
+                observation = await self._execute_shell(action_input, session_id)
             elif action == ToolName.FILE_ANALYZER:
-                return await self._execute_file_analysis(action_input, file_paths)
+                observation = await self._execute_file_analysis(action_input, file_paths)
             elif action == ToolName.VISION_ANALYZER:
-                return await self._execute_vision(action_input, file_paths)
+                observation = await self._execute_vision(action_input, file_paths)
             elif action == ToolName.NO_TOOLS:
-                return await self._execute_no_tools(action_input, steps)
-            return "Invalid action."
+                observation = await self._execute_no_tools(action_input, steps)
+            else:
+                observation = "Invalid action."
         except Exception as e:
             logger.error(f"Tool execution error ({action}): {e}")
-            return f"Error executing action: {str(e)}"
+            observation = f"Error executing action: {str(e)}"
+        finally:
+            self._log_tool_output(action, action_input, observation)
+
+        return observation
 
     async def _execute_web_search(self, query: str) -> str:
         results, _ = await web_search_tool.search(query, max_results=5, include_context=True)
@@ -1297,6 +1303,18 @@ class ToolExecutor:
 
         return observation
 
+    def _log_tool_output(self, action: str, action_input: str, observation: str):
+        """Write tool inputs/outputs to prompts.log via the LLM interceptor when available."""
+        log_fn = getattr(self.llm, "log_tool_output", None)
+        if not callable(log_fn):
+            return
+
+        tool_name = action.value if isinstance(action, Enum) else str(action)
+        try:
+            log_fn(tool_name, action_input or "", observation or "")
+        except Exception as e:
+            logger.warning(f"[ToolExecutor] Failed to log tool output for {tool_name}: {e}")
+
     def _build_file_access_help(self, result: Dict[str, Any], file_paths: List[str]) -> str:
         """
         Provide concrete guidance on how to read the analyzed files.
@@ -1357,12 +1375,19 @@ class ToolExecutor:
 # ============================================================================
 
 class PlanExecutor:
-    """Executes structured plans."""
+    """Executes structured plans with per-step ReAct loops."""
     def __init__(self, tool_executor, llm):
         self.tool_executor = tool_executor
         self.llm = llm
 
-    async def execute_plan(self, plan_steps: List[PlanStep], user_query: str, file_paths: List[str], session_id: str) -> Tuple[str, List[StepResult]]:
+    async def execute_plan(
+        self,
+        plan_steps: List[PlanStep],
+        user_query: str,
+        file_paths: List[str],
+        session_id: str,
+        max_iterations_per_step: int = 3,
+    ) -> Tuple[str, List[StepResult]]:
         results = []
         accumulated_obs = []
         react_steps_history = []
@@ -1371,7 +1396,15 @@ class PlanExecutor:
             logger.info(f"[PlanExecutor] Step {plan_step.step_num}: {plan_step.goal}")
             
             step_result, new_react_steps = await self._execute_step_with_retry(
-                plan_step, user_query, accumulated_obs, file_paths, session_id, plan_steps, results, react_steps_history
+                plan_step,
+                user_query,
+                accumulated_obs,
+                file_paths,
+                session_id,
+                plan_steps,
+                results,
+                react_steps_history,
+                max_iterations_per_step,
             )
             
             results.append(step_result)
@@ -1380,93 +1413,238 @@ class PlanExecutor:
             if step_result.observation:
                 accumulated_obs.append(f"Step {plan_step.step_num}: {step_result.observation}")
 
-            # Simple Replanning: If step failed heavily, consider adapting (simplified)
-            # Ideally we just fail or retry. Here we just proceed but mark as failed.
             if not step_result.success and i < len(plan_steps) - 1:
                 logger.warning(f"Step {plan_step.step_num} failed. Continuing with best effort.")
 
-        final_answer = await self._generate_final_answer(user_query, results, accumulated_obs)
+        final_answer = await self._generate_final_answer(user_query, plan_steps, results, accumulated_obs, react_steps_history)
         return final_answer, results
 
     async def _execute_step_with_retry(
-        self, plan_step: PlanStep, user_query: str, accumulated_obs: List[str], 
-        file_paths: List[str], session_id: str, all_plan_steps: List[PlanStep], 
-        step_results: List[StepResult], react_steps_history: List[ReActStep]
+        self,
+        plan_step: PlanStep,
+        user_query: str,
+        accumulated_obs: List[str], 
+        file_paths: List[str],
+        session_id: str,
+        all_plan_steps: List[PlanStep],
+        step_results: List[StepResult],
+        react_steps_history: List[ReActStep],
+        max_iterations_per_step: int,
     ) -> Tuple[StepResult, List[ReActStep]]:
         
-        tool_name = plan_step.primary_tools[0] if plan_step.primary_tools else "web_search"
-        # Map common names to enum
-        tool_map = {
-            "python_code": ToolName.PYTHON_CODER,
-            "python_coder": ToolName.PYTHON_CODER,
-            "web_search": ToolName.WEB_SEARCH,
-            "rag_retrieval": ToolName.RAG_RETRIEVAL,
-            "vision_analyzer": ToolName.VISION_ANALYZER,
-            "shell": ToolName.SHELL,
-            "no_tools": ToolName.NO_TOOLS
-        }
-        tool_enum = tool_map.get(tool_name, ToolName.WEB_SEARCH)
-
-        max_retries = settings.react_step_max_retries
-        current_react_steps = []
+        allowed_tools = self._resolve_allowed_tools(plan_step.primary_tools)
+        current_react_steps: List[ReActStep] = []
         last_error = None
 
-        for attempt in range(1, max_retries + 1):
+        for iteration in range(1, max_iterations_per_step + 1):
             try:
-                # Build action input
-                context = "\n".join(accumulated_obs[-3:]) # Last 3 obs
-                action_input = f"Task: {plan_step.goal}\nContext: {context}\nUser Query: {user_query}"
-                if attempt > 1:
-                    action_input += f"\nRetry Attempt {attempt}. Previous error: {last_error}"
-
-                # Plan context for python tool
                 plan_context = {
                     "current_step": plan_step.step_num,
                     "total_steps": len(all_plan_steps),
-                    "previous_results": [{"step": r.step_num, "success": r.success} for r in step_results]
+                    "goal": plan_step.goal,
+                    "success_criteria": plan_step.success_criteria,
+                    "primary_tools": plan_step.primary_tools,
+                    "previous_results": [{"step": r.step_num, "success": r.success} for r in step_results],
                 }
 
-                # Execute directly (simulating a ReAct step)
+                plan_prompt = self._format_plan_query(user_query, plan_step, all_plan_steps)
+                context = self._format_plan_context(
+                    plan_step,
+                    accumulated_obs,
+                    react_steps_history + current_react_steps,
+                    all_plan_steps,
+                )
+
+                thought_generator = ThoughtActionGenerator(self.llm, file_paths)
+                thought, action, action_input, finish_flag = await thought_generator.generate(
+                    plan_prompt,
+                    react_steps_history + current_react_steps,
+                    context,
+                    include_finish_check=(iteration > 1),
+                )
+
                 step = ReActStep(len(react_steps_history) + len(current_react_steps) + 1)
-                step.thought = f"Executing plan step {plan_step.step_num} (Attempt {attempt})"
-                step.action = tool_enum
+                step.thought = thought
                 step.action_input = action_input
-                
+                step.finish = bool(finish_flag or action in (ToolName.FINISH, "finish"))
+
+                if step.finish:
+                    step.action = ToolName.FINISH
+                    step.observation = thought or f"Step {plan_step.step_num} marked complete."
+                    current_react_steps.append(step)
+                    return StepResult(
+                        step_num=plan_step.step_num,
+                        goal=plan_step.goal,
+                        success=True,
+                        tool_used="finish",
+                        attempts=iteration,
+                        observation=step.observation,
+                        error=None,
+                        metadata={"react_trace": self._serialize_trace(current_react_steps)},
+                    ), current_react_steps
+
+                resolved_action = self._resolve_action(action, allowed_tools)
+                step.action = resolved_action
+
+                if not step.action_input:
+                    step.action_input = f"Task: {plan_step.goal}\nUser Query: {user_query}"
+
                 observation = await self.tool_executor.execute(
-                    tool_enum, action_input, file_paths, session_id, 
-                    steps=react_steps_history + current_react_steps, plan_context=plan_context
+                    step.action,
+                    step.action_input,
+                    file_paths,
+                    session_id,
+                    steps=react_steps_history + current_react_steps,
+                    plan_context=plan_context,
                 )
                 step.observation = observation
                 current_react_steps.append(step)
 
                 success = "error" not in observation.lower() and "failed" not in observation.lower()
-                
                 if success:
                     return StepResult(
-                        step_num=plan_step.step_num, goal=plan_step.goal, success=True, 
-                        tool_used=tool_name, attempts=attempt, observation=observation, error=None, metadata={}
+                        step_num=plan_step.step_num,
+                        goal=plan_step.goal,
+                        success=True,
+                        tool_used=step.action.value,
+                        attempts=iteration,
+                        observation=observation,
+                        error=None,
+                        metadata={"react_trace": self._serialize_trace(current_react_steps)},
                     ), current_react_steps
-                
+
                 last_error = observation
 
             except Exception as e:
                 last_error = str(e)
                 logger.error(f"Step execution error: {e}")
 
-        # Failed after retries
         return StepResult(
-            step_num=plan_step.step_num, goal=plan_step.goal, success=False, 
-            tool_used=tool_name, attempts=max_retries, observation=last_error, error=last_error, metadata={}
+            step_num=plan_step.step_num,
+            goal=plan_step.goal,
+            success=False, 
+            tool_used=allowed_tools[0].value if allowed_tools else None,
+            attempts=max_iterations_per_step,
+            observation=last_error or "Unknown error",
+            error=last_error,
+            metadata={"react_trace": self._serialize_trace(current_react_steps)},
         ), current_react_steps
 
-    async def _generate_final_answer(self, user_query: str, results: List[StepResult], obs: List[str]) -> str:
-        context = "\n".join([f"Step {r.step_num}: {r.observation}" for r in results])
-        prompt = _build_final_answer_prompt(query=user_query, context=context)
+    def _format_plan_query(self, user_query: str, plan_step: PlanStep, all_plan_steps: List[PlanStep]) -> str:
+        overview = self._plan_overview(all_plan_steps)
+        return (
+            f"Overall goal: {user_query}\n"
+            f"Current plan step ({plan_step.step_num}/{len(all_plan_steps)}): {plan_step.goal}\n"
+            f"Success criteria: {plan_step.success_criteria}\n"
+            f"Allowed tools: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
+            f"Full plan:\n{overview}"
+        )
+
+    def _format_plan_context(
+        self,
+        plan_step: PlanStep,
+        accumulated_obs: List[str],
+        react_steps: List[ReActStep],
+        all_plan_steps: List[PlanStep],
+    ) -> str:
+        recent_obs = "\n".join(accumulated_obs[-3:])
+        formatter = ContextFormatter()
+        react_context = formatter.format(react_steps) if react_steps else "No ReAct steps yet for this subgoal."
+        return (
+            f"Plan focus: step {plan_step.step_num} -> {plan_step.goal}\n"
+            f"Prior plan observations:\n{recent_obs or 'None'}\n"
+            f"Plan outline:\n{self._plan_overview(all_plan_steps)}\n"
+            f"ReAct trace so far for this subgoal:\n{react_context}"
+        )
+
+    def _resolve_allowed_tools(self, primary_tools: List[str]) -> List[ToolName]:
+        tool_map = {
+            "python_code": ToolName.PYTHON_CODER,
+            "python_coder": ToolName.PYTHON_CODER,
+            "web_search": ToolName.WEB_SEARCH,
+            "rag": ToolName.RAG_RETRIEVAL,
+            "rag_retrieval": ToolName.RAG_RETRIEVAL,
+            "vision_analyzer": ToolName.VISION_ANALYZER,
+            "shell": ToolName.SHELL,
+            "no_tools": ToolName.NO_TOOLS,
+            "file_analyzer": ToolName.FILE_ANALYZER,
+        }
+        enums = []
+        for t in primary_tools:
+            mapped = tool_map.get(t)
+            if mapped:
+                enums.append(mapped)
+        return enums
+
+    def _resolve_action(self, action: str, allowed_tools: List[ToolName]) -> ToolName:
+        # Normalize to ToolName
+        if isinstance(action, ToolName):
+            resolved = action
+        else:
+            try:
+                resolved = ToolName(action)
+            except Exception:
+                tool_map = {
+                    "python_code": ToolName.PYTHON_CODER,
+                    "python_coder": ToolName.PYTHON_CODER,
+                    "web_search": ToolName.WEB_SEARCH,
+                    "rag": ToolName.RAG_RETRIEVAL,
+                    "rag_retrieval": ToolName.RAG_RETRIEVAL,
+                    "vision_analyzer": ToolName.VISION_ANALYZER,
+                    "shell": ToolName.SHELL,
+                    "no_tools": ToolName.NO_TOOLS,
+                }
+                resolved = tool_map.get(str(action).lower(), ToolName.WEB_SEARCH)
+
+        if allowed_tools and resolved not in allowed_tools:
+            logger.info(f"[PlanExecutor] Action {resolved} not in primary tools {allowed_tools}. Enforcing {allowed_tools[0]}.")
+            return allowed_tools[0]
+        return resolved
+
+    def _plan_overview(self, plan_steps: List[PlanStep]) -> str:
+        lines = []
+        for step in plan_steps:
+            tools = ", ".join(step.primary_tools) if step.primary_tools else "none specified"
+            lines.append(f"{step.step_num}. {step.goal} (tools: {tools}, success: {step.success_criteria})")
+        return "\n".join(lines)
+
+    def _serialize_trace(self, steps: List[ReActStep]) -> List[Dict[str, Any]]:
+        trace = []
+        for s in steps:
+            item = s.to_dict()
+            action_value = s.action.value if isinstance(s.action, Enum) else str(s.action)
+            item["action"] = action_value
+            trace.append(item)
+        return trace
+
+    async def _generate_final_answer(
+        self,
+        user_query: str,
+        plan_steps: List[PlanStep],
+        results: List[StepResult],
+        obs: List[str],
+        react_steps: List[ReActStep],
+    ) -> str:
+        plan_outline = self._plan_overview(plan_steps)
+        execution_summary = "\n".join([f"Step {r.step_num} [{r.goal}]: {r.observation}" for r in results])
+        obs_summary = "\n".join(obs[-5:]) if obs else "None"
+        react_trace_count = len(react_steps)
+        prompt = (
+            "You are summarizing a plan-and-execute run.\n\n"
+            f"Overall goal:\n{user_query}\n\n"
+            f"Plan:\n{plan_outline}\n\n"
+            f"Execution observations:\n{execution_summary if execution_summary else 'None'}\n\n"
+            f"Recent intermediate observations:\n{obs_summary}\n\n"
+            f"ReAct trace steps captured: {react_trace_count}\n\n"
+            "Provide a concise answer that references how each plan step contributed. "
+            "Call out any failures or missing data explicitly."
+        )
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
 
-    def _build_metadata(self, plan_steps: List[PlanStep], step_results: List[StepResult]) -> Dict[str, Any]:
+    def _build_metadata(self, plan_steps: List[PlanStep], step_results: List[StepResult], react_steps: List[ReActStep] = None) -> Dict[str, Any]:
         """Build metadata for plan execution results."""
+        react_trace = react_steps or []
         return {
             "agent_type": "plan_execute",
             "plan": [
@@ -1485,10 +1663,20 @@ class PlanExecutor:
                     "success": result.success,
                     "tool_used": result.tool_used,
                     "attempts": result.attempts,
-                    "observation": result.observation[:500] if result.observation else None,  # Truncate for size
-                    "error": result.error
+                    "observation": result.observation[:500] if result.observation else None,
+                    "error": result.error,
+                    "react_trace": result.metadata.get("react_trace") if result.metadata else None,
                 }
                 for result in step_results
+            ],
+            "react_steps": [
+                {
+                    "step_num": s.step_num,
+                    "action": s.action.value if isinstance(s.action, Enum) else str(s.action),
+                    "thought": s.thought[:300] if s.thought else "",
+                    "observation": s.observation[:300] if s.observation else "",
+                }
+                for s in react_trace
             ],
             "total_steps": len(plan_steps),
             "successful_steps": sum(1 for r in step_results if r.success),
@@ -1628,7 +1816,7 @@ class ReActAgent:
         
         user_query = messages[-1].content
         final_answer, step_results = await self.plan_executor.execute_plan(
-            plan_steps, user_query, file_paths, session_id
+            plan_steps, user_query, file_paths, session_id, max_iterations_per_step
         )
         return final_answer, step_results
 
