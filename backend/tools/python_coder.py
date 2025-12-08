@@ -114,6 +114,7 @@ Write a comprehensive observation that includes:
 1. What the code did, and what the results are.
 2. Key results or findings
 3. Any files created
+4. If the task appears fully answered, end with 'FINISH: true'. Otherwise, use 'FINISH: false'.
 
 Keep it factual and concise. This will be used by the agent to decide next steps.
 
@@ -491,7 +492,10 @@ class PythonCoderTool(BaseTool):
         if exec_result.variables:
             vars_str = ", ".join(list(exec_result.variables.keys())[:5])
             parts.append(f"Variables: {vars_str}")
-            
+        
+        # Encourage downstream finish detection when execution completed cleanly
+        parts.append("FINISH: true")
+
         return " ".join(parts)
     
     def _extract_code(self, response: str) -> str:

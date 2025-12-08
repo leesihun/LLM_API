@@ -43,6 +43,17 @@ class ToolName(str, Enum):
     FINISH = "finish"
 
 
+# FINISH detection helpers (used for both ReAct and plan_execute paths)
+_FINISH_PATTERN = re.compile(r"\bfinish\s*:\s*(true|yes|1)\b", re.IGNORECASE)
+
+
+def observation_signals_finish(observation: str) -> bool:
+    """Return True if observation explicitly signals FINISH: true/yes/1."""
+    if not observation:
+        return False
+    return bool(_FINISH_PATTERN.search(observation))
+
+
 # ============================================================================
 # Native Tool Definitions (for Ollama/OpenAI function calling)
 # ============================================================================
@@ -1240,17 +1251,36 @@ class ToolExecutor:
         # Format observation from ToolResult
         if tool_result.success:
             result = tool_result.output
-            output = result.get('output', '')
-            created_files = result.get('created_files', [])
-            attempts = result.get('attempts', 1)
+            observation_text = ""
+            output = ""
+            created_files = []
+            attempts = 1
 
-            response = f"Code generation and execution successful (attempt {attempts}/{settings.python_code_max_iterations}):\n{output}"
+            if isinstance(result, dict):
+                observation_text = result.get('observation', '') or ''
+                output = result.get('output', '') or ''
+                created_files = result.get('created_files', []) or []
+                attempts = result.get('attempts', 1) or 1
+            else:
+                # Gracefully handle unexpected shapes by stringifying
+                output = result if isinstance(result, str) else str(result)
+
+            parts = []
+            if observation_text:
+                parts.append(observation_text)
+
+            parts.append(f"Code generation and execution successful (attempt {attempts}/{settings.python_code_max_iterations}).")
+
+            if output:
+                parts.append(f"Output:\n{output}")
+
             if created_files:
-                response += f"\n\nCreated files: {', '.join(created_files)}"
-            return response
+                parts.append(f"Created files: {', '.join(created_files)}")
+
+            return "\n\n".join(parts).strip()
         else:
             error_msg = tool_result.error or "Unknown error"
-            attempt_history = tool_result.metadata.get('attempt_history', [])
+            attempt_history = (tool_result.metadata or {}).get('attempt_history', [])
 
             response = f"Code generation/execution failed: {error_msg}"
             if attempt_history:
@@ -1416,6 +1446,11 @@ class PlanExecutor:
             if not step_result.success and i < len(plan_steps) - 1:
                 logger.warning(f"Step {plan_step.step_num} failed. Continuing with best effort.")
 
+            # Early stop if the observation explicitly signaled completion
+            if step_result.metadata and step_result.metadata.get("finish"):
+                logger.info(f"[PlanExecutor] Finish detected at plan step {plan_step.step_num}; stopping remaining steps.")
+                break
+
         final_answer = await self._generate_final_answer(user_query, plan_steps, results, accumulated_obs, react_steps_history)
         return final_answer, results
 
@@ -1498,6 +1533,20 @@ class PlanExecutor:
                     plan_context=plan_context,
                 )
                 step.observation = observation
+                # Allow observation to signal completion (e.g., python_coder returning FINISH)
+                if observation_signals_finish(step.observation):
+                    step.finish = True
+                    current_react_steps.append(step)
+                    return StepResult(
+                        step_num=plan_step.step_num,
+                        goal=plan_step.goal,
+                        success=True,
+                        tool_used=step.action.value if isinstance(step.action, Enum) else str(step.action),
+                        attempts=iteration,
+                        observation=step.observation,
+                        error=None,
+                        metadata={"react_trace": self._serialize_trace(current_react_steps), "finish": True},
+                    ), current_react_steps
                 current_react_steps.append(step)
 
                 success = "error" not in observation.lower() and "failed" not in observation.lower()
@@ -1786,6 +1835,15 @@ class ReActAgent:
                 action, action_input, file_paths, session_id, steps=self.steps
             )
             step.observation = observation
+            # Detect completion signaled inside observation (e.g., from python_coder)
+            if observation_signals_finish(step.observation):
+                step.finish = True
+                logger.info(f"[ReActAgent] FINISH detected in observation at step {step.step_num}.")
+                self.steps.append(step)
+                final_answer = await self.answer_generator.generate(user_query, self.steps)
+                logger.info(f"[ReActAgent] Generated final answer ({len(final_answer)} chars) via observation finish.")
+                break
+
             self.steps.append(step)
             logger.info(f"[ReActAgent] Step {step.step_num} completed. Observation: {observation[:200]}...")
 

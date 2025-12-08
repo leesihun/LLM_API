@@ -62,7 +62,8 @@ class ToolResult(BaseModel):
     """
 
     success: bool
-    output: Optional[str] = None
+    # Allow structured outputs (str, dict, list, etc.) for flexible tools like python_coder
+    output: Optional[Any] = None
     error: Optional[str] = None
     error_type: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -101,7 +102,7 @@ class ToolResult(BaseModel):
     @classmethod
     def success_result(
         cls,
-        output: str,
+        output: Any,
         metadata: Optional[Dict[str, Any]] = None,
         execution_time: Optional[float] = None
     ) -> "ToolResult":
