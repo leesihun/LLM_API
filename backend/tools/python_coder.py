@@ -66,12 +66,15 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 2. When asked, use matplotlib for visualizations; save with plt.savefig('output.png') and print the filename (never plt.show()).
 3. Print results that should be visible to the user; otherwise write to a file.
 4. Use only the provided filenames. Do not create new files unless explicitly asked.
+5. When reading JSON: use utf-8 with errors='replace', branch on root type (dict vs list vs other), handle NDJSON by splitting lines, and validate keys with .get/type checks before use.
 
 ## CRITICAL INSTRUCTIONS
 - Output ONLY Python code, absolutely NO explanations before or after.
 - Do NOT use markdown code blocks (no ```python ... ```).
 - Start immediately with import statements or code.
 - ACTION INPUT from the agent already contains the task; do not restate it.
+
+Think hard
 
 Code:
 """
@@ -100,6 +103,9 @@ CODE_FIX_PROMPT = """You are an expert Python programmer. The following code fai
 5. Do NOT use markdown code blocks (no ```python ... ```)
 6. Start directly with the fixed code
 7. Always use the exact filenames of the files provided to you. Do not create new files.
+{extra_guidance}
+
+Think hard
 
 Fixed Code:"""
 
@@ -435,11 +441,20 @@ class PythonCoderTool(BaseTool):
         Returns:
             Fixed Python code
         """
+        extra_guidance = ""
+        if self._is_json_error(error):
+            extra_guidance = (
+                "\n- For JSON errors: open with encoding='utf-8', errors='replace'; "
+                "if load() fails, fall back to line-split NDJSON handling; "
+                "branch by root type (dict/list/other) and guard key access with .get/type checks."
+            )
+
         prompt = CODE_FIX_PROMPT.format(
             task=task,
             code=code,
             error=error,
-            file_context=file_context or "No files provided"
+            file_context=file_context or "No files provided",
+            extra_guidance=extra_guidance
         )
         
         logger.debug(f"[PythonCoder] Code fix prompt ({len(prompt)} chars)")
@@ -598,7 +613,8 @@ class PythonCoderTool(BaseTool):
         
         try:
             # Use file_analyzer for detailed context
-            analysis = file_analyzer.analyze(file_paths, quick_mode=True)
+            quick_mode = not self._contains_json(file_paths)
+            analysis = file_analyzer.analyze(file_paths, quick_mode=quick_mode)
             
             if analysis.get('success'):
                 base_note = (
@@ -679,6 +695,28 @@ class PythonCoderTool(BaseTool):
             "instructions": instructions,
         }
     
+    def _contains_json(self, file_paths: Optional[List[str]]) -> bool:
+        """Return True if any provided file looks like JSON."""
+        if not file_paths:
+            return False
+        return any(str(p).lower().endswith(".json") for p in file_paths)
+
+    def _is_json_error(self, error: str) -> bool:
+        """Heuristically detect JSON parsing errors to add guardrails."""
+        if not error:
+            return False
+        lowered = error.lower()
+        json_markers = [
+            "jsondecodeerror",
+            "expecting value",
+            "extra data",
+            "unterminated string",
+            "invalid control character",
+            "json parsing",
+            "decode json",
+        ]
+        return any(marker in lowered for marker in json_markers)
+
     def _copy_files_to_sandbox(
         self,
         file_paths: List[str],
