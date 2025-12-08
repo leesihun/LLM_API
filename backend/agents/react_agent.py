@@ -1603,7 +1603,7 @@ class PlanExecutor:
             f"Current plan step ({plan_step.step_num}/{len(all_plan_steps)}): {plan_step.goal}\n"
             f"Success criteria: {plan_step.success_criteria}\n"
             f"Allowed tools: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
-            f"Full plan:\n{overview}"
+            # f"Full plan:\n{overview}"
         )
 
     def _format_plan_context(
