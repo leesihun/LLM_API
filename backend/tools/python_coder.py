@@ -39,29 +39,34 @@ logger = get_logger(__name__)
 # Prompt Templates
 # ============================================================================
 
-CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python code to accomplish the following task.
+CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python code to accomplish the task.
+
+## Available files
+{file_context}
+
+## Previous conversation
+{previous_conversation}
+
+## Plans
+{plan_context}
 
 ## Task
 {task}
 
-## Available Files
-{file_context}
-
-## Context
-{additional_context}
+## Instruction
+{instructions}
 
 ## Requirements
-1. Write a clean, efficient Python code that accomplishes the given Task.
-2. When asked, use matplotlib for visualizations (save to file, don't use plt.show())
-3. Print results that should be visible to the user, otherwise, you may write a file.
-4. Always use the exact filenames of the files provided to you. Do not create new files.
+1. Write clean, efficient Python that completes the Task.
+2. When asked, use matplotlib for visualizations; save with plt.savefig('output.png') and print the filename (never plt.show()).
+3. Print results that should be visible to the user; otherwise write to a file.
+4. Use only the provided filenames. Do not create new files unless explicitly asked.
 
 ## CRITICAL INSTRUCTIONS
-- Output ONLY Python code, absolutely NO explanations before or after
-- Do NOT use markdown code blocks (no ```python ... ```)
-- Start immediately with import statements or code
-- Use print() for all outputs that should be visible if not viable, you may write a file.
-- Save visualizations with plt.savefig('output.png') and print the filename
+- Output ONLY Python code, absolutely NO explanations before or after.
+- Do NOT use markdown code blocks (no ```python ... ```).
+- Start immediately with import statements or code.
+- ACTION INPUT from the agent already contains the task; do not restate it.
 
 Code:
 """
@@ -263,7 +268,7 @@ class PythonCoderTool(BaseTool):
         self,
         task: str,
         file_context: str,
-        additional_context: str,
+        additional_context: Dict[str, str],
         sandbox: CodeSandbox,
         user_id: str
     ) -> ToolResult:
@@ -273,7 +278,7 @@ class PythonCoderTool(BaseTool):
         Args:
             task: Task description
             file_context: Information about available files
-            additional_context: Additional context for code generation
+            additional_context: Structured context for code generation
             sandbox: Sandbox instance for execution
             user_id: User ID for LLM
             
@@ -364,7 +369,7 @@ class PythonCoderTool(BaseTool):
         llm,
         task: str,
         file_context: str,
-        additional_context: str
+        additional_context: Dict[str, str]
     ) -> str:
         """
         Generate Python code from task description.
@@ -373,7 +378,7 @@ class PythonCoderTool(BaseTool):
             llm: LLM instance
             task: Task description
             file_context: File information
-            additional_context: Additional context
+            additional_context: Structured context (prior convo, plan, instructions)
             
         Returns:
             Generated Python code
@@ -381,7 +386,9 @@ class PythonCoderTool(BaseTool):
         prompt = CODE_GENERATION_PROMPT.format(
             task=task,
             file_context=file_context or "No files provided",
-            additional_context=additional_context or "No additional context"
+            previous_conversation=additional_context.get("previous_conversation", "None"),
+            plan_context=additional_context.get("plan_context", "None"),
+            instructions=additional_context.get("instructions", "None")
         )
         
         logger.debug(f"[PythonCoder] Code generation prompt ({len(prompt)} chars)")
@@ -593,48 +600,54 @@ class PythonCoderTool(BaseTool):
         conversation_history: Optional[List[Dict]],
         plan_context: Optional[Dict],
         react_context: Optional[Dict]
-    ) -> str:
+    ) -> Dict[str, str]:
         """
-        Build additional context from various sources.
+        Build structured additional context from various sources.
         
         Args:
-            context: Direct context string
+            context: Direct instruction string
             conversation_history: Past conversation messages
             plan_context: Plan execution context
             react_context: ReAct agent context
             
         Returns:
-            Combined context string
+            Dict with previous_conversation, plan_context, and instructions
         """
-        parts = []
-        
-        if context:
-            parts.append(f"Context: {context}")
-        
+        previous_conversation = "None"
         if conversation_history:
-            # Extract recent relevant messages
             recent = conversation_history[-3:] if len(conversation_history) > 3 else conversation_history
             history_str = "\n".join(
                 f"{msg.get('role', 'unknown')}: {msg.get('content', '')[:200]}"
                 for msg in recent
             )
-            parts.append(f"Recent conversation:\n{history_str}")
+            previous_conversation = history_str or "None"
         
+        plan_section = "None"
         if plan_context:
             step = plan_context.get('current_step', '?')
             total = plan_context.get('total_steps', '?')
-            parts.append(f"Plan: Step {step}/{total}")
+            plan_section = f"Plan step {step}/{total}"
+        
+        instruction_parts = []
+        if context:
+            instruction_parts.append(context)
         
         if react_context:
             prev_steps = react_context.get('previous_steps', [])
             if prev_steps:
                 steps_str = "\n".join(
-                    f"- Step {s.get('step')}: {s.get('action')} -> {s.get('observation', '')[:100]}"
+                    f"- Step {s.get('step')}: {s.get('action')} -> {s.get('observation', '')[:120]}"
                     for s in prev_steps[-3:]
                 )
-                parts.append(f"Previous steps:\n{steps_str}")
+                instruction_parts.append(f"Recent agent steps:\n{steps_str}")
         
-        return "\n\n".join(parts) if parts else ""
+        instructions = "\n".join(instruction_parts) if instruction_parts else "None"
+        
+        return {
+            "previous_conversation": previous_conversation,
+            "plan_context": plan_section,
+            "instructions": instructions,
+        }
     
     def _copy_files_to_sandbox(
         self,

@@ -468,49 +468,45 @@ def _build_thought_action_prompt(
         snippet = latest_observation[:50000]
         if len(latest_observation) > 50000:
             snippet += "... (truncated)"
-        finish_section = f"""
-## Latest Observation
-{snippet}
+        finish_section = (
+            "Latest observation (for finish check):\n"
+            f"{snippet}\n"
+            "- If this fully answers the query → set FINISH: true and do NOT call a tool.\n"
+            "- Otherwise → FINISH: false and choose one tool that adds new information.\n"
+        )
 
-## Completion Assessment
-Decide if the latest observation fully answers the query.
-- If YES → set **FINISH: true** and do not call another tool.
-- If NO → set **FINISH: false** and pick the single tool that will gather new information."""
+    guidance_section = f"{file_guidance}\n" if file_guidance else ""
+    context_section = context if context else "No prior steps yet."
 
-    guidance_section = f"\n{file_guidance}\n" if file_guidance else ""
+    return f"""You are a focused ReAct agent. Choose at most ONE tool per turn. Set FINISH to true only when you can answer directly; otherwise keep FINISH false and call the best single tool.
 
-    return f"""You are a focused ReAct agent. Think, pick ONE tool when needed, and use the FINISH flag when you have enough information to answer the query, set FINISH: true and skip tool calls. 
-    Otherwise set FINISH: false and pick the single best tool.
-{guidance_section}
+Guidelines:
+- Follow the Response format exactly; no extra prose.
+- Use only the tool names listed under Tools; never invent new ones.
+- ACTION INPUT must be a concrete command/query: python_coder -> plain-language task; web_search/rag_retrieval -> search query; shell -> one safe command; vision_analyzer -> question; no_tools -> reasoning.
+- Prefer local analysis before web_search unless the request clearly needs live/external info.
+- When FINISH is true, leave ACTION empty and ACTION INPUT blank.
+{guidance_section}{finish_section}
+
+## Query (Original inquire)
+{query}
 
 ## Context
-{context if context else 'No prior steps yet.'}
-{finish_section}
+{context_section}
+
 ## Tools
-- web_search → realtime or complex or specific info
-- rag_retrieval → very specific infomation.... Choose only when specifically asked
-- python_coder → generate and execute Python code based on task description
+- web_search → realtime or complex/specific external info
+- rag_retrieval → very specific info from the knowledge base (only when explicitly needed)
+- python_coder → generate and execute Python code based on a natural-language task
 - shell → run safe shell commands (ls/dir/pwd/cd/cat/head/tail/find/grep/wc/echo) inside the sandbox
 - vision_analyzer → answer image questions (only if images attached)
-- no_tools → think and reason without external tools (use when no tool fits or need to synthesize)
+- no_tools → think and reason without external tools
 
-## IMPORTANT:
-## Response Format: Strictly follow the format: Must have THOUGHT, ACTION, ACTION INPUT, and FINISH.
-
-THOUGHT: Detailed reasoning, future recommendations after the action, including whether you can finish.
-
-ACTION: tool name (Leave it empty when FINISH is true)
-
-ACTION INPUT: For web_search and rag_retrieval, write the search query. 
-For python_coder, write a clear task description in natural language (what you want the code to do). 
-For vision_analyzer, write the question. 
-For no_tools, write your reasoning. 
-
-FINISH: true or false (true only when you have enough information to answer the query)
-
-
-## Query
-{query}
+## Response format
+THOUGHT: reasoning and next step, including if you can finish
+ACTION: tool name (empty when FINISH is true)
+ACTION INPUT: exact input for the chosen tool
+FINISH: true or false
 """
 
 
@@ -535,34 +531,29 @@ def _build_plan_prompt(
     tools_line = ", ".join(available_tools) if available_tools else "python_coder, web_search, rag_retrieval, vision_analyzer"
     history = conversation_history or "No previous conversation."
     files_note = "yes" if has_files else "no"
-    return f"""You are a planning assistant.
+    return f"""You are a strict planning assistant. Design a concise, multi-step plan the agent will execute.
 
-## User Query
-{query}
+Inputs:
+- Query (Original inquire): {query}
+- Conversation history: {history}
+- Files attached: {files_note}
+- Available tools: {tools_line}
 
-## Conversation History
-{history}
+Guidelines:
+- Output ONLY valid JSON (no prose) representing 2-6 atomic steps.
+- Use only the available tools; prefer python_coder for local/file analysis and reserve web_search for live or external data.
+- Each goal is outcome-based and non-overlapping; keep steps minimal but sufficient.
+- success_criteria must be measurable and state what proves the step succeeded.
+- context is optional; include only terse, actionable hints.
 
-## Tools
-{tools_line}
-
-Files Attached: {files_note}
-
-Return a JSON array (1-4 steps). Each step must include:
-- "step_num": integer
-- "goal": short description
-- "primary_tools": list of tool names
-- "success_criteria": how we know the step worked
-- "context": optional helper text
-
-Example:
+JSON schema:
 [
   {{
     "step_num": 1,
-    "goal": "Load the CSV and inspect columns",
-    "primary_tools": ["python_coder"],
-    "success_criteria": "Columns listed and preview generated",
-    "context": "Focus on columns with revenue"
+    "goal": "short, outcome-focused objective",
+    "primary_tools": ["tool_name"],
+    "success_criteria": "objective check that confirms success",
+    "context": "optional, concise guidance"
   }}
 ]"""
 # ============================================================================
@@ -1440,7 +1431,7 @@ class PlanExecutor:
             results.append(step_result)
             react_steps_history.extend(new_react_steps)
             
-            if step_result.observation:
+            if step_result.success and step_result.observation:
                 accumulated_obs.append(f"Step {plan_step.step_num}: {step_result.observation}")
 
             if not step_result.success and i < len(plan_steps) - 1:
@@ -1591,13 +1582,16 @@ class PlanExecutor:
         react_steps: List[ReActStep],
         all_plan_steps: List[PlanStep],
     ) -> str:
-        recent_obs = "\n".join(accumulated_obs[-3:])
+        recent_success = "\n".join(accumulated_obs[-3:]) if accumulated_obs else "None"
+        plan_outline = self._plan_overview(all_plan_steps)
         formatter = ContextFormatter()
         react_context = formatter.format(react_steps) if react_steps else "No ReAct steps yet for this subgoal."
         return (
-            f"Plan focus: step {plan_step.step_num} -> {plan_step.goal}\n"
-            f"Prior plan observations:\n{recent_obs or 'None'}\n"
-            f"Plan outline:\n{self._plan_overview(all_plan_steps)}\n"
+            f"Prior plan observations (success only):\n{recent_success}\n\n"
+            f"Plan outline:\n{plan_outline}\n\n"
+            f"Plan focus: step {plan_step.step_num}/{len(all_plan_steps)} -> {plan_step.goal}\n"
+            f"Success criteria for this step: {plan_step.success_criteria or 'Not specified'}\n"
+            f"Allowed tools for this step: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
             f"ReAct trace so far for this subgoal:\n{react_context}"
         )
 
