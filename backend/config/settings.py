@@ -86,7 +86,7 @@ class Settings(BaseSettings):
 
     react_max_iterations: int = 10  # Maximum iterations for ReAct loop (optimized from 10)
     react_step_max_retries: int = 5  # Maximum retries per step in plan execution (optimized from 5)
-    python_code_max_iterations: int = 1  # Single-shot code execution; iteration handled by agent
+    python_code_max_iterations: int = 5  # Single-shot code execution; iteration handled by agent
     
     # Tool calling mode: 'react' (text-based prompting) or 'native' (Ollama/OpenAI function calling)
     # - 'react': Works with all backends (Ollama, llama.cpp), uses THOUGHT/ACTION/OBSERVATION format

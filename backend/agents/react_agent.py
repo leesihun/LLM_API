@@ -513,7 +513,7 @@ def _build_thought_action_prompt(
 
     return f"""You are a focused ReAct agent. Choose at most ONE tool per turn. Set FINISH to true only when you can answer directly; otherwise keep FINISH false and call the best single tool.
 
-Guidelines:
+General Guidelines:
 - Follow the Response format exactly; no extra prose.
 - Use only the tool names listed under Tools; never invent new ones.
 - ACTION INPUT must be a concrete command/query: python_coder -> plain-language task; web_search/rag_retrieval -> search query; shell -> one safe command; vision_analyzer -> question; no_tools -> reasoning.
