@@ -67,6 +67,7 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 3. Print results that should be visible to the user; otherwise write to a file.
 4. Use only the provided filenames. Do not create new files unless explicitly asked.
 5. When reading JSON: use utf-8 with errors='replace', branch on root type (dict vs list vs other), handle NDJSON by splitting lines, and validate keys with .get/type checks before use.
+6. First inspect the provided files before any heavy processing: load them safely, print keys/columns/shapes/samples to ground all subsequent key access instead of guessing.
 
 ## CRITICAL INSTRUCTIONS
 - Output ONLY Python code, absolutely NO explanations before or after.
@@ -623,7 +624,9 @@ class PythonCoderTool(BaseTool):
                     "'sales.csv')."
                 )
                 llm_context = analysis.get('llm_context', analysis.get('summary', ''))
-                return f"{base_note}\n\n{llm_context}".strip()
+                json_details = self._format_json_details(analysis.get('analyses', []))
+                combined = "\n\n".join([part for part in (llm_context, json_details) if part]).strip()
+                return f"{base_note}\n\n{combined}".strip()
             else:
                 # Fallback to simple listing
                 return (
@@ -716,6 +719,93 @@ class PythonCoderTool(BaseTool):
             "decode json",
         ]
         return any(marker in lowered for marker in json_markers)
+
+    def _format_json_details(self, analyses: List[Dict[str, Any]]) -> str:
+        """
+        Build a concise JSON-focused context so the LLM sees real keys/shape.
+        """
+        if not analyses:
+            return ""
+
+        sections = []
+        for analysis in analyses:
+            metadata = analysis.get("metadata") or {}
+            file_type = metadata.get("file_type")
+            if file_type != "json":
+                continue
+
+            name = analysis.get("original_name") or analysis.get("file_path") or "json file"
+            structure = metadata.get("structure", "unknown")
+            keys = metadata.get("top_level_keys") or []
+            all_keys = self._collect_all_json_keys(metadata)
+            key_count = metadata.get("key_count")
+            item_count = metadata.get("item_count")
+            schema = metadata.get("schema") or {}
+            sample = metadata.get("sample")
+
+            lines = [f"[JSON] {name}"]
+            lines.append(f"- structure: {structure}")
+            if item_count is not None:
+                lines.append(f"- items: {item_count}")
+            if key_count is not None:
+                lines.append(f"- keys: {key_count}")
+            if keys:
+                lines.append(f"- top-level keys: {', '.join(str(k) for k in keys)}")
+            if all_keys:
+                lines.append(f"- all keys: {', '.join(str(k) for k in all_keys)}")
+            if schema:
+                schema_preview = [f"{k}: {v}" for k, v in schema.items()]
+                lines.append(f"- schema: {', '.join(schema_preview)}")
+            if sample:
+                try:
+                    snippet = json.dumps(sample, ensure_ascii=False)
+                    lines.append(f"- sample: {snippet}")
+                except Exception:
+                    pass
+
+            sections.append("\n".join(lines))
+
+        return "\n\n".join(sections)
+
+    def _collect_all_json_keys(self, metadata: Dict[str, Any]) -> List[Any]:
+        """
+        Collect all discoverable keys from metadata without truncation.
+        """
+        keys = []
+
+        # Direct top-level keys
+        top_keys = metadata.get("top_level_keys")
+        if top_keys:
+            keys.extend(list(top_keys))
+
+        # Schema keys (list of objects)
+        schema = metadata.get("schema")
+        if schema and isinstance(schema, dict):
+            keys.extend(list(schema.keys()))
+
+        # Value types keys (dict case)
+        value_types = metadata.get("value_types")
+        if value_types and isinstance(value_types, dict):
+            keys.extend(list(value_types.keys()))
+
+        # Sample keys (dict or list of dicts)
+        sample = metadata.get("sample")
+        if isinstance(sample, dict):
+            keys.extend(list(sample.keys()))
+        elif isinstance(sample, list):
+            for item in sample:
+                if isinstance(item, dict):
+                    keys.extend(list(item.keys()))
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped = []
+        for k in keys:
+            if k in seen:
+                continue
+            seen.add(k)
+            deduped.append(k)
+        return deduped
 
     def _copy_files_to_sandbox(
         self,
