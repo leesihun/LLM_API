@@ -502,6 +502,7 @@ def _build_thought_action_prompt(
         if len(latest_observation) > 50000:
             snippet += "... (truncated)"
         finish_section = (
+            "----------------------------------------------------------\n"
             "Latest observation (for finish check):\n"
             f"{snippet}\n"
             "- If this fully answers the query → set FINISH: true and do NOT call a tool.\n"
@@ -515,18 +516,27 @@ def _build_thought_action_prompt(
 General Guidelines:
 - Follow the Response format exactly; no extra prose.
 - Use only the tool names listed under Tools; never invent new ones.
-- ACTION INPUT must be a concrete command/query: python_coder -> plain-language task; web_search/rag_retrieval -> search query; shell -> one safe command; vision_analyzer -> question; no_tools -> reasoning.
-- Prefer local analysis before web_search unless the request clearly needs live/external info.
-- When FINISH is true, leave ACTION empty and ACTION INPUT blank.
+- ACTION INPUT must be a concrete command/query:
+python_coder -> plain-language task
+web_search/rag_retrieval -> search query
+shell -> one safe command
+vision_analyzer -> question
+no_tools -> reasoning
+- Prefer local analysis before web_search unless the request clearly needs live/external info.{file_guidance}
+
 {finish_section}
+
 ----------------------------------------------------------
 
 ## User Query (Original inquire)
 {query}
 
 ----------------------------------------------------------
-## Context
+
+## Context (Overall plans)
 {context_section}
+
+----------------------------------------------------------
 
 ## Tools
 - web_search → realtime or complex/specific external info
@@ -536,7 +546,8 @@ General Guidelines:
 - vision_analyzer → answer image questions (only if images attached)
 - no_tools → think and reason without external tools
 
-## Response format
+## Response format (STRICTLY FOLLOW THE BELOW FORMAT)
+
 THOUGHT: reasoning and next step, including if you can finish
 ACTION: tool name (empty when FINISH is true)
 ACTION INPUT: exact input for the chosen tool
@@ -565,7 +576,7 @@ def _build_plan_prompt(
     tools_line = ", ".join(available_tools) if available_tools else "python_coder, web_search, rag_retrieval, vision_analyzer"
     history = conversation_history or "No previous conversation."
     files_note = "yes" if has_files else "no"
-    return f"""You are a planning assistant. Design a multi-step plan the agents will execute.
+    return f"""You are a planning assistant. Design a THOROUGH and comprehensive multi-step plan the agents will execute.
 
 Inputs:
 ----------------------------------------------------------
@@ -587,15 +598,21 @@ Inputs:
 ----------------------------------------------------------
 
 Guidelines:
-- Output ONLY valid JSON (no prose) representing baby incremental steps of the plan.
+- Output ONLY valid JSON (no prose) representing THOROUGH and comprehensive multi-step plan.
 - Use only the available tools; prefer python_coder for local/file analysis and reserve web_search for live or external data.
-- Provide context; include hints.
 
 ----------------------------------------------------------
 JSON schema:
 [
   {{
     "step_num": 1,
+    "goal": "short, outcome-focused objective",
+    "primary_tools": ["tool_name"],
+    "success_criteria": "objective check that confirms success",
+    "context": "concise guidance for the next step"
+  }},
+  {{
+    "step_num": 2,
     "goal": "short, outcome-focused objective",
     "primary_tools": ["tool_name"],
     "success_criteria": "objective check that confirms success",
