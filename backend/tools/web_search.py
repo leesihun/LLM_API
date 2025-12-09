@@ -16,6 +16,7 @@ from backend.config.settings import settings
 from backend.core import BaseTool, ToolResult
 from backend.models.tool_metadata import SearchResult
 from backend.utils.logging_utils import get_logger
+from backend.config.prompts import WEB_SEARCH_ANSWER_PROMPT
 from backend.utils.llm_manager import LLMManager
 from langchain_core.messages import HumanMessage
 
@@ -142,14 +143,7 @@ class WebSearchTool(BaseTool):
             return "No results found to answer the query."
         
         context = self.format_results(results)
-        prompt = f"""Based on the following search results, provide a concise and accurate answer to the user's query.
-
-User Query: {query}
-
-Search Results:
-{context}
-
-Answer:"""
+        prompt = WEB_SEARCH_ANSWER_PROMPT.format(query=query, context=context)
         
         try:
             response = await self.llm_manager.llm.ainvoke([HumanMessage(content=prompt)])

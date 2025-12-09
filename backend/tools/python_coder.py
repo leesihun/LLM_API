@@ -9,6 +9,7 @@ import re
 from typing import Optional
 
 from backend.config.settings import settings
+from backend.config.prompts import PYTHON_CODER_PROMPT
 from backend.core.base_tool import BaseTool
 from backend.core.result_types import ToolResult
 from backend.tools.code_sandbox import SandboxManager
@@ -38,12 +39,7 @@ class PythonCoderTool(BaseTool):
 
         llm = self._get_coder_llm(user_id=kwargs.get("user_id", "default"))
 
-        prompt = (
-            "Write Python code to accomplish the task. "
-            "Return only one fenced code block with language python. "
-            "Keep code self-contained and avoid file I/O unless required."
-            f"\nTask: {query}"
-        )
+        prompt = PYTHON_CODER_PROMPT.format(task=query)
 
         code_text = await self._generate_code(llm, prompt)
         code = self._extract_code(code_text)

@@ -13,6 +13,10 @@ from backend.config.prompts.agent_prompts import (
     PLAN_EXECUTION_SYSTEM_PROMPT,
     AGENT_CLASSIFIER_PROMPT,
 )
+from backend.config.prompts.tool_prompts import (
+    PYTHON_CODER_PROMPT,
+    WEB_SEARCH_ANSWER_PROMPT,
+)
 
 __all__ = [
     "REACT_SYSTEM_PROMPT",
@@ -21,5 +25,7 @@ __all__ = [
     "PLAN_CREATE_PROMPT",
     "PLAN_EXECUTION_SYSTEM_PROMPT",
     "AGENT_CLASSIFIER_PROMPT",
+    "PYTHON_CODER_PROMPT",
+    "WEB_SEARCH_ANSWER_PROMPT",
 ]
 
