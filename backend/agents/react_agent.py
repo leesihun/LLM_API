@@ -1137,7 +1137,7 @@ class ThoughtActionGenerator:
         original_names = [extract_original_filename(fp) for fp in self.file_paths]
         filenames_list = ", ".join(original_names)
 
-        return f"\nGuidelines:\n- Files available: {filenames_list}\n- Attempt local analysis (python_coder) first.\n- Use web_search only if local analysis fails."
+        return f"\n\nAttached files:\n- Files available: {filenames_list}"
 
 
 class AnswerGenerator:
@@ -1228,7 +1228,8 @@ class ToolExecutor:
         file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
         steps: Optional[List[ReActStep]] = None,
-        plan_context: Optional[dict] = None
+        plan_context: Optional[dict] = None,
+        current_thought: Optional[str] = None
     ) -> str:
         observation = ""
         try:
@@ -1237,7 +1238,7 @@ class ToolExecutor:
             elif action == ToolName.RAG_RETRIEVAL:
                 observation = await self._execute_rag(action_input)
             elif action == ToolName.PYTHON_CODER:
-                observation = await self._execute_python(action_input, file_paths, session_id, steps, plan_context)
+                observation = await self._execute_python(action_input, file_paths, session_id, steps, plan_context, current_thought, action)
             elif action == ToolName.SHELL:
                 observation = await self._execute_shell(action_input, session_id)
             elif action == ToolName.FILE_ANALYZER:
@@ -1264,7 +1265,16 @@ class ToolExecutor:
         results = await rag_retriever_tool.retrieve(query, top_k=5)
         return rag_retriever_tool.format_results(results) or "No relevant documents found."
 
-    async def _execute_python(self, task_description: str, file_paths: List[str], session_id: str, steps: List[ReActStep], plan_context: dict) -> str:
+    async def _execute_python(
+        self,
+        task_description: str,
+        file_paths: List[str],
+        session_id: str,
+        steps: List[ReActStep],
+        plan_context: dict,
+        current_thought: Optional[str] = None,
+        current_action: Optional[str] = None
+    ) -> str:
         """Execute Python code task with LLM-based code generation."""
         current_step_num = len(steps) + 1 if steps else 1
 
@@ -1275,9 +1285,9 @@ class ToolExecutor:
             messages = conversation_store.get_messages(session_id, limit=10)
             conversation_history = [{"role": msg.role, "content": msg.content} for msg in messages]
 
-        # Build react context from previous steps
+        # Build react context from previous steps + current step
         react_context = None
-        if steps:
+        if steps or current_thought:
             react_context = {
                 "previous_steps": [
                     {
@@ -1285,9 +1295,14 @@ class ToolExecutor:
                         "action": s.action,
                         "observation": s.observation[:500] if s.observation else ""
                     }
-                    for s in steps[-3:]  # Last 3 steps
+                    for s in (steps[-3:] if steps else [])  # Last 3 steps
                 ],
-                "total_steps": len(steps)
+                "total_steps": len(steps) if steps else 0,
+                "current_step": {
+                    "thought": current_thought or "",
+                    "action": str(current_action) if current_action else "python_coder",
+                    "action_input": task_description
+                }
             }
 
         # Call the updated python_coder tool with task description
@@ -1599,6 +1614,7 @@ class PlanExecutor:
                     session_id,
                     steps=react_steps_history + current_react_steps,
                     plan_context=plan_context,
+                    current_thought=thought
                 )
                 step.observation = observation
                 # Allow observation to signal completion (e.g., python_coder returning FINISH)
@@ -1688,8 +1704,8 @@ class PlanExecutor:
         react_context = formatter.format(react_steps) if react_steps else "No ReAct steps yet for this subgoal."
         return (
             f"Prior plan observations (success only):\n{recent_success}\n\n"
-            f"Plan outline:\n{plan_outline}\n\n"
-            f"Plan focus: step {plan_step.step_num}/{len(all_plan_steps)} -> {plan_step.goal}\n"
+            f"Original plan overview:\n{plan_outline}\n\n"
+            f"Current step: \n{plan_step.step_num}/{len(all_plan_steps)} -> {plan_step.goal}\n\n"
             f"Success criteria for this step: {plan_step.success_criteria or 'Not specified'}\n"
             f"Allowed tools for this step: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
             f"ReAct trace so far for this subgoal:\n{react_context}"
@@ -1921,7 +1937,7 @@ class ReActAgent:
             # Execute
             logger.info(f"[ReActAgent] Executing tool: {action}")
             observation = await self.tool_executor.execute(
-                action, action_input, file_paths, session_id, steps=self.steps
+                action, action_input, file_paths, session_id, steps=self.steps, current_thought=thought
             )
             step.observation = observation
             # Detect completion signaled inside observation (e.g., from python_coder)

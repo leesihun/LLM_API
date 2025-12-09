@@ -45,12 +45,16 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 {file_context}
 
 ----------------------------------------------------------
-## Previous conversation
+## Past conversation
 {previous_conversation}
 
 ----------------------------------------------------------
 ## Plans
 {plan_context}
+
+----------------------------------------------------------
+## Current ReAct Step
+{react_step}
 
 ----------------------------------------------------------
 ## Instruction
@@ -392,13 +396,13 @@ class PythonCoderTool(BaseTool):
     ) -> str:
         """
         Generate Python code from task description.
-        
+
         Args:
             llm: LLM instance
             task: Task description
             file_context: File information
-            additional_context: Structured context (prior convo, plan, instructions)
-            
+            additional_context: Structured context (prior convo, plan, instructions, react_step)
+
         Returns:
             Generated Python code
         """
@@ -407,6 +411,7 @@ class PythonCoderTool(BaseTool):
             file_context=file_context or "No files provided",
             previous_conversation=additional_context.get("previous_conversation", "None"),
             plan_context=additional_context.get("plan_context", "None"),
+            react_step=additional_context.get("react_step", "None"),
             instructions=additional_context.get("instructions", "None")
         )
         
@@ -715,10 +720,24 @@ Complete Plan:
 Previous Steps Completed:
 {results_str}"""
         
+        # Build ReAct step section (current step thought/action/input)
+        react_step_section = "None"
+        if react_context:
+            current_step = react_context.get('current_step', {})
+            if current_step:
+                thought = current_step.get('thought', '')
+                action = current_step.get('action', '')
+                action_input = current_step.get('action_input', '')
+                react_step_section = f"""Thought: {thought}
+Action: {action}
+Action Input: {action_input}
+
+This is what the agent is thinking and trying to accomplish in this step."""
+
         instruction_parts = []
         if context:
             instruction_parts.append(context)
-        
+
         if react_context:
             prev_steps = react_context.get('previous_steps', [])
             if prev_steps:
@@ -727,12 +746,13 @@ Previous Steps Completed:
                     for s in prev_steps[-3:]
                 )
                 instruction_parts.append(f"Recent agent steps:\n{steps_str}")
-        
+
         instructions = "\n".join(instruction_parts) if instruction_parts else "None"
-        
+
         return {
             "previous_conversation": previous_conversation,
             "plan_context": plan_section,
+            "react_step": react_step_section,
             "instructions": instructions,
         }
     
