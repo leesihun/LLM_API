@@ -575,7 +575,7 @@ def _build_plan_prompt(
     tools_line = ", ".join(available_tools) if available_tools else "python_coder, web_search, rag_retrieval, vision_analyzer"
     history = conversation_history or "No previous conversation."
     files_note = "yes" if has_files else "no"
-    return f"""You are a planning assistant. Design a THOROUGH and comprehensive multi-step plan the agents will execute.
+    return f"""You are a planning agent. Design a THOROUGH and comprehensive multi-step plan the agents will execute.
 
 Inputs:
 ----------------------------------------------------------
@@ -599,6 +599,7 @@ Inputs:
 Guidelines:
 - Output ONLY valid JSON (no prose) representing THOROUGH and comprehensive multi-step plan.
 - Use only the available tools; prefer python_coder for local/file analysis and reserve web_search for live or external data.
+- When given file, always inspect the file first, THOROUGHLY inspect the file access patterns, especiallly for JSON files with keys.
 
 ----------------------------------------------------------
 JSON schema:
