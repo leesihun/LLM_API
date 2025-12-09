@@ -53,10 +53,6 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 {plan_context}
 
 ----------------------------------------------------------
-## Current Given Task
-{task}
-
-----------------------------------------------------------
 ## Instruction
 {instructions}
 ----------------------------------------------------------
@@ -620,8 +616,7 @@ class PythonCoderTool(BaseTool):
             if analysis.get('success'):
                 base_note = (
                     "Files are copied to the sandbox working directory using their "
-                    "original filenames. Access them with relative paths only (e.g., "
-                    "'sales.csv')."
+                    "original filenames. Access them with relative paths only"
                 )
                 llm_context = analysis.get('llm_context', analysis.get('summary', ''))
                 json_details = self._format_json_details(analysis.get('analyses', []))
@@ -673,9 +668,52 @@ class PythonCoderTool(BaseTool):
         
         plan_section = "None"
         if plan_context:
-            step = plan_context.get('current_step', '?')
-            total = plan_context.get('total_steps', '?')
-            plan_section = f"Plan step {step}/{total}"
+            # Build comprehensive plan context
+            current_step = plan_context.get('current_step', '?')
+            total_steps = plan_context.get('total_steps', '?')
+            current_goal = plan_context.get('goal', 'Unknown')
+            overall_goal = plan_context.get('overall_goal', 'Unknown')
+            success_criteria = plan_context.get('success_criteria', 'Not specified')
+
+            # Format the complete plan
+            all_steps = plan_context.get('all_plan_steps', [])
+            plan_overview = []
+            for step_info in all_steps:
+                step_num = step_info.get('step_num', '?')
+                step_goal = step_info.get('goal', 'Unknown')
+                tools = ', '.join(step_info.get('primary_tools', [])) or 'any'
+                criteria = step_info.get('success_criteria', 'N/A')
+
+                marker = ">>> " if step_num == current_step else "    "
+                plan_overview.append(f"{marker}Step {step_num}: {step_goal} (tools: {tools}, success: {criteria})")
+
+            plan_overview_str = "\n".join(plan_overview) if plan_overview else "No plan details available"
+
+            # Format previous results
+            previous_results = plan_context.get('previous_results', [])
+            results_summary = []
+            for result in previous_results:
+                step_num = result.get('step', '?')
+                step_goal = result.get('goal', 'Unknown')
+                success = "✓" if result.get('success') else "✗"
+                tool = result.get('tool_used', 'unknown')
+                obs = result.get('observation', 'No observation')[:150]
+                results_summary.append(f"  Step {step_num} [{success}]: {step_goal}\n    Tool: {tool}\n    Result: {obs}")
+
+            results_str = "\n".join(results_summary) if results_summary else "No previous steps completed yet"
+
+            # Build complete plan section
+            plan_section = f"""Overall Goal: {overall_goal}
+
+Current Position: Step {current_step}/{total_steps}
+Current Goal: {current_goal}
+Success Criteria: {success_criteria}
+
+Complete Plan:
+{plan_overview_str}
+
+Previous Steps Completed:
+{results_str}"""
         
         instruction_parts = []
         if context:

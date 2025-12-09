@@ -1511,7 +1511,26 @@ class PlanExecutor:
                     "goal": plan_step.goal,
                     "success_criteria": plan_step.success_criteria,
                     "primary_tools": plan_step.primary_tools,
-                    "previous_results": [{"step": r.step_num, "success": r.success} for r in step_results],
+                    "overall_goal": user_query,
+                    "all_plan_steps": [
+                        {
+                            "step_num": ps.step_num,
+                            "goal": ps.goal,
+                            "primary_tools": ps.primary_tools,
+                            "success_criteria": ps.success_criteria
+                        }
+                        for ps in all_plan_steps
+                    ],
+                    "previous_results": [
+                        {
+                            "step": r.step_num,
+                            "goal": all_plan_steps[r.step_num - 1].goal if r.step_num <= len(all_plan_steps) else "Unknown",
+                            "success": r.success,
+                            "observation": r.observation[:300] if r.observation else "No observation",
+                            "tool_used": r.tool_used
+                        }
+                        for r in step_results
+                    ],
                 }
 
                 plan_prompt = self._format_plan_query(user_query, plan_step, all_plan_steps)
@@ -1581,35 +1600,53 @@ class PlanExecutor:
                     ), current_react_steps
                 current_react_steps.append(step)
 
-                success = "error" not in observation.lower() and "failed" not in observation.lower()
-                if success:
-                    return StepResult(
-                        step_num=plan_step.step_num,
-                        goal=plan_step.goal,
-                        success=True,
-                        tool_used=step.action.value,
-                        attempts=iteration,
-                        observation=observation,
-                        error=None,
-                        metadata={"react_trace": self._serialize_trace(current_react_steps)},
-                    ), current_react_steps
-
-                last_error = observation
+                # Check for explicit errors - if found, store for potential retry
+                has_error = "error" in observation.lower() or "failed" in observation.lower()
+                if has_error:
+                    last_error = observation
+                    # Continue to next iteration to allow retry
+                    logger.warning(f"[PlanExecutor] Step {plan_step.step_num} iteration {iteration}: Error detected in observation, will retry")
+                else:
+                    # Observation is clean - continue to next iteration to let LLM decide if more work needed
+                    # The LLM will set FINISH: true when truly done
+                    logger.info(f"[PlanExecutor] Step {plan_step.step_num} iteration {iteration}: Clean observation, continuing to next iteration for LLM decision")
+                    last_error = None  # Clear error since this iteration succeeded
 
             except Exception as e:
                 last_error = str(e)
                 logger.error(f"Step execution error: {e}")
 
-        return StepResult(
-            step_num=plan_step.step_num,
-            goal=plan_step.goal,
-            success=False, 
-            tool_used=allowed_tools[0].value if allowed_tools else None,
-            attempts=max_iterations_per_step,
-            observation=last_error or "Unknown error",
-            error=last_error,
-            metadata={"react_trace": self._serialize_trace(current_react_steps)},
-        ), current_react_steps
+        # Max iterations reached without explicit FINISH
+        # Determine success based on whether we have useful observations and no errors
+        has_useful_output = bool(current_react_steps and current_react_steps[-1].observation and not last_error)
+        final_observation = current_react_steps[-1].observation if current_react_steps else "No iterations completed"
+
+        if has_useful_output:
+            # We completed max iterations with clean output - consider it successful
+            logger.info(f"[PlanExecutor] Step {plan_step.step_num} completed {max_iterations_per_step} iterations with clean output (no explicit FINISH)")
+            return StepResult(
+                step_num=plan_step.step_num,
+                goal=plan_step.goal,
+                success=True,
+                tool_used=current_react_steps[-1].action.value if current_react_steps and isinstance(current_react_steps[-1].action, Enum) else (allowed_tools[0].value if allowed_tools else None),
+                attempts=max_iterations_per_step,
+                observation=final_observation,
+                error=None,
+                metadata={"react_trace": self._serialize_trace(current_react_steps), "reason": "max_iterations_reached"},
+            ), current_react_steps
+        else:
+            # Failed - either had errors or no useful output
+            logger.warning(f"[PlanExecutor] Step {plan_step.step_num} failed after {max_iterations_per_step} iterations")
+            return StepResult(
+                step_num=plan_step.step_num,
+                goal=plan_step.goal,
+                success=False,
+                tool_used=allowed_tools[0].value if allowed_tools else None,
+                attempts=max_iterations_per_step,
+                observation=last_error or final_observation or "Max iterations reached without success",
+                error=last_error,
+                metadata={"react_trace": self._serialize_trace(current_react_steps)},
+            ), current_react_steps
 
     def _format_plan_query(self, user_query: str, plan_step: PlanStep, all_plan_steps: List[PlanStep]) -> str:
         overview = self._plan_overview(all_plan_steps)
