@@ -53,12 +53,9 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 {plan_context}
 
 ----------------------------------------------------------
-## Current ReAct Step
-{react_step}
-
-----------------------------------------------------------
 ## Instruction
 {instructions}
+
 ----------------------------------------------------------
 
 ## Requirements
@@ -77,7 +74,9 @@ CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python
 
 Think hard
 
-Code:
+----------------------------------------------------------
+## Current ReAct Step
+{react_step}
 """
 
 CODE_FIX_PROMPT = """You are an expert Python programmer. The following code failed with an error. Fix the code.
@@ -732,7 +731,7 @@ Previous Steps Completed:
 Action: {action}
 Action Input: {action_input}
 
-This is what the agent is thinking and trying to accomplish in this step."""
+Based on the above information, perform the task."""
 
         instruction_parts = []
         if context:

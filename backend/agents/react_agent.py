@@ -525,7 +525,6 @@ no_tools -> reasoning
 - Prefer local analysis before web_search unless the request clearly needs live/external info.{file_guidance}
 
 {finish_section}
-
 ----------------------------------------------------------
 
 ## User Query (Original inquire)
@@ -633,42 +632,8 @@ class ContextFormatter:
         # Compact format for > 3 steps to save tokens
         if len(steps) > 3:
             return self._format_compact(steps)
-        return self._format_detailed(steps)
+        return ""
 
-    def _format_detailed(self, steps: List[ReActStep]) -> str:
-        parts = ["Previous Steps:"]
-        for step in steps:
-            parts.extend([
-                f"Step {step.step_num}:",
-                f"- Thought: {step.thought}",
-                f"- Action: {step.action}",
-                f"- Input: {step.action_input}",
-                f"- Result: {step.observation}",
-                f"- Finish: {getattr(step, 'finish', False)}",
-                ""
-            ])
-        return "\n".join(parts)
-
-    def _format_compact(self, steps: List[ReActStep]) -> str:
-        parts = ["[HISTORY]"]
-        tools_used = ", ".join(set(str(s.action) for s in steps))
-        parts.append(f"Tools used so far: {tools_used}")
-        parts.append("")
-
-        for step in steps:
-            obs = step.observation
-            if len(obs) > 300:
-                obs = obs[:300] + "... [truncated]"
-            
-            parts.extend([
-                f"[Step {step.step_num}]",
-                f"Thought: {step.thought}",
-                f"Action: {step.action}",
-                f"Result: {obs}",
-                f"Finish: {getattr(step, 'finish', False)}",
-                ""
-            ])
-        return "\n".join(parts)
 
 
 class ThoughtActionGenerator:
@@ -1687,7 +1652,7 @@ class PlanExecutor:
             f"Overall goal: {user_query}\n"
             f"Current plan step ({plan_step.step_num}/{len(all_plan_steps)}): {plan_step.goal}\n"
             f"Success criteria: {plan_step.success_criteria}\n"
-            f"Allowed tools: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
+            f"Tools: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
             # f"Full plan:\n{overview}"
         )
 
@@ -1707,7 +1672,7 @@ class PlanExecutor:
             f"Original plan overview:\n{plan_outline}\n\n"
             f"Current step: \n{plan_step.step_num}/{len(all_plan_steps)} -> {plan_step.goal}\n\n"
             f"Success criteria for this step: {plan_step.success_criteria or 'Not specified'}\n"
-            f"Allowed tools for this step: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
+            f"Tools for this step: {', '.join(plan_step.primary_tools) if plan_step.primary_tools else 'any standard tool'}\n"
             f"ReAct trace so far for this subgoal:\n{react_context}"
         )
 
