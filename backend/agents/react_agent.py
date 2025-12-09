@@ -599,7 +599,8 @@ Inputs:
 Guidelines:
 - Output ONLY valid JSON (no prose) representing THOROUGH and comprehensive multi-step plan.
 - Use only the available tools; prefer python_coder for local/file analysis and reserve web_search for live or external data.
-- When given file, always inspect the file first, THOROUGHLY inspect the file access patterns, especiallly for JSON files with keys.
+- When given file, always inspect the file first, THOROUGHLY inspect the file access patterns, especiallly for JSON files with all of the keys and values.
+- Always end with a step that sums up the overall plan and gives the final answer based on the user's query.
 
 ----------------------------------------------------------
 JSON schema:
