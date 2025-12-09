@@ -1,985 +1,112 @@
 """
-Python Coder Tool
-=================
-LLM-powered Python code generation and execution tool.
-
-Provides intelligent code generation and execution in the sandbox with a
-single-shot flow; retries and error recovery are handled by the agent loop.
-
-Features:
-- LLM-based code generation from task descriptions
-- Secure execution in sandbox environment
-- Observation generation for agent integration
-- File context awareness (CSV, Excel, JSON, etc.)
-- Session persistence for variables and files
-
-Version: 1.1.0
-Created: 2025-12-05
+Python coder tool: generate and optionally execute Python code inside the sandbox.
 """
 
-import json
+from __future__ import annotations
+
+import asyncio
 import re
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
-from langchain_core.messages import HumanMessage
-
+from backend.config.settings import settings
 from backend.core.base_tool import BaseTool
 from backend.core.result_types import ToolResult
-from backend.config.settings import settings
-from backend.utils.logging_utils import get_logger
-from backend.tools.code_sandbox import CodeSandbox, SandboxManager, ExecutionResult
-from backend.runtime import extract_original_filename
-from backend.tools.file_analyzer import file_analyzer
+from backend.tools.code_sandbox import SandboxManager
 
-logger = get_logger(__name__)
-
-
-# ============================================================================
-# Prompt Templates
-# ============================================================================
-
-CODE_GENERATION_PROMPT = """You are an expert Python programmer. Generate Python code to accomplish the task.
-
-## Available files
-{file_context}
-
-----------------------------------------------------------
-## Past conversation
-{previous_conversation}
-
-----------------------------------------------------------
-## Plans
-{plan_context}
-
-----------------------------------------------------------
-## Instruction
-{instructions}
-
-----------------------------------------------------------
-
-## Requirements
-1. Write clean, efficient Python that completes the Task.
-2. When asked, use matplotlib for visualizations; save with plt.savefig('output.png') and print the filename (never plt.show()).
-3. Print results that should be visible to the user; otherwise write to a file.
-4. Use only the provided filenames. Do not create new files unless explicitly asked.
-5. When reading JSON: use utf-8 with errors='replace', branch on root type (dict vs list vs other), handle NDJSON by splitting lines, and validate keys with .get/type checks before use.
-6. First inspect the provided files before any heavy processing: load them safely, print keys/columns/shapes/samples to ground all subsequent key access instead of guessing.
-
-## CRITICAL INSTRUCTIONS
-- Output ONLY Python code, absolutely NO explanations before or after.
-- Do NOT use markdown code blocks (no ```python ... ```).
-- Start immediately with import statements or code.
-- ACTION INPUT from the agent already contains the task; do not restate it.
-
-Think hard
-
-----------------------------------------------------------
-## Current ReAct Step
-{react_step}
-"""
-
-CODE_FIX_PROMPT = """You are an expert Python programmer. The following code failed with an error. Fix the code.
-
-## Original Task
-{task}
-
-## Failed Code
-```python
-{code}
-```
-
-## Error
-{error}
-
-## Available Files
-{file_context}
-
-## CRITICAL INSTRUCTIONS
-1. Analyze the error and fix the root cause
-2. Fix the error while maintaining the original intent
-3. Make the code more robust and efficient
-4. Output ONLY the fixed Python code, absolutely NO explanations before or after
-5. Do NOT use markdown code blocks (no ```python ... ```)
-6. Start directly with the fixed code
-7. Always use the exact filenames of the files provided to you. Do not create new files.
-{extra_guidance}
-
-Think hard
-
-Fixed Code:"""
-
-OBSERVATION_PROMPT = """Based on the code execution results, generate a concise observation for the agent.
-----------------------------------------------------------
-## Current Given Task
-{task}
-
-----------------------------------------------------------
-
-## Executed Code
-```python
-{code}
-```
-
-----------------------------------------------------------
-
-## Execution Output
-{output}
-
-## Created Files
-{created_files}
-
-----------------------------------------------------------
-Write a comprehensive observation for the ReAct agent to be helpful for next step.
-A good examples are:
-1. What the code did, and what the results are, with the actual code.
-2. Key results or findings, with the actual code.
-3. Any files created, with the actual code.
-Also,
-If the task appears fully answered, end with 'FINISH: true'. Otherwise, use 'FINISH: false'
-If the task is not finished, explain what is missing, why, and what you will do next.
-
-Keep it HELPFUL, factual and concise. This will be used by the agent to decide next steps.
-
-Answer in the following format:
-
-Observation: <your observation here>
-FINISH: true or false
-
-## Observation:
-"""
-
-
-# ============================================================================
-# Python Coder Tool
-# ============================================================================
 
 class PythonCoderTool(BaseTool):
-    """
-    LLM-powered Python code generation and execution tool.
-    
-    This tool:
-    1. Takes a task description from the agent
-    2. Generates Python code using LLM
-    3. Executes code in a secure sandbox
-    4. If errors occur, uses LLM to fix and retry
-    5. Generates observations for the agent
-    
-    Example:
-        >>> tool = PythonCoderTool()
-        >>> result = await tool.execute(
-        ...     query="Load the CSV file and show basic statistics",
-        ...     file_paths=["data/sales.csv"],
-        ...     session_id="test-session"
-        ... )
-        >>> print(result.output)
-    """
-    
-    def __init__(self):
-        """Initialize the Python coder tool."""
-        super().__init__()
-        self.max_iterations = settings.python_code_max_iterations
-        self._coder_llm = None
-        
-    def _get_coder_llm(self, user_id: str = "default"):
-        """
-        Get or create coder LLM instance.
-        
-        Args:
-            user_id: User ID for LLM configuration
-            
-        Returns:
-            Configured LLM for code generation
-        """
-        if self._coder_llm is None:
-            from backend.utils.llm_factory import LLMFactory
-            self._coder_llm = LLMFactory.create_coder_llm(user_id=user_id)
-            logger.debug("[PythonCoder] Created coder LLM instance")
-        return self._coder_llm
-    
+    """LLM-powered Python code generator + sandbox executor."""
+
     def validate_inputs(self, **kwargs) -> bool:
-        """
-        Validate tool inputs.
-        
-        Args:
-            **kwargs: Input parameters
-            
-        Returns:
-            True if valid, False otherwise
-        """
-        query = kwargs.get("query", "")
-        return bool(query and query.strip())
-    
+        query = kwargs.get("query")
+        return bool(query and str(query).strip())
+
     async def execute(
         self,
         query: str,
-        context: Optional[str] = None,
-        file_paths: Optional[List[str]] = None,
         session_id: Optional[str] = None,
-        user_id: str = "default",
-        stage_prefix: Optional[str] = None,
-        conversation_history: Optional[List[Dict]] = None,
-        plan_context: Optional[Dict] = None,
-        react_context: Optional[Dict] = None,
-        **kwargs
+        run: bool = True,
+        **kwargs,
     ) -> ToolResult:
-        """
-        Execute the Python coder tool.
-        
-        Args:
-            query: Task description (what the code should do)
-            context: Optional additional context
-            file_paths: List of available file paths
-            session_id: Session ID for sandbox persistence
-            user_id: User ID for LLM configuration
-            stage_prefix: Optional prefix for file naming
-            conversation_history: Optional conversation history
-            plan_context: Optional plan execution context
-            react_context: Optional ReAct agent context
-            
-        Returns:
-            ToolResult with execution results
-        """
         self._start_timer()
-        self._log_execution_start(
-            query=query[:100],
-            file_count=len(file_paths) if file_paths else 0,
-            session_id=session_id
-        )
-        
-        # Validate inputs
+
+        if not settings.python_code_enabled:
+            return self._handle_validation_error("Python code execution is disabled")
+
         if not self.validate_inputs(query=query):
-            return self._handle_validation_error(
-                "Task description (query) is required",
-                parameter="query"
-            )
-        
-        try:
-            # Setup session
-            session_id = session_id or f"session_{int(self._start_time)}"
-            sandbox = SandboxManager.get_sandbox(session_id)
-            
-            # Build file context
-            file_context = self._build_file_context(file_paths)
-            
-            # Build additional context
-            additional_context = self._build_additional_context(
-                context, conversation_history, plan_context, react_context
-            )
-            
-            # Copy files to sandbox working directory
-            if file_paths:
-                self._copy_files_to_sandbox(file_paths, sandbox)
-            
-            # Generate and execute code with retry loop
-            result = await self._generate_and_execute(
-                task=query,
-                file_context=file_context,
-                additional_context=additional_context,
-                sandbox=sandbox,
-                user_id=user_id
-            )
-            
-            self._log_execution_end(result)
-            return result
-            
-        except Exception as e:
-            return self._handle_error(e, "execute")
-    
-    async def _generate_and_execute(
-        self,
-        task: str,
-        file_context: str,
-        additional_context: Dict[str, str],
-        sandbox: CodeSandbox,
-        user_id: str
-    ) -> ToolResult:
-        """
-        Generate code, execute it, and fix errors iteratively.
-        
-        Args:
-            task: Task description
-            file_context: Information about available files
-            additional_context: Structured context for code generation
-            sandbox: Sandbox instance for execution
-            user_id: User ID for LLM
-            
-        Returns:
-            ToolResult with execution results
-        """
-        llm = self._get_coder_llm(user_id)
-        attempt_history = []
-        code = None
-        last_error = None
-        
-        for attempt in range(1, self.max_iterations + 1):
-            logger.info(f"[PythonCoder] Attempt {attempt}/{self.max_iterations}")
-            
-            # Generate or fix code
-            if attempt == 1:
-                code = await self._generate_code(
-                    llm, task, file_context, additional_context
-                )
-            else:
-                code = await self._fix_code(
-                    llm, task, code, last_error, file_context
-                )
-            
-            logger.debug(f"[PythonCoder] Generated code ({len(code)} chars):\n{code[:500]}...")
+            return self._handle_validation_error("Query is required", parameter="query")
 
-            # Validate code length
-            if len(code) > 50000:  # ~1000 lines at 50 chars/line
-                logger.warning(f"[PythonCoder] Code is very long ({len(code)} chars), truncating...")
-                code = code[:50000]
+        llm = self._get_coder_llm(user_id=kwargs.get("user_id", "default"))
 
-            if not code or len(code.strip()) < 5:
-                logger.error(f"[PythonCoder] Generated code is empty or too short")
-                last_error = "Generated code is empty or too short"
-                continue
+        prompt = (
+            "Write Python code to accomplish the task. "
+            "Return only one fenced code block with language python. "
+            "Keep code self-contained and avoid file I/O unless required."
+            f"\nTask: {query}"
+        )
 
-            # Execute code in sandbox
-            exec_result = sandbox.execute(code)
-            
-            attempt_history.append({
-                "attempt": attempt,
-                "code": code[:1000],  # Truncate for history
-                "success": exec_result.success,
-                "output": exec_result.output[:500] if exec_result.output else "",
-                "error": exec_result.error[:500] if exec_result.error else ""
-            })
-            
-            if exec_result.success:
-                # Generate observation
-                observation = await self._generate_observation(
-                    llm, task, code, exec_result
-                )
-                
-                return ToolResult.success_result(
-                    output={
-                        "output": exec_result.output,
-                        "observation": observation,
-                        "code": code,
-                        "created_files": exec_result.created_files,
-                        "attempts": attempt,
-                        "variables": list(exec_result.variables.keys())
-                    },
-                    metadata={
-                        "session_id": sandbox.session_id,
-                        "working_dir": str(sandbox.working_dir),
-                        "attempt_history": attempt_history
-                    },
-                    execution_time=self._elapsed_time()
-                )
-            else:
-                last_error = exec_result.error
-                logger.warning(f"[PythonCoder] Attempt {attempt} failed: {last_error[:200]}")
-        
-        # All attempts failed
+        code_text = await self._generate_code(llm, prompt)
+        code = self._extract_code(code_text)
+
+        if not code:
+            return ToolResult.failure_result(
+                error="LLM did not return code",
+                error_type="NoCodeGenerated",
+                execution_time=self._elapsed_time(),
+            )
+
+        if not run:
+            return ToolResult.success_result(
+                output=code,
+                metadata={"generated_code": code},
+                execution_time=self._elapsed_time(),
+            )
+
+        sandbox = SandboxManager.get_sandbox(session_id or "default")
+        exec_result = await sandbox.execute(code)
+
+        if exec_result.success:
+            output = exec_result.output.strip()
+            return ToolResult.success_result(
+                output=output or "(no output)",
+                metadata={
+                    "generated_code": code,
+                    "files_written": exec_result.files_written,
+                },
+                execution_time=self._elapsed_time(),
+            )
+
         return ToolResult.failure_result(
-            error=f"Code execution failed after {self.max_iterations} attempts. Last error: {last_error}",
-            error_type="CodeExecutionError",
+            error=exec_result.error or "Execution failed",
+            error_type="ExecutionError",
             metadata={
-                "attempt_history": attempt_history,
-                "last_code": code,
-                "last_error": last_error
+                "generated_code": code,
+                "stdout": exec_result.output,
             },
-            execution_time=self._elapsed_time()
-        )
-    
-    async def _generate_code(
-        self,
-        llm,
-        task: str,
-        file_context: str,
-        additional_context: Dict[str, str]
-    ) -> str:
-        """
-        Generate Python code from task description.
-
-        Args:
-            llm: LLM instance
-            task: Task description
-            file_context: File information
-            additional_context: Structured context (prior convo, plan, instructions, react_step)
-
-        Returns:
-            Generated Python code
-        """
-        prompt = CODE_GENERATION_PROMPT.format(
-            task=task,
-            file_context=file_context or "No files provided",
-            previous_conversation=additional_context.get("previous_conversation", "None"),
-            plan_context=additional_context.get("plan_context", "None"),
-            react_step=additional_context.get("react_step", "None"),
-            instructions=additional_context.get("instructions", "None")
-        )
-        
-        logger.debug(f"[PythonCoder] Code generation prompt ({len(prompt)} chars)")
-        
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        code = self._extract_code(response.content)
-        
-        return code
-    
-    async def _fix_code(
-        self,
-        llm,
-        task: str,
-        code: str,
-        error: str,
-        file_context: str
-    ) -> str:
-        """
-        Fix code that failed execution.
-        
-        Args:
-            llm: LLM instance
-            task: Original task description
-            code: Failed code
-            error: Error message
-            file_context: File information
-            
-        Returns:
-            Fixed Python code
-        """
-        extra_guidance = ""
-        if self._is_json_error(error):
-            extra_guidance = (
-                "\n- For JSON errors: open with encoding='utf-8', errors='replace'; "
-                "if load() fails, fall back to line-split NDJSON handling; "
-                "branch by root type (dict/list/other) and guard key access with .get/type checks."
-            )
-
-        prompt = CODE_FIX_PROMPT.format(
-            task=task,
-            code=code,
-            error=error,
-            file_context=file_context or "No files provided",
-            extra_guidance=extra_guidance
-        )
-        
-        logger.debug(f"[PythonCoder] Code fix prompt ({len(prompt)} chars)")
-        
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        fixed_code = self._extract_code(response.content)
-        
-        return fixed_code
-    
-    async def _generate_observation(
-        self,
-        llm,
-        task: str,
-        code: str,
-        exec_result: ExecutionResult
-    ) -> str:
-        """
-        Generate observation from execution results.
-        
-        Args:
-            llm: LLM instance
-            task: Original task
-            code: Executed code
-            exec_result: Execution result
-            
-        Returns:
-            Observation string
-        """
-        # Format created files
-        created_files_str = ", ".join(exec_result.created_files) if exec_result.created_files else "None"
-        
-        prompt = OBSERVATION_PROMPT.format(
-            task=task,
-            code=code[:2000],  # Truncate long code
-            output=exec_result.output[:5000] if exec_result.output else "No output",
-            created_files=created_files_str
-        )
-        
-        try:
-            response = await llm.ainvoke([HumanMessage(content=prompt)])
-            observation = response.content.strip()
-            
-            # Fallback if LLM returns empty
-            if not observation:
-                observation = self._generate_fallback_observation(exec_result)
-                
-            return observation
-            
-        except Exception as e:
-            logger.warning(f"[PythonCoder] Observation generation failed: {e}")
-            return self._generate_fallback_observation(exec_result)
-    
-    def _generate_fallback_observation(self, exec_result: ExecutionResult) -> str:
-        """
-        Generate fallback observation when LLM fails.
-        
-        Args:
-            exec_result: Execution result
-            
-        Returns:
-            Fallback observation string
-        """
-        parts = ["Code executed successfully."]
-        
-        if exec_result.output:
-            # Extract first meaningful line
-            lines = [l for l in exec_result.output.split('\n') if l.strip()]
-            if lines:
-                parts.append(f"Output: {lines[0][:100]}")
-                
-        if exec_result.created_files:
-            parts.append(f"Created files: {', '.join(exec_result.created_files)}")
-            
-        if exec_result.variables:
-            vars_str = ", ".join(list(exec_result.variables.keys())[:5])
-            parts.append(f"Variables: {vars_str}")
-        
-        # Encourage downstream finish detection when execution completed cleanly
-        parts.append("FINISH: true")
-
-        return " ".join(parts)
-    
-    def _extract_code(self, response: str) -> str:
-        """
-        Extract Python code from LLM response.
-
-        Handles various formats:
-        - Raw code
-        - Markdown code blocks (```python ... ```)
-        - Code with explanations
-
-        Args:
-            response: LLM response text
-
-        Returns:
-            Extracted Python code
-        """
-        if not response:
-            return ""
-
-        # Try to extract from markdown code block (prefer this)
-        code_block_pattern = r'```(?:python)?\s*\n(.*?)\n```'
-        matches = re.findall(code_block_pattern, response, re.DOTALL)
-
-        if matches:
-            # Return the first code block
-            code = matches[0].strip()
-            logger.debug(f"[PythonCoder] Extracted code from markdown block ({len(code)} chars)")
-            return code
-
-        # Check if response starts with common code patterns
-        code_starters = ['import ', 'from ', 'def ', 'class ', '#', 'print(', 'with ', 'for ', 'if ', 'while ']
-        lines = response.split('\n')
-
-        # Find where code starts
-        code_start = -1
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if any(stripped.startswith(s) for s in code_starters):
-                code_start = i
-                break
-
-        # If we found code start, extract from there
-        if code_start >= 0:
-            # Find where code ends (look for explanatory text after code)
-            code_end = len(lines)
-            for i in range(code_start, len(lines)):
-                line = lines[i].strip()
-                # Stop if we hit explanatory text (sentences, not code)
-                if line and not line.startswith('#') and ': ' in line and not any(c in line for c in ['=', '(', '[', '{']):
-                    # Might be explanation like "This code does..."
-                    if i > code_start + 3:  # Give it at least 3 lines
-                        code_end = i
-                        break
-
-            code = '\n'.join(lines[code_start:code_end]).strip()
-            logger.debug(f"[PythonCoder] Extracted code from detected start ({len(code)} chars)")
-            return code
-
-        # Fallback: return entire response and let validation catch errors
-        logger.warning(f"[PythonCoder] Could not detect code pattern, returning full response")
-        return response.strip()
-    
-    def _build_file_context(self, file_paths: Optional[List[str]]) -> str:
-        """
-        Build file context string from file paths.
-        
-        Args:
-            file_paths: List of file paths
-            
-        Returns:
-            Formatted file context string
-        """
-        if not file_paths:
-            return "No files provided"
-        
-        try:
-            # Use file_analyzer for detailed context
-            quick_mode = not self._contains_json(file_paths)
-            analysis = file_analyzer.analyze(file_paths, quick_mode=quick_mode)
-            
-            if analysis.get('success'):
-                base_note = (
-                    "Files are copied to the sandbox working directory using their "
-                    "original filenames. Access them with relative paths only"
-                )
-                llm_context = analysis.get('llm_context', analysis.get('summary', ''))
-                json_details = self._format_json_details(analysis.get('analyses', []))
-                combined = "\n\n".join([part for part in (llm_context, json_details) if part]).strip()
-                return f"{base_note}\n\n{combined}".strip()
-            else:
-                # Fallback to simple listing
-                return (
-                    "Files are copied to the sandbox working directory using their "
-                    "original filenames. Access them with relative paths only. "
-                    f"Files: {', '.join(file_paths)}"
-                )
-                
-        except Exception as e:
-            logger.warning(f"[PythonCoder] File analysis failed: {e}")
-            return (
-                "Files are copied to the sandbox working directory using their "
-                "original filenames. Access them with relative paths only. "
-                f"Files: {', '.join(file_paths)}"
-            )
-    
-    def _build_additional_context(
-        self,
-        context: Optional[str],
-        conversation_history: Optional[List[Dict]],
-        plan_context: Optional[Dict],
-        react_context: Optional[Dict]
-    ) -> Dict[str, str]:
-        """
-        Build structured additional context from various sources.
-        
-        Args:
-            context: Direct instruction string
-            conversation_history: Past conversation messages
-            plan_context: Plan execution context
-            react_context: ReAct agent context
-            
-        Returns:
-            Dict with previous_conversation, plan_context, and instructions
-        """
-        previous_conversation = "None"
-        if conversation_history:
-            recent = conversation_history[-3:] if len(conversation_history) > 3 else conversation_history
-            history_str = "\n".join(
-                f"{msg.get('role', 'unknown')}: {msg.get('content', '')[:200]}"
-                for msg in recent
-            )
-            previous_conversation = history_str or "None"
-        
-        plan_section = "None"
-        if plan_context:
-            # Build comprehensive plan context
-            current_step = plan_context.get('current_step', '?')
-            total_steps = plan_context.get('total_steps', '?')
-            current_goal = plan_context.get('goal', 'Unknown')
-            overall_goal = plan_context.get('overall_goal', 'Unknown')
-            success_criteria = plan_context.get('success_criteria', 'Not specified')
-
-            # Format the complete plan
-            all_steps = plan_context.get('all_plan_steps', [])
-            plan_overview = []
-            for step_info in all_steps:
-                step_num = step_info.get('step_num', '?')
-                step_goal = step_info.get('goal', 'Unknown')
-                tools = ', '.join(step_info.get('primary_tools', [])) or 'any'
-                criteria = step_info.get('success_criteria', 'N/A')
-
-                marker = ">>> " if step_num == current_step else "    "
-                plan_overview.append(f"{marker}Step {step_num}: {step_goal} (tools: {tools}, success: {criteria})")
-
-            plan_overview_str = "\n".join(plan_overview) if plan_overview else "No plan details available"
-
-            # Format previous results
-            previous_results = plan_context.get('previous_results', [])
-            results_summary = []
-            for result in previous_results:
-                step_num = result.get('step', '?')
-                step_goal = result.get('goal', 'Unknown')
-                success = "✓" if result.get('success') else "✗"
-                tool = result.get('tool_used', 'unknown')
-                obs = result.get('observation', 'No observation')[:150]
-                results_summary.append(f"  Step {step_num} [{success}]: {step_goal}\n    Tool: {tool}\n    Result: {obs}")
-
-            results_str = "\n".join(results_summary) if results_summary else "No previous steps completed yet"
-
-            # Build complete plan section
-            plan_section = f"""Overall Goal: {overall_goal}
-
-Current Position: Step {current_step}/{total_steps}
-Current Goal: {current_goal}
-Success Criteria: {success_criteria}
-
-Complete Plan:
-{plan_overview_str}
-
-Previous Steps Completed:
-{results_str}"""
-        
-        # Build ReAct step section (current step thought/action/input)
-        react_step_section = "None"
-        if react_context:
-            current_step = react_context.get('current_step', {})
-            if current_step:
-                thought = current_step.get('thought', '')
-                action = current_step.get('action', '')
-                action_input = current_step.get('action_input', '')
-                react_step_section = f"""Thought: {thought}
-Action: {action}
-Action Input: {action_input}
-
-Based on the above information, perform the task."""
-
-        instruction_parts = []
-        if context:
-            instruction_parts.append(context)
-
-        if react_context:
-            prev_steps = react_context.get('previous_steps', [])
-            if prev_steps:
-                steps_str = "\n".join(
-                    f"- Step {s.get('step')}: {s.get('action')} -> {s.get('observation', '')[:120]}"
-                    for s in prev_steps[-3:]
-                )
-                instruction_parts.append(f"Recent agent steps:\n{steps_str}")
-
-        instructions = "\n".join(instruction_parts) if instruction_parts else "None"
-
-        return {
-            "previous_conversation": previous_conversation,
-            "plan_context": plan_section,
-            "react_step": react_step_section,
-            "instructions": instructions,
-        }
-    
-    def _contains_json(self, file_paths: Optional[List[str]]) -> bool:
-        """Return True if any provided file looks like JSON."""
-        if not file_paths:
-            return False
-        return any(str(p).lower().endswith(".json") for p in file_paths)
-
-    def _is_json_error(self, error: str) -> bool:
-        """Heuristically detect JSON parsing errors to add guardrails."""
-        if not error:
-            return False
-        lowered = error.lower()
-        json_markers = [
-            "jsondecodeerror",
-            "expecting value",
-            "extra data",
-            "unterminated string",
-            "invalid control character",
-            "json parsing",
-            "decode json",
-        ]
-        return any(marker in lowered for marker in json_markers)
-
-    def _format_json_details(self, analyses: List[Dict[str, Any]]) -> str:
-        """
-        Build a concise JSON-focused context so the LLM sees real keys/shape.
-        """
-        if not analyses:
-            return ""
-
-        sections = []
-        for analysis in analyses:
-            metadata = analysis.get("metadata") or {}
-            file_type = metadata.get("file_type")
-            if file_type != "json":
-                continue
-
-            name = analysis.get("original_name") or analysis.get("file_path") or "json file"
-            structure = metadata.get("structure", "unknown")
-            keys = metadata.get("top_level_keys") or []
-            all_keys = self._collect_all_json_keys(metadata)
-            key_count = metadata.get("key_count")
-            item_count = metadata.get("item_count")
-            schema = metadata.get("schema") or {}
-            sample = metadata.get("sample")
-
-            lines = [f"[JSON] {name}"]
-            lines.append(f"- structure: {structure}")
-            if item_count is not None:
-                lines.append(f"- items: {item_count}")
-            if key_count is not None:
-                lines.append(f"- keys: {key_count}")
-            if keys:
-                lines.append(f"- top-level keys: {', '.join(str(k) for k in keys)}")
-            if all_keys:
-                lines.append(f"- all keys: {', '.join(str(k) for k in all_keys)}")
-            if schema:
-                schema_preview = [f"{k}: {v}" for k, v in schema.items()]
-                lines.append(f"- schema: {', '.join(schema_preview)}")
-            if sample:
-                try:
-                    snippet = json.dumps(sample, ensure_ascii=False)
-                    lines.append(f"- sample: {snippet}")
-                except Exception:
-                    pass
-
-            sections.append("\n".join(lines))
-
-        return "\n\n".join(sections)
-
-    def _collect_all_json_keys(self, metadata: Dict[str, Any]) -> List[Any]:
-        """
-        Collect all discoverable keys from metadata without truncation.
-        """
-        keys = []
-
-        # Direct top-level keys
-        top_keys = metadata.get("top_level_keys")
-        if top_keys:
-            keys.extend(list(top_keys))
-
-        # All keys from metadata (full traversal)
-        all_keys = metadata.get("all_keys")
-        if all_keys:
-            keys.extend(list(all_keys))
-
-        # Schema keys (list of objects)
-        schema = metadata.get("schema")
-        if schema and isinstance(schema, dict):
-            keys.extend(list(schema.keys()))
-
-        # Value types keys (dict case)
-        value_types = metadata.get("value_types")
-        if value_types and isinstance(value_types, dict):
-            keys.extend(list(value_types.keys()))
-
-        # Sample keys (dict or list of dicts)
-        sample = metadata.get("sample")
-        if isinstance(sample, dict):
-            keys.extend(list(sample.keys()))
-        elif isinstance(sample, list):
-            for item in sample:
-                if isinstance(item, dict):
-                    keys.extend(list(item.keys()))
-
-        # Deduplicate while preserving order
-        seen = set()
-        deduped = []
-        for k in keys:
-            if k in seen:
-                continue
-            seen.add(k)
-            deduped.append(k)
-        return deduped
-
-    def _copy_files_to_sandbox(
-        self,
-        file_paths: List[str],
-        sandbox: CodeSandbox
-    ) -> None:
-        """
-        Copy input files to sandbox working directory.
-        
-        Args:
-            file_paths: Source file paths
-            sandbox: Target sandbox
-        """
-        import shutil
-        
-        for file_path in file_paths:
-            src = Path(file_path)
-            if src.exists():
-                try:
-                    original_name = extract_original_filename(src.name)
-                except Exception:
-                    original_name = src.name
-
-                dst = sandbox.working_dir / original_name
-                try:
-                    shutil.copy2(src, dst)
-                    logger.debug(f"[PythonCoder] Copied {src.name} to sandbox as {original_name}")
-                except Exception as e:
-                    logger.warning(f"[PythonCoder] Failed to copy {src.name}: {e}")
-    
-    async def execute_code_task(
-        self,
-        query: str,
-        context: Optional[str] = None,
-        file_paths: Optional[List[str]] = None,
-        session_id: Optional[str] = None,
-        user_id: str = "default",
-        stage_prefix: Optional[str] = None,
-        conversation_history: Optional[List[Dict]] = None,
-        plan_context: Optional[Dict] = None,
-        react_context: Optional[Dict] = None,
-        **kwargs
-    ) -> ToolResult:
-        """
-        Execute a code generation task (alias for execute() for backwards compatibility).
-
-        This method is called by react_agent and other components that expect
-        the execute_code_task interface.
-
-        Args:
-            query: Task description (what the code should do)
-            context: Optional additional context
-            file_paths: List of available file paths
-            session_id: Session ID for sandbox persistence
-            user_id: User ID for LLM configuration
-            stage_prefix: Optional prefix for file naming
-            conversation_history: Optional conversation history
-            plan_context: Optional plan execution context
-            react_context: Optional ReAct agent context
-
-        Returns:
-            ToolResult with execution results
-        """
-        return await self.execute(
-            query=query,
-            context=context,
-            file_paths=file_paths,
-            session_id=session_id,
-            user_id=user_id,
-            stage_prefix=stage_prefix,
-            conversation_history=conversation_history,
-            plan_context=plan_context,
-            react_context=react_context,
-            **kwargs
+            execution_time=self._elapsed_time(),
         )
 
-    async def execute_code(
-        self,
-        code: str,
-        session_id: Optional[str] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Execute pre-written code directly (without LLM generation).
+    async def _generate_code(self, llm, prompt: str) -> str:
+        if hasattr(llm, "ainvoke"):
+            result = await llm.ainvoke(prompt)
+            return getattr(result, "content", str(result))
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, lambda: llm.invoke(prompt))
+        return getattr(result, "content", str(result))
 
-        This is a simpler interface for testing or direct code execution.
-
-        Args:
-            code: Python code to execute
-            session_id: Optional session ID
-
-        Returns:
-            Dict with execution results
-        """
-        session_id = session_id or "direct_exec"
-        sandbox = SandboxManager.get_sandbox(session_id)
-
-        result = sandbox.execute(code)
-
-        return {
-            "success": result.success,
-            "output": result.output,
-            "error": result.error,
-            "created_files": result.created_files,
-            "variables": list(result.variables.keys())
-        }
+    def _extract_code(self, text: str) -> str:
+        match = re.search(r"```python(.*?)```", text, re.DOTALL | re.IGNORECASE)
+        if match:
+            body = match.group(1)
+            return body.replace("```", "").strip()
+        # fallback: any fenced block
+        match = re.search(r"```(.*?```)", text, re.DOTALL)
+        if match:
+            body = match.group(1)
+            return body.replace("```", "").strip()
+        return text.strip()
 
 
-# ============================================================================
-# Global Tool Instance
-# ============================================================================
-
-# Create singleton instance
+# Singleton instance
 python_coder_tool = PythonCoderTool()
 

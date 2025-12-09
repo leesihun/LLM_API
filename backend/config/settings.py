@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     ollama_timeout: int = 3000000
     ollama_num_ctx: int = 2048  # Optimized for faster processing (reduced from 4096)
     # Sampling parameters - optimized for coherent responses
-    ollama_temperature: float = 0.6  # 0.1=conservative, 1.0=creative
+    ollama_temperature: float = 1.0  # 0.1=conservative, 1.0=creative
     ollama_top_p: float = 0.95      # Nucleus sampling
     ollama_top_k: int = 20          # Top-k sampling (higher = more diverse)
     ollama_coder_model_temperature: float = 1.0

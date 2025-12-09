@@ -30,7 +30,7 @@ from backend.models.schemas import (
 )
 from backend.api.dependencies import get_current_user
 from backend.config.settings import settings
-from backend.agents.react_agent import agent_system
+from backend.agents.agent_system import agent_system
 from backend.runtime import (
     cleanup_uploaded_files,
     create_user_session,
