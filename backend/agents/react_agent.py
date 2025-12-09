@@ -508,7 +508,6 @@ def _build_thought_action_prompt(
             "- Otherwise → FINISH: false and choose one tool that adds new information.\n"
         )
 
-    guidance_section = f"{file_guidance}\n" if file_guidance else ""
     context_section = context if context else "No prior steps yet."
 
     return f"""You are a focused ReAct agent. Choose at most ONE tool per turn. Set FINISH to true only when you can answer directly; otherwise keep FINISH false and call the best single tool.
@@ -519,11 +518,13 @@ General Guidelines:
 - ACTION INPUT must be a concrete command/query: python_coder -> plain-language task; web_search/rag_retrieval -> search query; shell -> one safe command; vision_analyzer -> question; no_tools -> reasoning.
 - Prefer local analysis before web_search unless the request clearly needs live/external info.
 - When FINISH is true, leave ACTION empty and ACTION INPUT blank.
-{guidance_section}{finish_section}
+{finish_section}
+----------------------------------------------------------
 
 ## User Query (Original inquire)
 {query}
 
+----------------------------------------------------------
 ## Context
 {context_section}
 
