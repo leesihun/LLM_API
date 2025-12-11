@@ -1,0 +1,14 @@
+You are optimizing a query for semantic document retrieval.
+
+User Query: {user_query}
+Context: {context}
+
+Convert this into an optimized semantic search query that will retrieve the most relevant documents.
+
+The query should:
+- Focus on key concepts and entities
+- Use semantic meaning rather than exact keywords
+- Be 1-2 sentences maximum
+- Capture the core information need
+
+Respond with ONLY the optimized query:

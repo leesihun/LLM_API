@@ -1,0 +1,438 @@
+"""
+RAG (Retrieval-Augmented Generation) Tool
+Uses FAISS for vector similarity search with configurable embeddings
+"""
+import json
+import time
+import hashlib
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+import numpy as np
+
+import config
+
+
+class RAGTool:
+    """
+    RAG tool with FAISS vector database
+    Per-user collections with document upload and retrieval
+    """
+
+    def __init__(self, username: str):
+        """
+        Initialize RAG tool for a user
+
+        Args:
+            username: Username for collection isolation
+        """
+        self.username = username
+        self.user_docs_dir = config.RAG_DOCUMENTS_DIR / username
+        self.user_index_dir = config.RAG_INDEX_DIR / username
+        self.user_metadata_dir = config.RAG_METADATA_DIR / username
+
+        # Create directories
+        self.user_docs_dir.mkdir(parents=True, exist_ok=True)
+        self.user_index_dir.mkdir(parents=True, exist_ok=True)
+        self.user_metadata_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load embedding model
+        self.embedding_model = None  # Lazy load
+        self.embedding_dim = None
+
+    def _load_embedding_model(self):
+        """Lazy load embedding model"""
+        if self.embedding_model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError:
+                raise ImportError(
+                    "sentence-transformers not installed. "
+                    "Install with: pip install sentence-transformers"
+                )
+
+            self.embedding_model = SentenceTransformer(
+                config.RAG_EMBEDDING_MODEL,
+                device=config.RAG_EMBEDDING_DEVICE
+            )
+            self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
+
+    def create_collection(self, collection_name: str) -> Dict[str, Any]:
+        """
+        Create a new document collection
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            Result dictionary
+        """
+        collection_dir = self.user_docs_dir / collection_name
+        index_path = self.user_index_dir / f"{collection_name}.index"
+        metadata_path = self.user_metadata_dir / f"{collection_name}.json"
+
+        if collection_dir.exists():
+            return {
+                "success": False,
+                "error": f"Collection '{collection_name}' already exists"
+            }
+
+        collection_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create empty metadata
+        metadata = {
+            "collection_name": collection_name,
+            "created_at": time.time(),
+            "documents": {},
+            "chunk_count": 0
+        }
+
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2)
+
+        return {
+            "success": True,
+            "collection_name": collection_name,
+            "path": str(collection_dir)
+        }
+
+    def upload_document(
+        self,
+        collection_name: str,
+        document_path: str,
+        document_content: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload and index a document
+
+        Args:
+            collection_name: Collection to add to
+            document_path: Path to document or document name
+            document_content: Document content (if providing directly)
+
+        Returns:
+            Upload result
+        """
+        self._load_embedding_model()
+
+        collection_dir = self.user_docs_dir / collection_name
+        metadata_path = self.user_metadata_dir / f"{collection_name}.json"
+
+        if not collection_dir.exists():
+            return {
+                "success": False,
+                "error": f"Collection '{collection_name}' does not exist"
+            }
+
+        # Read document
+        if document_content is None:
+            doc_path = Path(document_path)
+            if not doc_path.exists():
+                return {"success": False, "error": "Document file not found"}
+
+            if doc_path.suffix not in config.RAG_SUPPORTED_FORMATS:
+                return {
+                    "success": False,
+                    "error": f"Unsupported format: {doc_path.suffix}"
+                }
+
+            document_content = self._read_document(doc_path)
+            doc_name = doc_path.name
+        else:
+            doc_name = Path(document_path).name
+
+        # Chunk document
+        chunks = self._chunk_text(document_content)
+
+        # Generate embeddings
+        embeddings = self.embedding_model.encode(
+            chunks,
+            batch_size=config.RAG_EMBEDDING_BATCH_SIZE,
+            show_progress_bar=False
+        )
+
+        # Load or create index
+        index = self._load_or_create_index(collection_name, self.embedding_dim)
+
+        # Load metadata
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+
+        # Add to index
+        start_idx = index.ntotal
+        index.add(np.array(embeddings).astype('float32'))
+
+        # Update metadata
+        doc_id = hashlib.md5(doc_name.encode()).hexdigest()
+        metadata["documents"][doc_id] = {
+            "name": doc_name,
+            "path": str(document_path),
+            "chunk_indices": list(range(start_idx, index.ntotal)),
+            "chunks": chunks,
+            "uploaded_at": time.time()
+        }
+        metadata["chunk_count"] = index.ntotal
+
+        # Save index and metadata
+        self._save_index(index, collection_name)
+
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2)
+
+        return {
+            "success": True,
+            "document_name": doc_name,
+            "chunks_created": len(chunks),
+            "total_chunks": index.ntotal
+        }
+
+    def retrieve(
+        self,
+        collection_name: str,
+        query: str,
+        max_results: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Retrieve relevant documents for a query
+
+        Args:
+            collection_name: Collection to search
+            query: Search query
+            max_results: Maximum results to return
+
+        Returns:
+            Retrieved documents
+        """
+        self._load_embedding_model()
+
+        metadata_path = self.user_metadata_dir / f"{collection_name}.json"
+
+        if not metadata_path.exists():
+            return {
+                "success": False,
+                "error": f"Collection '{collection_name}' does not exist"
+            }
+
+        # Load index and metadata
+        index = self._load_index(collection_name)
+        if index is None:
+            return {
+                "success": False,
+                "error": f"No index found for collection '{collection_name}'"
+            }
+
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+
+        if index.ntotal == 0:
+            return {
+                "success": True,
+                "documents": [],
+                "message": "Collection is empty"
+            }
+
+        # Generate query embedding
+        query_embedding = self.embedding_model.encode([query])[0]
+
+        # Search
+        k = min(max_results or config.RAG_MAX_RESULTS, index.ntotal)
+        distances, indices = index.search(
+            np.array([query_embedding]).astype('float32'),
+            k
+        )
+
+        # Retrieve chunks
+        results = []
+        for dist, idx in zip(distances[0], indices[0]):
+            # Find document containing this chunk
+            for doc_id, doc_meta in metadata["documents"].items():
+                if idx in doc_meta["chunk_indices"]:
+                    chunk_local_idx = doc_meta["chunk_indices"].index(idx)
+                    results.append({
+                        "document": doc_meta["name"],
+                        "chunk": doc_meta["chunks"][chunk_local_idx],
+                        "score": float(1 / (1 + dist)),  # Convert distance to similarity
+                        "chunk_index": chunk_local_idx
+                    })
+                    break
+
+        return {
+            "success": True,
+            "documents": results,
+            "query": query,
+            "num_results": len(results)
+        }
+
+    def list_collections(self) -> Dict[str, Any]:
+        """
+        List all collections for user
+
+        Returns:
+            List of collections
+        """
+        collections = []
+
+        for metadata_file in self.user_metadata_dir.glob("*.json"):
+            try:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+
+                collections.append({
+                    "name": metadata["collection_name"],
+                    "documents": len(metadata["documents"]),
+                    "chunks": metadata["chunk_count"],
+                    "created_at": metadata["created_at"]
+                })
+            except Exception:
+                continue
+
+        return {
+            "success": True,
+            "collections": collections
+        }
+
+    def delete_collection(self, collection_name: str) -> Dict[str, Any]:
+        """
+        Delete a collection
+
+        Args:
+            collection_name: Collection to delete
+
+        Returns:
+            Result dictionary
+        """
+        import shutil
+
+        collection_dir = self.user_docs_dir / collection_name
+        index_path = self.user_index_dir / f"{collection_name}.index"
+        metadata_path = self.user_metadata_dir / f"{collection_name}.json"
+
+        if not metadata_path.exists():
+            return {
+                "success": False,
+                "error": f"Collection '{collection_name}' does not exist"
+            }
+
+        # Delete all files
+        if collection_dir.exists():
+            shutil.rmtree(collection_dir)
+        if index_path.exists():
+            index_path.unlink()
+        if metadata_path.exists():
+            metadata_path.unlink()
+
+        return {
+            "success": True,
+            "collection_name": collection_name
+        }
+
+    def _chunk_text(self, text: str) -> List[str]:
+        """
+        Split text into chunks
+
+        Args:
+            text: Text to chunk
+
+        Returns:
+            List of chunks
+        """
+        chunk_size = config.RAG_CHUNK_SIZE
+        overlap = config.RAG_CHUNK_OVERLAP
+
+        chunks = []
+        start = 0
+
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+
+            if chunk:
+                chunks.append(chunk)
+
+            start = end - overlap
+
+        return chunks
+
+    def _read_document(self, path: Path) -> str:
+        """
+        Read document content based on file type
+
+        Args:
+            path: Document path
+
+        Returns:
+            Document text
+        """
+        if path.suffix in ['.txt', '.md']:
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+
+        elif path.suffix == '.json':
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.dumps(json.load(f), indent=2)
+
+        elif path.suffix == '.csv':
+            import pandas as pd
+            df = pd.read_csv(path)
+            return df.to_string()
+
+        elif path.suffix == '.pdf':
+            try:
+                import PyPDF2
+                text = []
+                with open(path, 'rb') as f:
+                    reader = PyPDF2.PdfReader(f)
+                    for page in reader.pages:
+                        text.append(page.extract_text())
+                return '\n'.join(text)
+            except ImportError:
+                raise ImportError("PyPDF2 required for PDF support")
+
+        elif path.suffix == '.docx':
+            try:
+                from docx import Document
+                doc = Document(path)
+                return '\n'.join([para.text for para in doc.paragraphs])
+            except ImportError:
+                raise ImportError("python-docx required for DOCX support")
+
+        else:
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+
+    def _load_or_create_index(self, collection_name: str, dim: int):
+        """Load existing index or create new one"""
+        import faiss
+
+        index_path = self.user_index_dir / f"{collection_name}.index"
+
+        if index_path.exists():
+            return faiss.read_index(str(index_path))
+        else:
+            # Create new index based on config
+            if config.RAG_INDEX_TYPE == "Flat":
+                if config.RAG_SIMILARITY_METRIC == "cosine":
+                    index = faiss.IndexFlatIP(dim)  # Inner product for cosine
+                else:
+                    index = faiss.IndexFlatL2(dim)
+            else:
+                # Default to Flat
+                index = faiss.IndexFlatL2(dim)
+
+            return index
+
+    def _load_index(self, collection_name: str):
+        """Load index"""
+        import faiss
+
+        index_path = self.user_index_dir / f"{collection_name}.index"
+
+        if index_path.exists():
+            return faiss.read_index(str(index_path))
+        return None
+
+    def _save_index(self, index, collection_name: str):
+        """Save index"""
+        import faiss
+
+        index_path = self.user_index_dir / f"{collection_name}.index"
+        faiss.write_index(index, str(index_path))

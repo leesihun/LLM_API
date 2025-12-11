@@ -19,7 +19,9 @@
       "Bash(pip show:*)",
       "Bash(pip install:*)",
       "Bash(test -f backend/agents/refactored_react_agent.py)",
-      "Bash(test -f backend/tools/python_coder/refactored_tool.py)"
+      "Bash(test -f backend/tools/python_coder/refactored_tool.py)",
+      "Bash(test:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

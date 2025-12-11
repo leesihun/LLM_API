@@ -1,271 +1,144 @@
 """
-Data Models and Schemas
-Defines all Pydantic models for API requests/responses
+Pydantic schemas for request/response validation
 """
-
-from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
-from datetime import datetime, timezone, timedelta
-from backend.models.tool_metadata import SearchResult
+from pydantic import BaseModel, Field
 
 
 # ============================================================================
-# Timezone Helper
+# Auth Schemas
 # ============================================================================
+class SignupRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "user"
 
-def get_kst_now() -> datetime:
-    """Get current time in KST (Korea Standard Time, UTC+9)"""
-    kst = timezone(timedelta(hours=9))
-    return datetime.now(kst)
-
-
-# ============================================================================
-# Authentication Models
-# ============================================================================
 
 class LoginRequest(BaseModel):
-    """User login request"""
     username: str
     password: str
 
 
-class LoginResponse(BaseModel):
-    """User login response"""
+class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user: Dict[str, Any]
-
-
-class User(BaseModel):
-    """User model"""
-    username: str
-    role: str
 
 
 # ============================================================================
-# OpenAI-Compatible Chat Models
+# Chat Schemas (OpenAI Compatible)
 # ============================================================================
-
 class ChatMessage(BaseModel):
-    """Single chat message"""
-    role: Literal["user", "assistant"]
+    role: Literal["system", "user", "assistant"]
     content: str
 
 
 class ChatCompletionRequest(BaseModel):
-    """OpenAI-compatible chat completion request"""
     model: str
     messages: List[ChatMessage]
-    session_id: Optional[str] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
     stream: bool = False
-    agent_type: Optional[Literal["auto", "react", "plan_execute"]] = "auto"
-    attached_files: Optional[List[str]] = None  # List of file paths to attach (e.g., uploaded files)
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = None
+    session_id: Optional[str] = None
+    agent_type: str = "chat"
+
+
+class ChatCompletionChoice(BaseModel):
+    index: int = 0
+    message: ChatMessage
+    finish_reason: str = "stop"
 
 
 class ChatCompletionResponse(BaseModel):
-    """OpenAI-compatible chat completion response"""
     id: str
     object: str = "chat.completion"
     created: int
     model: str
-    choices: List[Dict[str, Any]]
-    usage: Optional[Dict[str, int]] = None
+    choices: List[ChatCompletionChoice]
+    x_session_id: str  # Custom field for session tracking
+
+
+class ChatCompletionChunkDelta(BaseModel):
+    role: Optional[str] = None
+    content: Optional[str] = None
+
+
+class ChatCompletionChunkChoice(BaseModel):
+    index: int = 0
+    delta: ChatCompletionChunkDelta
+    finish_reason: Optional[str] = None
+
+
+class ChatCompletionChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int
+    model: str
+    choices: List[ChatCompletionChunkChoice]
     x_session_id: Optional[str] = None
-    x_agent_metadata: Optional[Dict[str, Any]] = None  # Agentic workflow execution details
 
 
-class ModelInfo(BaseModel):
-    """Model information"""
+# ============================================================================
+# Model Schemas (OpenAI Compatible)
+# ============================================================================
+class ModelObject(BaseModel):
     id: str
     object: str = "model"
-    created: int
-    owned_by: str = "ollama"
+    created: int = 0
+    owned_by: str = "system"
 
 
-class ModelsResponse(BaseModel):
-    """List of available models"""
+class ModelsListResponse(BaseModel):
     object: str = "list"
-    data: List[ModelInfo]
+    data: List[ModelObject]
 
 
-# ============================================================================
-# Management / Admin Models
-# ============================================================================
-
-class SignupRequest(BaseModel):
-    """User signup request"""
-    username: str
-    password: str
-    role: Optional[str] = "guest"
-
-
-class SignupResponse(BaseModel):
-    """User signup response"""
-    success: bool
-    user: User
-
-
-class ModelChangeRequest(BaseModel):
-    """Change active LLM model (admin only)"""
-    model: str
-
-
-class ModelChangeResponse(BaseModel):
-    """Response for model change"""
-    success: bool
+class ChangeModelRequest(BaseModel):
     model: str
 
 
 # ============================================================================
-# Agent State Models
+# Session Schemas
 # ============================================================================
+class SessionInfo(BaseModel):
+    session_id: str
+    created_at: str
+    message_count: int
 
-class AgentState(BaseModel):
-    """State object passed through LangGraph nodes"""
+
+class SessionsListResponse(BaseModel):
+    sessions: List[SessionInfo]
+
+
+class ChatHistoryResponse(BaseModel):
     messages: List[ChatMessage]
-    session_id: Optional[str] = None
-    user_id: str
-    plan: Optional[str] = None
-    tools_used: List[str] = Field(default_factory=list)
-    search_results: Optional[List[Dict[str, Any]]] = None
-    rag_context: Optional[str] = None
-    final_output: Optional[str] = None
-    verification_passed: bool = False
-    iteration_count: int = 0
-    max_iterations: int = 5
 
 
 # ============================================================================
-# Plan-Execute Models
+# Tools Schemas
 # ============================================================================
-
-class PlanStep(BaseModel):
-    """Structured execution plan step"""
-    step_num: int
-    goal: str
-    primary_tools: List[str] = Field(default_factory=list)
-    success_criteria: str
-    context: Optional[str] = None  # Additional context for this step
-
-
-class StepResult(BaseModel):
-    """Result of executing a plan step"""
-    step_num: int
-    goal: str
-    success: bool
-    tool_used: Optional[str] = None
-    attempts: int = 0  # Number of tool attempts made
-    observation: str
-    error: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-
-# ============================================================================
-# Task Models
-# ============================================================================
-
-class TaskType(BaseModel):
-    """Identifies the type of task to perform"""
-    task: Literal["chat", "search", "rag", "agentic"]
-    require_memory: bool = True
-
-
-# ============================================================================
-# Tool Models
-# ============================================================================
-
-class SearchQuery(BaseModel):
-    """Web search query"""
-    query: str
-    max_results: int = 5
-
-
-class RAGQuery(BaseModel):
-    """RAG query for document retrieval"""
-    query: str
-    document_ids: Optional[List[str]] = None
-    top_k: int = 5
-
-
-class RAGResult(BaseModel):
-    """RAG retrieval result"""
-    content: str
-    metadata: Dict[str, Any]
-    score: float
-
-
-class RAGSearchResponse(BaseModel):
-    """RAG retrieval response"""
-    results: List[RAGResult]
-
-
-# ============================================================================
-# Storage Models
-# ============================================================================
-
-class ConversationMessage(BaseModel):
-    """Stored conversation message"""
-    role: str
-    content: str
-    timestamp: datetime = Field(default_factory=get_kst_now)
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class Conversation(BaseModel):
-    """Complete conversation record"""
-    session_id: str
-    user_id: str
-    messages: List[ConversationMessage]
-    created_at: datetime = Field(default_factory=get_kst_now)
-    updated_at: datetime = Field(default_factory=get_kst_now)
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class SessionListResponse(BaseModel):
-    """List of session IDs for a user"""
-    sessions: List[str]
-
-
-class ConversationHistoryResponse(BaseModel):
-    """Conversation history response"""
-    session_id: str
-    messages: List[ConversationMessage]
-
-
-# ============================================================================
-# Tooling Models
-# ============================================================================
-
 class ToolInfo(BaseModel):
     name: str
     description: str
+    enabled: bool = True
 
 
-class ToolListResponse(BaseModel):
+class ToolsListResponse(BaseModel):
     tools: List[ToolInfo]
-
-
-class MathRequest(BaseModel):
-    expression: str
-    return_latex: bool = False
-
-
-class MathResponse(BaseModel):
-    result: str
-    latex: Optional[str] = None
 
 
 class WebSearchRequest(BaseModel):
     query: str
     max_results: int = 5
-    include_context: bool = True  # Enable temporal context enhancement
-    user_location: Optional[str] = None  # Optional user location for location-aware searches
+
+
+class WebSearchResult(BaseModel):
+    title: str
+    url: str
+    content: str
+    score: float = 1.0
 
 
 class WebSearchResponse(BaseModel):
-    results: List[SearchResult]
-    answer: str  # LLM-generated answer from search results
-    sources_used: List[str]  # URLs used in the answer
-    context_used: Optional[Dict[str, Any]] = None  # Temporal/contextual data used
+    answer: str
+    results: List[WebSearchResult]
+    sources_used: List[str]

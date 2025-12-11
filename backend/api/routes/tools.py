@@ -1,82 +1,538 @@
 """
-Tools Routes
-Handles tool-specific endpoints for testing and direct tool access
+Tools API endpoints
+Provides API access to web search, Python execution, and RAG tools
 """
+import time
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from pydantic import BaseModel
 
-from fastapi import APIRouter, Depends
-from typing import Dict, Any
+from backend.utils.auth import get_optional_user
+from backend.core.llm_backend import llm_backend
+from tools.web_search import WebSearchTool
+from tools.python_coder import PythonCoderTool
+from tools.rag import RAGTool
+import config
 
-from backend.models.schemas import (
-    ToolListResponse,
-    ToolInfo,
-    WebSearchRequest,
-    WebSearchResponse,
-    RAGSearchResponse
-)
-from backend.api.dependencies import get_current_user
-from backend.tools.rag_retriever import rag_retriever_tool
-from backend.tools.web_search import web_search_tool
-from backend.utils.logging_utils import get_logger
 
-logger = get_logger(__name__)
+router = APIRouter(prefix="/api/tools", tags=["tools"])
+
 
 # ============================================================================
-# Router Setup
+# Request/Response Schemas
 # ============================================================================
 
-tools_router = APIRouter(prefix="/api/tools", tags=["Tools"])
+class ToolContext(BaseModel):
+    """Context information passed to tools"""
+    chat_history: Optional[List[Dict[str, str]]] = None
+    react_scratchpad: Optional[str] = None
+    current_thought: Optional[str] = None
+    current_action: Optional[str] = None
+    user_query: Optional[str] = None
+    plan: Optional[Dict[str, Any]] = None
+    plan_history: Optional[List[Dict[str, Any]]] = None
+    session_id: Optional[str] = None
+    username: Optional[str] = None
+
+
+class ToolResponse(BaseModel):
+    """Standard tool response format"""
+    success: bool
+    answer: str  # Human-readable answer for agent observation
+    data: Dict[str, Any]  # Structured data
+    metadata: Dict[str, Any]  # Execution metadata
+    error: Optional[str] = None
+
+
+class WebSearchRequest(BaseModel):
+    """Web search request"""
+    query: str
+    max_results: Optional[int] = None
+    context: Optional[ToolContext] = None
+
+
+class PythonCoderRequest(BaseModel):
+    """Python code execution request"""
+    code: str
+    session_id: str
+    timeout: Optional[int] = None
+    context: Optional[ToolContext] = None
+
+
+class RAGQueryRequest(BaseModel):
+    """RAG retrieval request"""
+    query: str
+    collection_name: str
+    max_results: Optional[int] = None
+    context: Optional[ToolContext] = None
+
+
+class RAGCollectionRequest(BaseModel):
+    """RAG collection management"""
+    collection_name: str
+
+
+class RAGUploadRequest(BaseModel):
+    """RAG document upload request"""
+    collection_name: str
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def load_prompt(prompt_name: str, **kwargs) -> str:
+    """Load and format prompt template"""
+    prompt_path = config.PROMPTS_DIR / "tools" / prompt_name
+
+    if not prompt_path.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_path}")
+
+    with open(prompt_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+
+    return template.format(**kwargs)
+
+
+def format_context(context: Optional[ToolContext]) -> str:
+    """Format context for LLM prompts"""
+    if not context:
+        return "No additional context provided."
+
+    parts = []
+
+    if context.user_query:
+        parts.append(f"User Query: {context.user_query}")
+
+    if context.chat_history:
+        history_str = "\n".join([
+            f"{msg['role']}: {msg['content']}"
+            for msg in context.chat_history[-5:]  # Last 5 messages
+        ])
+        parts.append(f"Recent Chat History:\n{history_str}")
+
+    if context.current_thought:
+        parts.append(f"Current Thought: {context.current_thought}")
+
+    if context.react_scratchpad:
+        parts.append(f"ReAct History:\n{context.react_scratchpad[-500:]}")  # Last 500 chars
+
+    if context.plan:
+        parts.append(f"Current Plan: {context.plan}")
+
+    return "\n\n".join(parts) if parts else "No context provided."
 
 
 # ============================================================================
 # Tool Endpoints
 # ============================================================================
 
-@tools_router.get("/list", response_model=ToolListResponse)
-async def list_tools(_: Dict[str, Any] = Depends(get_current_user)):
-    """List all available tools and their descriptions"""
+@router.get("/list")
+def list_tools(current_user: Optional[dict] = Depends(get_optional_user)):
+    """
+    List all available tools
+
+    Returns:
+        List of tool metadata
+    """
     tools = [
-        ToolInfo(name="web_search", description="Search the web for current information"),
-        ToolInfo(name="rag_retrieval", description="Retrieve from your uploaded documents"),
-        ToolInfo(name="python_code", description="Run safe Python code snippets"),
-        ToolInfo(name="python_coder", description="Generate and execute complex Python code"),
-        ToolInfo(name="wikipedia", description="Search summaries from Wikipedia"),
-        ToolInfo(name="weather", description="Get weather for a location"),
-        ToolInfo(name="sql_query", description="Run parameterized SQL queries (configured)"),
+        {
+            "name": "websearch",
+            "description": "Search the web for current information",
+            "enabled": True
+        },
+        {
+            "name": "python_coder",
+            "description": "Execute Python code in sandboxed environment",
+            "enabled": True
+        },
+        {
+            "name": "rag",
+            "description": "Retrieve information from document collections",
+            "enabled": True
+        }
     ]
-    return ToolListResponse(tools=tools)
+
+    return {"tools": tools}
 
 
-@tools_router.post("/websearch", response_model=WebSearchResponse)
-async def tool_websearch(request: WebSearchRequest, _: Dict[str, Any] = Depends(get_current_user)):
+@router.post("/websearch", response_model=ToolResponse)
+async def websearch(
+    request: WebSearchRequest,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
     """
-    Perform web search and generate LLM-based answer from results
+    Web search with LLM query optimization and answer generation
+
+    Args:
+        request: Search request with query and context
+        current_user: Authenticated user (optional)
+
+    Returns:
+        Search results with synthesized answer
     """
-    logger.info(f"[Websearch Endpoint] Query: {request.query}")
+    start_time = time.time()
 
-    # Get search results
-    results, context_metadata = await web_search_tool.search(
-        request.query,
-        max_results=request.max_results,
-        include_context=request.include_context,
-        user_location=request.user_location
-    )
+    try:
+        # Step 1: Generate optimized search query using LLM
+        context_str = format_context(request.context)
 
-    # Generate answer
-    answer = await web_search_tool.generate_answer(request.query, results)
-    sources_used = [r.url for r in results]
+        query_prompt = load_prompt(
+            "websearch_query.txt",
+            user_query=request.query,
+            chat_history=context_str,
+            current_thought=request.context.current_thought if request.context else ""
+        )
 
-    logger.info(f"[Websearch Endpoint] Found {len(results)} results")
+        messages = [{"role": "user", "content": query_prompt}]
+        optimized_query = llm_backend.chat(
+            messages,
+            config.TOOL_MODELS.get("websearch", config.OLLAMA_MODEL),
+            0.3  # Lower temp for query generation
+        ).strip()
 
-    return WebSearchResponse(
-        results=results,
-        answer=answer,
-        sources_used=sources_used,
-        context_used=context_metadata
-    )
+        # Step 2: Perform search using tool
+        tool = WebSearchTool()
+        search_result = tool.search(
+            query=optimized_query,
+            max_results=request.max_results
+        )
+
+        if not search_result["success"]:
+            return ToolResponse(
+                success=False,
+                answer="Web search failed",
+                data={},
+                metadata={"execution_time": time.time() - start_time},
+                error=search_result.get("error", "Unknown error")
+            )
+
+        # Step 3: Format results for LLM
+        formatted_results = tool.format_results_for_llm(search_result["results"])
+
+        # Step 4: Generate answer using LLM
+        answer_prompt = load_prompt(
+            "websearch_summarize.txt",
+            user_query=request.query,
+            search_query=optimized_query,
+            search_results=formatted_results,
+            context=context_str
+        )
+
+        messages = [{"role": "user", "content": answer_prompt}]
+        answer = llm_backend.chat(
+            messages,
+            config.TOOL_MODELS.get("websearch", config.OLLAMA_MODEL),
+            config.TOOL_PARAMETERS.get("websearch", {}).get("temperature", 0.7)
+        )
+
+        execution_time = time.time() - start_time
+
+        return ToolResponse(
+            success=True,
+            answer=answer,
+            data={
+                "search_query": optimized_query,
+                "results": search_result["results"],
+                "num_results": search_result["num_results"]
+            },
+            metadata={
+                "execution_time": execution_time,
+                "context_received": {
+                    "chat_history_messages": len(request.context.chat_history) if request.context and request.context.chat_history else 0
+                }
+            }
+        )
+
+    except Exception as e:
+        return ToolResponse(
+            success=False,
+            answer=f"Web search error: {str(e)}",
+            data={},
+            metadata={"execution_time": time.time() - start_time},
+            error=str(e)
+        )
 
 
-@tools_router.get("/rag/search", response_model=RAGSearchResponse)
-async def tool_rag_search(query: str, top_k: int = 5, _: Dict[str, Any] = Depends(get_current_user)):
-    """Search uploaded documents using RAG retrieval"""
-    results = await rag_retriever_tool.retrieve(query=query, top_k=top_k)
-    return RAGSearchResponse(results=results)
+@router.post("/python_coder", response_model=ToolResponse)
+async def python_coder(
+    request: PythonCoderRequest,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Execute Python code in sandboxed environment
+
+    Args:
+        request: Code execution request
+        current_user: Authenticated user (optional)
+
+    Returns:
+        Execution results
+    """
+    start_time = time.time()
+
+    try:
+        # Initialize tool with session ID
+        tool = PythonCoderTool(session_id=request.session_id)
+
+        # Execute code
+        result = tool.execute(
+            code=request.code,
+            timeout=request.timeout,
+            context=request.context.dict() if request.context else None
+        )
+
+        # Format answer
+        if result["success"]:
+            answer = f"Code executed successfully.\n\nOutput:\n{result['stdout']}"
+            if result['files']:
+                file_list = ", ".join(result['files'].keys())
+                answer += f"\n\nFiles in workspace: {file_list}"
+        else:
+            answer = f"Code execution failed.\n\nError:\n{result['stderr']}"
+
+        execution_time = time.time() - start_time
+
+        return ToolResponse(
+            success=result["success"],
+            answer=answer,
+            data={
+                "stdout": result["stdout"],
+                "stderr": result["stderr"],
+                "files": result["files"],
+                "workspace": result["workspace"],
+                "returncode": result["returncode"]
+            },
+            metadata={
+                "execution_time": execution_time,
+                "code_execution_time": result["execution_time"]
+            },
+            error=result.get("error")
+        )
+
+    except Exception as e:
+        return ToolResponse(
+            success=False,
+            answer=f"Python execution error: {str(e)}",
+            data={},
+            metadata={"execution_time": time.time() - start_time},
+            error=str(e)
+        )
+
+
+@router.get("/python_coder/files/{session_id}")
+async def list_python_files(
+    session_id: str,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """List files in Python coder workspace"""
+    try:
+        tool = PythonCoderTool(session_id=session_id)
+        files = tool.list_files()
+        return {"success": True, "files": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/python_coder/files/{session_id}/{filename}")
+async def read_python_file(
+    session_id: str,
+    filename: str,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """Read a file from Python coder workspace"""
+    try:
+        tool = PythonCoderTool(session_id=session_id)
+        content = tool.read_file(filename)
+
+        if content is None:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        return {"success": True, "filename": filename, "content": content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rag/collections", response_model=ToolResponse)
+async def create_rag_collection(
+    request: RAGCollectionRequest,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """Create a new RAG collection"""
+    username = current_user["username"] if current_user else "guest"
+
+    try:
+        tool = RAGTool(username=username)
+        result = tool.create_collection(request.collection_name)
+
+        if result["success"]:
+            answer = f"Collection '{request.collection_name}' created successfully."
+        else:
+            answer = f"Failed to create collection: {result.get('error', 'Unknown error')}"
+
+        return ToolResponse(
+            success=result["success"],
+            answer=answer,
+            data=result,
+            metadata={}
+        )
+    except Exception as e:
+        return ToolResponse(
+            success=False,
+            answer=f"Error creating collection: {str(e)}",
+            data={},
+            metadata={},
+            error=str(e)
+        )
+
+
+@router.get("/rag/collections")
+async def list_rag_collections(
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """List all RAG collections for user"""
+    username = current_user["username"] if current_user else "guest"
+
+    try:
+        tool = RAGTool(username=username)
+        result = tool.list_collections()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/rag/collections/{collection_name}")
+async def delete_rag_collection(
+    collection_name: str,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """Delete a RAG collection"""
+    username = current_user["username"] if current_user else "guest"
+
+    try:
+        tool = RAGTool(username=username)
+        result = tool.delete_collection(collection_name)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rag/upload")
+async def upload_to_rag(
+    collection_name: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """Upload document to RAG collection"""
+    username = current_user["username"] if current_user else "guest"
+
+    try:
+        tool = RAGTool(username=username)
+
+        # Read file content
+        content = await file.read()
+        content_str = content.decode('utf-8')
+
+        # Upload to collection
+        result = tool.upload_document(
+            collection_name=collection_name,
+            document_path=file.filename,
+            document_content=content_str
+        )
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rag/query", response_model=ToolResponse)
+async def query_rag(
+    request: RAGQueryRequest,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """Query RAG collection with LLM-enhanced retrieval and synthesis"""
+    username = current_user["username"] if current_user else "guest"
+    start_time = time.time()
+
+    try:
+        # Step 1: Optimize query using LLM
+        context_str = format_context(request.context)
+
+        query_prompt = load_prompt(
+            "rag_query.txt",
+            user_query=request.query,
+            context=context_str
+        )
+
+        messages = [{"role": "user", "content": query_prompt}]
+        optimized_query = llm_backend.chat(
+            messages,
+            config.TOOL_MODELS.get("rag", config.OLLAMA_MODEL),
+            0.3
+        ).strip()
+
+        # Step 2: Retrieve documents
+        tool = RAGTool(username=username)
+        retrieval_result = tool.retrieve(
+            collection_name=request.collection_name,
+            query=optimized_query,
+            max_results=request.max_results
+        )
+
+        if not retrieval_result["success"]:
+            return ToolResponse(
+                success=False,
+                answer="RAG retrieval failed",
+                data={},
+                metadata={"execution_time": time.time() - start_time},
+                error=retrieval_result.get("error", "Unknown error")
+            )
+
+        # Step 3: Format documents for LLM
+        docs_formatted = "\n\n".join([
+            f"Document: {doc['document']}\nChunk {doc['chunk_index']} (Score: {doc['score']:.2f}):\n{doc['chunk']}"
+            for doc in retrieval_result["documents"]
+        ])
+
+        # Step 4: Synthesize answer
+        synthesis_prompt = load_prompt(
+            "rag_synthesize.txt",
+            user_query=request.query,
+            documents=docs_formatted,
+            context=context_str
+        )
+
+        messages = [{"role": "user", "content": synthesis_prompt}]
+        answer = llm_backend.chat(
+            messages,
+            config.TOOL_MODELS.get("rag", config.OLLAMA_MODEL),
+            config.TOOL_PARAMETERS.get("rag", {}).get("temperature", 0.5)
+        )
+
+        execution_time = time.time() - start_time
+
+        return ToolResponse(
+            success=True,
+            answer=answer,
+            data={
+                "optimized_query": optimized_query,
+                "documents": retrieval_result["documents"],
+                "num_results": retrieval_result["num_results"]
+            },
+            metadata={
+                "execution_time": execution_time,
+                "collection": request.collection_name
+            }
+        )
+
+    except Exception as e:
+        return ToolResponse(
+            success=False,
+            answer=f"RAG query error: {str(e)}",
+            data={},
+            metadata={"execution_time": time.time() - start_time},
+            error=str(e)
+        )

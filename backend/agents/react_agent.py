@@ -1,205 +1,317 @@
 """
-ReAct agent implementation.
-
-Supports two modes:
-- Text-based ReAct (Thought/Action/Observation) for any backend
-- Native tool-calling prompt hint for Ollama function-calling
+ReAct Agent - Reasoning and Acting
+Supports both prompt-based and Ollama native tool calling
 """
-
-from __future__ import annotations
-
-import asyncio
-import json
 import re
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+import json
+from typing import List, Dict, Optional
 
-from backend.config.settings import settings
-from backend.config.prompts import (
-    REACT_SYSTEM_PROMPT,
-    REACT_STEP_PROMPT,
-    REACT_NATIVE_TOOL_PROMPT,
-)
-from backend.models.schemas import ChatMessage
-from backend.tools import (
-    web_search_tool,
-    rag_retriever_tool,
-    vision_analyzer_tool,
-    shell_tool,
-)
-from backend.tools.python_coder import python_coder_tool
-from backend.core.base_tool import BaseTool
-from backend.utils.llm_factory import LLMFactory
-from backend.utils.logging_utils import get_logger
-
-logger = get_logger(__name__)
+import config
+from backend.agents.base_agent import Agent
+from tools_config import format_tools_for_llm, format_tools_for_ollama_native
 
 
-@dataclass
-class ReActStep:
-    step: int
-    thought: str
-    action: Optional[str] = None
-    action_input: Optional[str] = None
-    observation: Optional[str] = None
+class ReActAgent(Agent):
+    """
+    ReAct (Reasoning + Acting) agent with tool calling
+    Supports both prompt format and Ollama native tool calling
+    """
 
+    def __init__(self, model: str = None, temperature: float = None):
+        super().__init__(model, temperature)
+        self.format = config.REACT_FORMAT
+        self.max_iterations = config.REACT_MAX_ITERATIONS
+        self.retry_on_error = config.REACT_RETRY_ON_ERROR
 
-@dataclass
-class ReActMetadata:
-    agent_type: str = "react"
-    tool_calling_mode: str = "react"
-    steps: List[ReActStep] = field(default_factory=list)
-    tools_used: List[str] = field(default_factory=list)
-    final_answer: Optional[str] = None
-
-
-class ReactAgent:
-    """Lightweight ReAct executor."""
-
-    def __init__(self):
-        # registry is intentionally explicit; extend cautiously
-        self.tool_registry: Dict[str, BaseTool] = {
-            "web_search": web_search_tool,
-            "rag": rag_retriever_tool,
-            "vision_analyzer": vision_analyzer_tool,
-            "shell": shell_tool,
-            "python_coder": python_coder_tool,
-        }
-
-    async def run(
+    def run(
         self,
-        messages: List[ChatMessage],
-        session_id: str,
-        user_id: str,
-        step_context: Optional[str] = None,
-    ) -> Tuple[str, ReActMetadata]:
-        """Execute ReAct loop until Final Answer or iteration cap."""
-        llm = LLMFactory.create_llm(user_id=user_id)
-        tool_calling_mode = settings.tool_calling_mode
-        max_iters = settings.react_max_iterations
-        metadata = ReActMetadata(
-            tool_calling_mode=tool_calling_mode,
+        user_input: str,
+        conversation_history: List[Dict[str, str]]
+    ) -> str:
+        """
+        Run ReAct agent
+
+        Args:
+            user_input: User's message
+            conversation_history: Full conversation history
+
+        Returns:
+            Final answer
+        """
+        if self.format == "native":
+            return self._run_native(user_input, conversation_history)
+        else:
+            return self._run_prompt(user_input, conversation_history)
+
+    def _run_prompt(
+        self,
+        user_input: str,
+        conversation_history: List[Dict[str, str]]
+    ) -> str:
+        """
+        Run using prompt-based ReAct format
+
+        Args:
+            user_input: User's message
+            conversation_history: Full conversation history
+
+        Returns:
+            Final answer
+        """
+        # Get tools description
+        tools_desc = format_tools_for_llm()
+
+        # Load system prompt
+        system_prompt = self.load_prompt(
+            "agents/react_system.txt",
+            tools=tools_desc,
+            input=user_input
         )
 
+        # Initialize scratchpad (reasoning history)
         scratchpad = ""
 
-        for iter_idx in range(1, max_iters + 1):
-            prompt = self._build_prompt(messages, scratchpad, step_context, tool_calling_mode)
-            llm_response = await self._call_llm(llm, prompt)
-            thought, action, action_input, final_answer = self._parse_response(llm_response)
+        # Reasoning loop
+        for iteration in range(self.max_iterations):
+            # Format current state
+            history_str = self.format_conversation_history(conversation_history)
 
-            metadata.steps.append(
-                ReActStep(
-                    step=iter_idx,
-                    thought=thought or "",
-                    action=action,
-                    action_input=action_input,
-                )
+            thought_prompt = self.load_prompt(
+                "agents/react_thought.txt",
+                history=history_str,
+                input=user_input,
+                scratchpad=scratchpad
             )
 
-            if final_answer:
-                metadata.final_answer = final_answer
-                return final_answer, metadata
+            # Get next action from LLM
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": thought_prompt}
+            ]
 
-            if not action:
-                # No action, conclude with last thought
-                metadata.final_answer = thought or "No action produced."
-                return metadata.final_answer, metadata
+            response = self.call_llm(messages)
+            scratchpad += response + "\n\n"
 
-            observation = await self._execute_action(
-                action=action,
-                action_input=action_input or "",
-                session_id=session_id,
-                user_id=user_id,
-            )
+            # Check for Final Answer
+            if "Final Answer:" in response:
+                # Extract final answer
+                final_answer = response.split("Final Answer:")[-1].strip()
+                return final_answer
 
-            metadata.steps[-1].observation = observation
-            metadata.tools_used.append(action)
+            # Parse action
+            action_info = self._parse_action(response)
 
-            scratchpad += f"\nThought: {thought}\nAction: {action}\nAction Input: {action_input}\nObservation: {observation}\n"
+            if not action_info:
+                # No valid action found, ask LLM to continue
+                scratchpad += "Error: Invalid action format. Please follow the format:\nThought: ...\nAction: ...\nAction Input: [plain text string]\n\n"
+                continue
 
-        metadata.final_answer = "Max iterations reached without final answer."
-        return metadata.final_answer, metadata
+            # Execute tool with context
+            tool_name = action_info["action"]
+            tool_input = action_info["action_input"]
 
-    def _build_prompt(
+            # Build context for tool
+            context = {
+                "chat_history": conversation_history,
+                "react_scratchpad": scratchpad,
+                "current_thought": response,
+                "user_query": user_input
+            }
+
+            observation = self._execute_tool(tool_name, tool_input, context)
+
+            # Add observation to scratchpad
+            scratchpad += f"Observation: {observation}\n\n"
+
+            # If tool failed and retry is disabled, return error
+            if not self.retry_on_error and "error" in str(observation).lower():
+                return f"Tool execution failed: {observation}"
+
+        # Max iterations reached
+        return "I apologize, but I was unable to complete the task within the allowed reasoning steps. Please try rephrasing your question or breaking it into smaller parts."
+
+    def _run_native(
         self,
-        messages: List[ChatMessage],
-        scratchpad: str,
-        step_context: Optional[str],
-        tool_calling_mode: str,
+        user_input: str,
+        conversation_history: List[Dict[str, str]]
     ) -> str:
-        conversation = []
-        for msg in messages:
-            prefix = "User" if msg.role == "user" else "Assistant"
-            conversation.append(f"{prefix}: {msg.content}")
-        convo_text = "\n".join(conversation)
+        """
+        Run using Ollama native tool calling
 
-        tools_desc = "\n".join([f"- {name}" for name in self.tool_registry.keys()])
+        Args:
+            user_input: User's message
+            conversation_history: Full conversation history
 
-        mode_hint = ""
-        if tool_calling_mode == "native":
-            mode_hint = f"\n\n{REACT_NATIVE_TOOL_PROMPT}"
+        Returns:
+            Final answer
+        """
+        # Get tools in Ollama format
+        tools = format_tools_for_ollama_native()
 
-        step_hint = f"\n\nStep Context: {step_context}" if step_context else ""
+        # Load system prompt
+        system_prompt = self.load_prompt("agents/react_system.txt", tools=str(tools), input=user_input)
 
-        prompt = (
-            f"{REACT_SYSTEM_PROMPT}{mode_hint}\n\nAvailable Tools:\n{tools_desc}"
-            f"{step_hint}\n\nConversation so far:\n{convo_text}\n\nScratchpad:\n{scratchpad}\nAssistant:"
+        # Build messages
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(conversation_history)
+        messages.append({"role": "user", "content": user_input})
+
+        # For native tool calling, we'd need Ollama's tool calling API
+        # This is a simplified version - actual implementation depends on Ollama's API
+        # For now, fall back to prompt-based approach
+        # TODO: Implement actual Ollama native tool calling when API is available
+
+        return self._run_prompt(user_input, conversation_history)
+
+    def _parse_action(self, response: str) -> Optional[Dict[str, any]]:
+        """
+        Parse Action and Action Input from response
+        Now expects plain string input instead of JSON
+
+        Args:
+            response: LLM response
+
+        Returns:
+            Dictionary with 'action' and 'action_input' (string) or None
+        """
+        # Look for Action:
+        action_match = re.search(r"Action:\s*(\w+)", response)
+
+        if not action_match:
+            return None
+
+        action = action_match.group(1)
+
+        # Look for Action Input: - extract everything until next major section or end
+        # Match pattern: "Action Input:" followed by content until we hit a newline with a section header or end
+        # Also stop at "Returns:" to avoid capturing tool documentation
+        input_match = re.search(
+            r"Action Input:\s*(.+?)(?:\n\n|\n(?=Thought:|Action:|Observation:|Final Answer:|Returns:)|$)",
+            response,
+            re.DOTALL | re.IGNORECASE
         )
-        if step_context:
-            prompt = f"{REACT_STEP_PROMPT}\n\n{prompt}"
-        return prompt
 
-    async def _call_llm(self, llm, prompt: str) -> str:
-        """Call LLM asynchronously, regardless of backend sync model."""
-        if hasattr(llm, "ainvoke"):
-            result = await llm.ainvoke(prompt)
-            return getattr(result, "content", str(result))
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, lambda: llm.invoke(prompt))
-        return getattr(result, "content", str(result))
+        if not input_match:
+            return None
 
-    def _parse_response(self, text: str) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
-        final_answer = None
-        thought_match = re.search(r"Thought:\s*(.*)", text, re.IGNORECASE)
-        thought = thought_match.group(1).strip() if thought_match else ""
+        # Get the raw string input
+        action_input = input_match.group(1).strip()
 
-        final_match = re.search(r"Final Answer:\s*(.*)", text, re.IGNORECASE | re.DOTALL)
-        if final_match:
-            final_answer = final_match.group(1).strip()
+        # Validate: Action Input must not be empty
+        if not action_input:
+            return None
 
-        action_match = re.search(r"Action:\s*(.*)", text, re.IGNORECASE)
-        action = action_match.group(1).strip() if action_match else None
+        return {
+            "action": action,
+            "action_input": action_input
+        }
 
-        action_input_match = re.search(r"Action Input:\s*(.*)", text, re.IGNORECASE | re.DOTALL)
-        action_input = action_input_match.group(1).strip() if action_input_match else None
-
-        return thought, action, action_input, final_answer
-
-    async def _execute_action(
+    def _convert_string_to_params(
         self,
-        action: str,
-        action_input: str,
-        session_id: str,
-        user_id: str,
+        tool_name: str,
+        string_input: str,
+        context: Dict = None
+    ) -> Dict[str, any]:
+        """
+        Convert plain string input to tool parameters with validation
+
+        Args:
+            tool_name: Name of the tool
+            string_input: Plain string input from Action Input
+            context: Optional context dict
+
+        Returns:
+            Parameters dictionary for the tool
+
+        Raises:
+            ValueError: If input is invalid
+        """
+        # Validate input is not empty
+        if not string_input or not string_input.strip():
+            raise ValueError(f"Action Input for {tool_name} cannot be empty")
+
+        # Validate input length (prevent extremely long inputs)
+        MAX_INPUT_LENGTH = 50000  # 50K characters
+        if len(string_input) > MAX_INPUT_LENGTH:
+            raise ValueError(f"Action Input too long: {len(string_input)} characters (max: {MAX_INPUT_LENGTH})")
+
+        clean_input = string_input.strip()
+
+        if tool_name == "websearch":
+            # For websearch, input is the search query
+            if len(clean_input) < 1:
+                raise ValueError("Search query cannot be empty")
+
+            return {
+                "query": clean_input,
+                "max_results": 5  # default
+            }
+
+        elif tool_name == "python_coder":
+            # For python_coder, input is the actual code
+            if len(clean_input) < 1:
+                raise ValueError("Python code cannot be empty")
+
+            return {
+                "code": clean_input,
+                "session_id": context.get("session_id", self.session_id or "auto") if context else (self.session_id or "auto"),
+                "timeout": 30  # default
+            }
+
+        elif tool_name == "rag":
+            # For rag, input is the search query
+            if len(clean_input) < 1:
+                raise ValueError("Search query cannot be empty")
+
+            return {
+                "query": clean_input,
+                "collection_name": context.get("collection_name", "default") if context else "default",
+                "max_results": 5  # default
+            }
+
+        else:
+            # Unknown tool - raise error instead of guessing
+            raise ValueError(f"Unknown tool: {tool_name}")
+
+    def _execute_tool(
+        self,
+        tool_name: str,
+        string_input: str,
+        context: Dict = None
     ) -> str:
-        tool = self.tool_registry.get(action)
-        if not tool:
-            return f"Unknown tool '{action}'. Available: {list(self.tool_registry.keys())}"
+        """
+        Execute a tool with string input and return observation
 
+        Args:
+            tool_name: Tool to execute
+            string_input: Plain string input for the tool
+            context: Context to pass to tool
+
+        Returns:
+            Observation string
+        """
         try:
-            payload = self._safe_load(action_input)
-            result = await tool.execute(query=payload if isinstance(payload, str) else action_input, session_id=session_id, user_id=user_id)
-            if result.success:
-                return result.output
-            return f"Tool error: {result.error}"
-        except Exception as exc:  # pragma: no cover - runtime safeguard
-            logger.error(f"[ReActAgent] Tool '{action}' failed: {exc}")
-            return f"Tool execution failed: {exc}"
+            # Convert string input to proper parameters
+            parameters = self._convert_string_to_params(tool_name, string_input, context)
 
-    def _safe_load(self, text: str):
-        try:
-            return json.loads(text)
-        except Exception:
-            return text
+            # Call the tool with converted parameters
+            result = self.call_tool(tool_name, parameters, context)
 
+            # Format result as observation
+            if isinstance(result, dict):
+                if "error" in result:
+                    return f"Error: {result['error']}"
+
+                # Format based on tool response structure
+                if "answer" in result:
+                    return result["answer"]
+                else:
+                    return json.dumps(result, indent=2)
+            else:
+                return str(result)
+
+        except ValueError as e:
+            # Validation error from _convert_string_to_params
+            return f"Invalid input: {str(e)}"
+        except Exception as e:
+            return f"Tool execution error: {str(e)}"

@@ -1,232 +1,289 @@
 """
-Chat Routes
-Handles chat completions, conversation management, and OpenAI-compatible endpoints
-
-Version: 2.0.0
-Updated: 2025-12-04 - Refactored to use unified agent orchestrator + simplified heuristics
-  - Removed AgentClassifierService (routing handled by AgentOrchestrator heuristics)
-  - Extracted FileUploadService for file upload handling
-  - Reduced from 526 lines → ~300 lines (43% reduction)
+Chat completions endpoint (OpenAI-compatible with extensions)
+/v1/chat/completions
 """
-
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.responses import FileResponse
-from typing import Dict, Any, List, Optional, Tuple
-import mimetypes
+import json
 import time
 import uuid
-from pathlib import Path
-import json
-import traceback
+from typing import Optional, List, Dict
+from fastapi import APIRouter, Form, File, UploadFile, HTTPException
+from fastapi.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 
 from backend.models.schemas import (
-    ChatCompletionRequest,
+    ChatMessage,
     ChatCompletionResponse,
-    ModelsResponse,
-    ModelInfo,
-    SessionListResponse,
-    ConversationHistoryResponse,
-    ChatMessage
+    ChatCompletionChoice,
+    ChatCompletionChunk,
+    ChatCompletionChunkChoice,
+    ChatCompletionChunkDelta
 )
-from backend.api.dependencies import get_current_user
-from backend.config.settings import settings
-from backend.agents.agent_system import agent_system
-from backend.runtime import (
-    cleanup_uploaded_files,
-    create_user_session,
-    get_session_history,
-    handle_file_uploads,
-    list_session_artifacts,
-    list_user_sessions,
-    save_chat_messages,
-    download_session_artifact,
-)
-from backend.utils.logging_utils import get_logger
+from backend.core.database import db, conversation_store
+from backend.core.llm_backend import llm_backend
+from backend.utils.file_handler import save_uploaded_files, read_file_content
+from backend.utils.auth import get_optional_user
+from backend.agents import ChatAgent, ReActAgent, PlanExecuteAgent, AutoAgent
+from fastapi import Depends
+import config
 
-logger = get_logger(__name__)
-
-# Router Setup
-openai_router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
-chat_router = APIRouter(prefix="/api/chat", tags=["Chat"])
-
-# Helper Functions (kept for backward compatibility, but use services instead)
-    
-# OpenAI-Compatible Endpoints
-
-@openai_router.get("/models", response_model=ModelsResponse)
-async def list_models(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """List available models (OpenAI compatible)"""
-    models = [
-        ModelInfo(
-            id=settings.ollama_model,
-            created=int(time.time()),
-            owned_by="ollama"
-        )
-    ]
-
-    return ModelsResponse(
-        object="list",
-        data=models
-    )
+router = APIRouter(prefix="/v1", tags=["chat"])
 
 
-@openai_router.post("/chat/completions")
+def _get_agent(agent_type: str, model: str, temperature: float):
+    """
+    Get agent instance based on type
+
+    Args:
+        agent_type: Type of agent (chat, react, plan_execute, auto)
+        model: Model name
+        temperature: Temperature setting
+
+    Returns:
+        Agent instance
+    """
+    agent_type = agent_type.lower()
+
+    if agent_type == "chat":
+        return ChatAgent(model, temperature)
+    elif agent_type == "react":
+        return ReActAgent(model, temperature)
+    elif agent_type == "plan_execute":
+        return PlanExecuteAgent(model, temperature)
+    elif agent_type == "auto":
+        return AutoAgent(model, temperature)
+    else:
+        # Default to chat
+        return ChatAgent(model, temperature)
+
+
+def _prepare_messages_with_files(
+    messages: List[ChatMessage],
+    file_paths: List[str]
+) -> List[Dict[str, str]]:
+    """
+    Prepare messages for LLM, adding file contents to context
+
+    Args:
+        messages: Chat messages
+        file_paths: List of file paths to include
+
+    Returns:
+        List of message dictionaries with file contents added
+    """
+    # Convert Pydantic models to dicts
+    message_dicts = [{"role": msg.role, "content": msg.content} for msg in messages]
+
+    # If files are provided, add them to the last user message
+    if file_paths:
+        file_contents = []
+        for file_path in file_paths:
+            content = read_file_content(file_path)
+            file_contents.append(f"\n\n--- File: {file_path} ---\n{content}")
+
+        # Append to last user message
+        if message_dicts and message_dicts[-1]["role"] == "user":
+            message_dicts[-1]["content"] += "\n".join(file_contents)
+
+    return message_dicts
+
+
+@router.post("/chat/completions")
 async def chat_completions(
+    # Multipart form fields
     model: str = Form(...),
     messages: str = Form(...),  # JSON string
+    stream: str = Form("false"),
+    temperature: Optional[str] = Form(None),
+    max_tokens: Optional[str] = Form(None),
     session_id: Optional[str] = Form(None),
-    agent_type: str = Form("auto"),
+    agent_type: str = Form("chat"),
     files: Optional[List[UploadFile]] = File(None),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    # Auth (optional)
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
     """
-    OpenAI-compatible chat completions endpoint with multipart/form-data support
-    Automatically routes to appropriate agent based on query analysis
-    Supports direct file uploads via multipart form
+    OpenAI-compatible chat completions endpoint with extensions
 
-    Parameters:
-        - model: Model name (form field)
-        - messages: JSON string of message array (form field)
-        - session_id: Optional session ID (form field)
-        - agent_type: "auto", "react", "plan_execute", or "chat" (form field)
-        - files: Optional file uploads (multipart files)
+    Extensions:
+    - Multipart/form-data support for file uploads
+    - session_id for conversation continuity
+    - agent_type for future agent selection
+    - x_session_id in response for tracking
+
+    Args:
+        model: Model name
+        messages: JSON string of message list
+        stream: "true" or "false" for streaming
+        temperature: Optional temperature override
+        max_tokens: Optional max tokens override
+        session_id: Optional session ID to continue conversation
+        agent_type: Agent type (chat, auto, react, plan_execute)
+        files: Optional file uploads
+        current_user: Authenticated user (if any)
     """
-    user_id = current_user["username"]
-
-    # Parse messages JSON
     try:
-        messages_list = json.loads(messages)
-        parsed_messages = [ChatMessage(**msg) for msg in messages_list]
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid messages JSON: {str(e)}")
+        # Parse messages JSON
+        messages_data = json.loads(messages)
+        chat_messages = [ChatMessage(**msg) for msg in messages_data]
+
+        # Convert stream string to boolean
+        is_streaming = stream.lower() == "true"
+
+        # Parse optional parameters
+        temp = float(temperature) if temperature else config.DEFAULT_TEMPERATURE
+        max_tok = int(max_tokens) if max_tokens else config.DEFAULT_MAX_TOKENS
+
+        # Determine username (default to "guest" if not authenticated)
+        username = current_user["username"] if current_user else "guest"
+
+        # Handle session
+        if session_id:
+            # Continue existing session
+            session = db.get_session(session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found")
+
+            # Load conversation history
+            history = conversation_store.load_conversation(session_id)
+            if history is None:
+                history = []
+
+            # Add new messages to history
+            for msg in chat_messages:
+                history.append({"role": msg.role, "content": msg.content})
+
+        else:
+            # Create new session
+            session_id = str(uuid.uuid4())
+            db.create_session(session_id, username)
+            history = [{"role": msg.role, "content": msg.content} for msg in chat_messages]
+
+        # Handle file uploads
+        file_paths = []
+        if files and len(files) > 0:
+            file_paths = save_uploaded_files(files, username, session_id)
+
+        # Prepare messages with file contents (for conversation history)
+        llm_messages = _prepare_messages_with_files(chat_messages, file_paths)
+
+        # Get the appropriate agent
+        agent = _get_agent(agent_type, model, temp)
+
+        # Set session_id on agent for logging
+        agent.session_id = session_id
+
+        # Extract user input (last message) and conversation history (previous messages)
+        # For continued sessions, use the full loaded history instead of just new messages
+        if len(llm_messages) > 0:
+            if session_id and len(history) > len(chat_messages):
+                # Continued session - use full history from storage
+                # Update the last message in history with file contents (if any)
+                if file_paths:
+                    # The last message in history is the new user message
+                    # llm_messages[-1] has file contents appended
+                    history[-1]["content"] = llm_messages[-1]["content"]
+
+                # Extract user input (last message) and full conversation history
+                user_input = history[-1]["content"]
+                conversation_history = history[:-1]
+            else:
+                # New session - use llm_messages as before
+                user_input = llm_messages[-1]["content"]
+                conversation_history = llm_messages[:-1] if len(llm_messages) > 1 else []
+        else:
+            user_input = ""
+            conversation_history = []
+
+        # Generate response
+        request_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
+        created_timestamp = int(time.time())
+
+        if is_streaming:
+            # Streaming response
+            # Note: Agents don't support streaming yet, fall back to direct LLM
+            async def generate_stream():
+                """Generator for SSE streaming"""
+                try:
+                    assistant_message = ""
+
+                    # For streaming, prepare full message context
+                    # Use the same logic as non-streaming to get full history
+                    if session_id and len(history) > len(chat_messages):
+                        # Continued session - use full history
+                        stream_messages = history
+                    else:
+                        # New session - use llm_messages
+                        stream_messages = llm_messages
+
+                    # Stream tokens from LLM directly (bypass agents for streaming)
+                    for token in llm_backend.chat_stream(stream_messages, model, temp, session_id=session_id, agent_type="stream"):
+                        assistant_message += token
+
+                        # Send SSE chunk
+                        chunk = ChatCompletionChunk(
+                            id=request_id,
+                            created=created_timestamp,
+                            model=model,
+                            choices=[
+                                ChatCompletionChunkChoice(
+                                    delta=ChatCompletionChunkDelta(content=token)
+                                )
+                            ]
+                        )
+                        yield {"data": chunk.model_dump_json()}
+
+                    # Send final chunk with session_id
+                    final_chunk = ChatCompletionChunk(
+                        id=request_id,
+                        created=created_timestamp,
+                        model=model,
+                        choices=[
+                            ChatCompletionChunkChoice(
+                                delta=ChatCompletionChunkDelta(),
+                                finish_reason="stop"
+                            )
+                        ],
+                        x_session_id=session_id
+                    )
+                    yield {"data": final_chunk.model_dump_json()}
+                    yield {"data": "[DONE]"}
+
+                    # Save conversation
+                    history.append({"role": "assistant", "content": assistant_message})
+                    conversation_store.save_conversation(session_id, history)
+                    db.update_session_message_count(session_id, len(history))
+
+                except Exception as e:
+                    error_data = {"error": {"message": str(e), "type": "internal_error"}}
+                    yield {"data": json.dumps(error_data)}
+
+            return EventSourceResponse(generate_stream())
+
+        else:
+            # Non-streaming response - Use agent system
+            assistant_message = agent.run(user_input, conversation_history)
+
+            # Save conversation
+            history.append({"role": "assistant", "content": assistant_message})
+            conversation_store.save_conversation(session_id, history)
+            db.update_session_message_count(session_id, len(history))
+
+            # Return OpenAI-compatible response
+            response = ChatCompletionResponse(
+                id=request_id,
+                created=created_timestamp,
+                model=model,
+                choices=[
+                    ChatCompletionChoice(
+                        message=ChatMessage(role="assistant", content=assistant_message)
+                    )
+                ],
+                x_session_id=session_id
+            )
+
+            return response
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid messages JSON")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid message format: {str(e)}")
-
-    # Create new session if none provided
-    if not session_id:
-        session_id = create_user_session(user_id)
-
-    # ====== PHASE 1: FILE HANDLING ======
-    file_paths, uploaded_paths, new_files_uploaded = await handle_file_uploads(user_id, files, session_id)
-
-    # Save LLM input: parsed_messages into a file
-    Path(f"data/scratch/{user_id}").mkdir(parents=True, exist_ok=True)
-    with open(f"data/scratch/{user_id}/llm_input_messages_{session_id}.json", "w") as f:
-        for message in parsed_messages:
-            f.write(message.model_dump_json() + "\n")
-
-    # ====== PHASE 2-4: EXECUTION & STORAGE ======
-    try:
-        # Execute chat completion (includes classification, execution, response building)
-        response, agent_metadata = await _execute_chat_completion(
-            messages=parsed_messages,
-            model=model,
-            session_id=session_id,
-            agent_type=agent_type,
-            file_paths=file_paths,
-            user_id=user_id,
-        )
-
-        # Save conversation
-        user_message = parsed_messages[-1].content if parsed_messages else ""
-        save_chat_messages(
-            session_id=session_id,
-            user_message=user_message,
-            assistant_message=response.choices[0]["message"]["content"],
-            file_paths=file_paths,
-            agent_type=agent_type,
-            agent_metadata=agent_metadata
-        )
-
-        return response
-
-    except Exception as e:
-        # Detailed error logging
-        logger.error("=" * 80)
-        logger.error(f"CHAT COMPLETION ERROR for user {user_id}")
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error message: {str(e)}")
-        logger.error(f"Traceback:\n{traceback.format_exc()}")
-        logger.error("=" * 80)
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating response: {str(e)}"
-        )
-
-    finally:
-        # ====== CLEANUP: Always delete uploaded files from the user uploads folder ======
-        # Files have been copied to scratch folder, so uploads are no longer needed
-        if new_files_uploaded:
-            cleanup_uploaded_files(uploaded_paths)
-            logger.info(f"[Chat] Cleaned up {len(uploaded_paths)} uploaded files from user folder")
-
-
-# Chat Management Endpoints
-
-@chat_router.get("/sessions", response_model=SessionListResponse)
-async def list_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """List all chat sessions for the current user"""
-    return list_user_sessions(current_user["username"])
-
-
-@chat_router.get("/history/{session_id}", response_model=ConversationHistoryResponse)
-async def get_history(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Get conversation history for a specific session"""
-    return get_session_history(current_user["username"], session_id)
-
-
-@chat_router.get("/sessions/{session_id}/artifacts")
-async def get_session_artifacts(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
-    """List all files generated during a session"""
-    return list_session_artifacts(current_user["username"], session_id)
-
-
-@chat_router.get("/sessions/{session_id}/artifacts/{filename:path}")
-async def download_artifact(
-    session_id: str,
-    filename: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
-):
-    """Download a specific artifact file from a session"""
-    return download_session_artifact(current_user["username"], session_id, filename)
-
-
-async def _execute_chat_completion(
-    messages: List[ChatMessage],
-    model: str,
-    session_id: str,
-    agent_type: str,
-    file_paths: Optional[List[str]],
-    user_id: str,
-) -> Tuple[ChatCompletionResponse, Optional[Dict[str, Any]]]:
-    response_text, agent_metadata = await agent_system.execute(
-        messages=messages,
-        session_id=session_id or "session",
-        user_id=user_id,
-        file_paths=file_paths,
-        agent_type=agent_type,
-    )
-    response = ChatCompletionResponse(
-        id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
-        created=int(time.time()),
-        model=model,
-        choices=[
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": response_text
-                },
-                "finish_reason": "stop"
-            }
-        ],
-        usage={
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0
-        },
-        x_session_id=session_id,
-        x_agent_metadata=agent_metadata
-    )
-    return response, agent_metadata
+        raise HTTPException(status_code=500, detail=str(e))

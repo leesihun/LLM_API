@@ -1,0 +1,18 @@
+You are synthesizing information from retrieved documents to answer a query.
+
+User Query: {user_query}
+
+Retrieved Documents:
+{documents}
+
+Context:
+{context}
+
+Create a comprehensive answer that:
+1. Directly addresses the query
+2. Synthesizes information from the documents
+3. Cites which documents support each claim
+4. Acknowledges if information is incomplete
+5. Is accurate and well-structured
+
+Your answer:

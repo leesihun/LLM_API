@@ -1,0 +1,15 @@
+Current conversation history:
+{history}
+
+Latest user input: {input}
+
+Previous thoughts and actions:
+{scratchpad}
+
+What should you do next? Remember to follow the format:
+Thought: [reasoning]
+Action: [tool name]
+Action Input: [String tool input]
+
+Or if you're ready to answer:
+Final Answer: [complete answer]

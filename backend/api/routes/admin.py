@@ -1,48 +1,30 @@
 """
-Admin Routes
-Handles administrative operations like model changes and system configuration
+Admin endpoints
+/api/admin/model - Change default model
 """
+from fastapi import APIRouter, Depends
 
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any
+from backend.models.schemas import ChangeModelRequest
+from backend.utils.auth import require_admin
+import config
 
-from backend.models.schemas import (
-    ModelChangeRequest,
-    ModelChangeResponse
-)
-from backend.api.dependencies import require_admin
-from backend.config.settings import settings
-from backend.agents.agent_system import agent_system
-from backend.utils.logging_utils import get_logger
-
-logger = get_logger(__name__)
-
-# ============================================================================
-# Router Setup
-# ============================================================================
-
-admin_router = APIRouter(prefix="/api/admin", tags=["Admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-# ============================================================================
-# Admin Endpoints
-# ============================================================================
-
-@admin_router.post("/model", response_model=ModelChangeResponse)
-async def change_model(
-    request: ModelChangeRequest,
-    current_user: Dict[str, Any] = Depends(require_admin)
+@router.post("/model")
+def change_model(
+    request: ChangeModelRequest,
+    admin: dict = Depends(require_admin)
 ):
     """
-    Change the active Ollama model (admin only)
-
-    Requires admin role for access.
+    Change the default model (admin only)
+    Note: This updates the runtime config, not persistent storage
     """
-    try:
-        # Update settings in-memory
-        settings.ollama_model = request.model
+    # Update the global config
+    config.OLLAMA_MODEL = request.model
 
-        return ModelChangeResponse(success=True, model=settings.ollama_model)
-    except Exception as e:
-        logger.error(f"Model change error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to change model")
+    return {
+        "status": "success",
+        "message": f"Model changed to {request.model}",
+        "model": request.model
+    }
