@@ -21,7 +21,8 @@
       "Bash(test -f backend/agents/refactored_react_agent.py)",
       "Bash(test -f backend/tools/python_coder/refactored_tool.py)",
       "Bash(test:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
