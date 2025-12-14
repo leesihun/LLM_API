@@ -7,9 +7,19 @@ import time
 import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+from datetime import datetime
 import numpy as np
 
 import config
+
+
+def log_to_prompts_file(message: str):
+    """Write message to prompts.log"""
+    try:
+        with open(config.PROMPTS_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(message + '\n')
+    except Exception as e:
+        print(f"[WARNING] Failed to write to prompts.log: {e}")
 
 
 class RAGTool:
@@ -202,28 +212,87 @@ class RAGTool:
         Returns:
             Retrieved documents
         """
+        # Log to file
+        log_to_prompts_file("\n\n")
+        log_to_prompts_file("=" * 80)
+        log_to_prompts_file(f"TOOL EXECUTION: rag")
+        log_to_prompts_file("=" * 80)
+        log_to_prompts_file(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        log_to_prompts_file(f"")
+        log_to_prompts_file(f"INPUT:")
+        log_to_prompts_file(f"  Username: {self.username}")
+        log_to_prompts_file(f"  Collection: {collection_name}")
+        log_to_prompts_file(f"  Query: {query}")
+        log_to_prompts_file(f"  Max Results: {max_results or 'default'}")
+
+        print("\n" + "=" * 80)
+        print("[RAG TOOL] retrieve() called")
+        print("=" * 80)
+        print(f"Username: {self.username}")
+        print(f"Collection: {collection_name}")
+        print(f"Query: {query}")
+        print(f"Max results: {max_results or 'default'}")
+
+        print(f"\n[RAG] Loading embedding model...")
+        start_time = time.time()
         self._load_embedding_model()
+        load_time = time.time() - start_time
+        print(f"[RAG] [OK] Embedding model loaded ({load_time:.2f}s)")
+        print(f"  Model: {config.RAG_EMBEDDING_MODEL}")
+        print(f"  Dimension: {self.embedding_dim}")
 
         metadata_path = self.user_metadata_dir / f"{collection_name}.json"
+        print(f"\n[RAG] Checking collection...")
+        print(f"  Metadata path: {metadata_path}")
 
         if not metadata_path.exists():
+            print(f"[RAG] [ERROR] Collection not found!")
+
+            # Log to file
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"OUTPUT:")
+            log_to_prompts_file(f"  Status: ERROR")
+            log_to_prompts_file(f"  Error: Collection '{collection_name}' does not exist")
+            log_to_prompts_file(f"")
+            log_to_prompts_file("=" * 80)
+
             return {
                 "success": False,
                 "error": f"Collection '{collection_name}' does not exist"
             }
+        
+        print(f"[RAG] [OK] Collection found")
 
         # Load index and metadata
+        print(f"\n[RAG] Loading FAISS index...")
         index = self._load_index(collection_name)
         if index is None:
+            print(f"[RAG] [ERROR] Index not found!")
+
+            # Log to file
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"OUTPUT:")
+            log_to_prompts_file(f"  Status: ERROR")
+            log_to_prompts_file(f"  Error: No index found for collection '{collection_name}'")
+            log_to_prompts_file(f"")
+            log_to_prompts_file("=" * 80)
+
             return {
                 "success": False,
                 "error": f"No index found for collection '{collection_name}'"
             }
+        print(f"[RAG] [OK] Index loaded")
+        print(f"  Total vectors: {index.ntotal}")
 
+        print(f"\n[RAG] Loading metadata...")
         with open(metadata_path, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
+        print(f"[RAG] [OK] Metadata loaded")
+        print(f"  Documents: {len(metadata.get('documents', {}))}")
+        print(f"  Chunks: {metadata.get('chunk_count', 0)}")
 
         if index.ntotal == 0:
+            print(f"[RAG] [WARNING] Collection is empty")
             return {
                 "success": True,
                 "documents": [],
@@ -231,29 +300,72 @@ class RAGTool:
             }
 
         # Generate query embedding
+        print(f"\n[RAG] Generating query embedding...")
+        embed_start = time.time()
         query_embedding = self.embedding_model.encode([query])[0]
+        embed_time = time.time() - embed_start
+        print(f"[RAG] [OK] Query embedding generated ({embed_time:.2f}s)")
+        print(f"  Embedding shape: {query_embedding.shape}")
 
         # Search
         k = min(max_results or config.RAG_MAX_RESULTS, index.ntotal)
+        print(f"\n[RAG] Searching FAISS index...")
+        print(f"  K (results to retrieve): {k}")
+        
+        search_start = time.time()
         distances, indices = index.search(
             np.array([query_embedding]).astype('float32'),
             k
         )
+        search_time = time.time() - search_start
+        print(f"[RAG] [OK] Search completed ({search_time:.2f}s)")
+        print(f"  Distances: {distances[0].tolist()}")
+        print(f"  Indices: {indices[0].tolist()}")
 
         # Retrieve chunks
+        print(f"\n[RAG] Retrieving document chunks...")
         results = []
-        for dist, idx in zip(distances[0], indices[0]):
+        for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
             # Find document containing this chunk
             for doc_id, doc_meta in metadata["documents"].items():
                 if idx in doc_meta["chunk_indices"]:
                     chunk_local_idx = doc_meta["chunk_indices"].index(idx)
+                    score = float(1 / (1 + dist))
+                    chunk_text = doc_meta["chunks"][chunk_local_idx]
+                    
                     results.append({
                         "document": doc_meta["name"],
-                        "chunk": doc_meta["chunks"][chunk_local_idx],
-                        "score": float(1 / (1 + dist)),  # Convert distance to similarity
+                        "chunk": chunk_text,
+                        "score": score,
                         "chunk_index": chunk_local_idx
                     })
+                    
+                    print(f"  Result {i+1}: {doc_meta['name']} chunk {chunk_local_idx} (score: {score:.3f})")
+                    print(f"    Preview: {chunk_text[:100]}...")
                     break
+
+        print(f"\n[RAG] [OK] Retrieved {len(results)} results")
+        total_time = time.time() - start_time
+        print(f"[RAG] Total time: {total_time:.2f}s")
+
+        # Log to file
+        log_to_prompts_file(f"")
+        log_to_prompts_file(f"OUTPUT:")
+        log_to_prompts_file(f"  Status: SUCCESS")
+        log_to_prompts_file(f"  Results Found: {len(results)}")
+        log_to_prompts_file(f"  Execution Time: {total_time:.2f}s")
+        log_to_prompts_file(f"")
+        log_to_prompts_file(f"RESULTS:")
+        for i, result in enumerate(results, 1):
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"  Result {i}:")
+            log_to_prompts_file(f"    Document: {result['document']}")
+            log_to_prompts_file(f"    Chunk Index: {result['chunk_index']}")
+            log_to_prompts_file(f"    Score: {result['score']:.3f}")
+            chunk_preview = result['chunk'][:200] if len(result['chunk']) > 200 else result['chunk']
+            log_to_prompts_file(f"    Content: {chunk_preview}...")
+        log_to_prompts_file(f"")
+        log_to_prompts_file("=" * 80)
 
         return {
             "success": True,

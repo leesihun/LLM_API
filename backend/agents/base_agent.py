@@ -179,6 +179,9 @@ class Agent(ABC):
         print(f"\n{'='*80}")
         print(f"[TOOL CALL] {tool_name.upper()}")
         print(f"{'='*80}")
+        print(f"[BASE_AGENT] Preparing HTTP request to tool API")
+        print(f"  URL: {url}")
+        print(f"  Method: {method}")
         for key, value in clean_params.items():
             # Truncate long values for console output
             str_value = str(value)
@@ -187,14 +190,20 @@ class Agent(ABC):
             print(f"  {key}: {str_value}")
         print(f"  Timeout: {tool_timeout}s")
         print(f"  Tools API: {base_url}")
+        print(f"\n[BASE_AGENT] Making HTTP {method} request...")
 
         try:
             # Make HTTP request
             if method == "POST":
+                print(f"[BASE_AGENT] Sending POST request...")
                 response = httpx.post(url, json=parameters, timeout=tool_timeout)
+                print(f"[BASE_AGENT] ✅ Received response: HTTP {response.status_code}")
             elif method == "GET":
+                print(f"[BASE_AGENT] Sending GET request...")
                 response = httpx.get(url, params=parameters, timeout=tool_timeout)
+                print(f"[BASE_AGENT] ✅ Received response: HTTP {response.status_code}")
             else:
+                print(f"[BASE_AGENT] ❌ Unsupported method: {method}")
                 result = {"error": f"Unsupported method: {method}", "success": False}
                 # Log failed tool call
                 self.tool_calls.append({
@@ -207,7 +216,9 @@ class Agent(ABC):
                 return result
 
             response.raise_for_status()
+            print(f"[BASE_AGENT] Parsing JSON response...")
             result = response.json()
+            print(f"[BASE_AGENT] ✅ JSON parsed successfully")
 
             duration = time.time() - start_time
 

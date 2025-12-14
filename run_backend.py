@@ -8,6 +8,7 @@ Starts the FastAPI backend server using system Python
 import os
 import sys
 import subprocess
+import time
 from pathlib import Path
 
 # Set UTF-8 encoding for Windows console to handle emojis
@@ -78,20 +79,45 @@ def check_dependencies():
     return True
 
 
-def run_server():
-    """Run the backend server"""
-    print("🚀 Starting backend server...")
-    print()
+def run_servers():
+    """Run main server only (tools server should be started separately)"""
+    main_process = None
 
     try:
-        # Run server.py using the current Python interpreter
-        subprocess.run([sys.executable, "server.py"], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ Error running server: {e}")
-        return False
+        # Set environment to use UTF-8 encoding
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
+        # Start main server
+        print("🚀 Starting main server (port 1007)...")
+        print("ℹ️  Note: Tools server (port 1006) should be started separately with: python tools_server.py")
+        print()
+
+        # Run main server in foreground (this blocks)
+        main_process = subprocess.Popen(
+            [sys.executable, "server.py"],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            env=env  # Use same env with UTF-8 encoding
+        )
+
+        # Wait for main server to finish
+        main_process.wait()
+
     except KeyboardInterrupt:
-        print("\n\n👋 Server stopped by user")
-        return True
+        print("\n\n👋 Shutting down server...")
+
+    finally:
+        # Clean up: terminate main process
+        if main_process and main_process.poll() is None:
+            print("   Stopping main server...")
+            main_process.terminate()
+            try:
+                main_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                main_process.kill()
+
+        print("✅ Server stopped")
 
     return True
 
@@ -116,8 +142,8 @@ def main():
 
     print()
 
-    # Run server
-    if not run_server():
+    # Run servers (both tools and main)
+    if not run_servers():
         sys.exit(1)
 
     sys.exit(0)

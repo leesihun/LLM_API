@@ -4,7 +4,13 @@ Starts the FastAPI backend server
 """
 import uvicorn
 import sys
+import io
 from pathlib import Path
+
+# Set UTF-8 encoding for Windows console to handle emojis
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))

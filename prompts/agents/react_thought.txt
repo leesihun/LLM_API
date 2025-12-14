@@ -1,15 +1,27 @@
-Current conversation history:
+Past conversation history:
 {history}
+----------------------------------------------------
 
-Latest user input: {input}
+User Question: {input}
+----------------------------------------------------
 
 Previous thoughts and actions:
 {scratchpad}
+----------------------------------------------------
 
-What should you do next? Remember to follow the format:
-Thought: [reasoning]
-Action: [tool name]
-Action Input: [String tool input]
+What should you do next?
 
-Or if you're ready to answer:
-Final Answer: [complete answer]
+Output EXACTLY ONE thought/action pair in this format:
+
+=========================================================
+Thought: [Your reasoning about what to do next]
+Action: [Tool name]
+Action Input: [String input for the tool]
+=========================================================
+
+CRITICAL RULES:
+1. Generate EXACTLY ONE Thought/Action/Action Input triplet
+2. Do NOT generate multiple actions - only ONE action per iteration
+3. Do NOT predict future observations or actions
+4. Stop immediately after generating ONE action
+5. The tool will execute and provide an observation, then you'll decide what to do next

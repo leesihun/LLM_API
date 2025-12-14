@@ -22,7 +22,8 @@
       "Bash(test -f backend/tools/python_coder/refactored_tool.py)",
       "Bash(test:*)",
       "Bash(taskkill:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(copy:*)"
     ],
     "deny": [],
     "ask": []

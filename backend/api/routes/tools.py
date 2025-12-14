@@ -163,92 +163,62 @@ async def websearch(
     current_user: Optional[dict] = Depends(get_optional_user)
 ):
     """
-    Web search with LLM query optimization and answer generation
+    Pure web search - no LLM processing
+    Returns raw Tavily results for agent to interpret
 
     Args:
-        request: Search request with query and context
+        request: Search request with query
         current_user: Authenticated user (optional)
 
     Returns:
-        Search results with synthesized answer
+        Raw search results in data field, no answer field
     """
+    print("\n" + "=" * 80)
+    print("[TOOLS API] /api/tools/websearch endpoint called")
+    print("=" * 80)
+    print(f"User: {current_user['username'] if current_user else 'guest'}")
+    print(f"Query: {request.query}")
+    print(f"Max results: {request.max_results or 'default'}")
+
     start_time = time.time()
 
     try:
-        # Step 1: Generate optimized search query using LLM
-        context_str = format_context(request.context)
-
-        query_prompt = load_prompt(
-            "websearch_query.txt",
-            user_query=request.query,
-            chat_history=context_str,
-            current_thought=request.context.current_thought if request.context else ""
-        )
-
-        messages = [{"role": "user", "content": query_prompt}]
-        optimized_query = llm_backend.chat(
-            messages,
-            config.TOOL_MODELS.get("websearch", config.OLLAMA_MODEL),
-            0.3  # Lower temp for query generation
-        ).strip()
-
-        # Step 2: Perform search using tool
+        # Perform search using tool (no LLM calls)
         tool = WebSearchTool()
         search_result = tool.search(
-            query=optimized_query,
+            query=request.query,
             max_results=request.max_results
         )
 
         if not search_result["success"]:
             return ToolResponse(
                 success=False,
-                answer="Web search failed",
+                answer="",
                 data={},
                 metadata={"execution_time": time.time() - start_time},
                 error=search_result.get("error", "Unknown error")
             )
 
-        # Step 3: Format results for LLM
-        formatted_results = tool.format_results_for_llm(search_result["results"])
-
-        # Step 4: Generate answer using LLM
-        answer_prompt = load_prompt(
-            "websearch_summarize.txt",
-            user_query=request.query,
-            search_query=optimized_query,
-            search_results=formatted_results,
-            context=context_str
-        )
-
-        messages = [{"role": "user", "content": answer_prompt}]
-        answer = llm_backend.chat(
-            messages,
-            config.TOOL_MODELS.get("websearch", config.OLLAMA_MODEL),
-            config.TOOL_PARAMETERS.get("websearch", {}).get("temperature", 0.7)
-        )
-
         execution_time = time.time() - start_time
 
+        # Return raw results without any LLM processing
         return ToolResponse(
             success=True,
-            answer=answer,
+            answer="",  # No answer - agent will interpret raw data
             data={
-                "search_query": optimized_query,
+                "query": request.query,
                 "results": search_result["results"],
                 "num_results": search_result["num_results"]
             },
             metadata={
-                "execution_time": execution_time,
-                "context_received": {
-                    "chat_history_messages": len(request.context.chat_history) if request.context and request.context.chat_history else 0
-                }
+                "execution_time": execution_time
             }
         )
 
     except Exception as e:
         return ToolResponse(
             success=False,
-            answer=f"Web search error: {str(e)}",
+            answer="",
             data={},
             metadata={"execution_time": time.time() - start_time},
             error=str(e)
@@ -270,18 +240,31 @@ async def python_coder(
     Returns:
         Execution results
     """
+    print("\n" + "=" * 80)
+    print("[TOOLS API] /api/tools/python_coder endpoint called")
+    print("=" * 80)
+    print(f"User: {current_user['username'] if current_user else 'guest'}")
+    print(f"Session ID: {request.session_id}")
+    print(f"Code length: {len(request.code)} chars")
+    print(f"Timeout: {request.timeout or 'default'}s")
+    print(f"Context provided: {bool(request.context)}")
+    
     start_time = time.time()
 
     try:
         # Initialize tool with session ID
+        print(f"\n[TOOLS API] Initializing PythonCoderTool...")
         tool = PythonCoderTool(session_id=request.session_id)
+        print(f"[TOOLS API] [OK] Tool initialized")
 
         # Execute code
+        print(f"\n[TOOLS API] Calling tool.execute()...")
         result = tool.execute(
             code=request.code,
             timeout=request.timeout,
             context=request.context.dict() if request.context else None
         )
+        print(f"[TOOLS API] [OK] Execution completed: {'SUCCESS' if result['success'] else 'FAILED'}")
 
         # Format answer
         if result["success"]:
@@ -455,32 +438,51 @@ async def query_rag(
 ):
     """Query RAG collection with LLM-enhanced retrieval and synthesis"""
     username = current_user["username"] if current_user else "guest"
+    
+    print("\n" + "=" * 80)
+    print("[TOOLS API] /api/tools/rag/query endpoint called")
+    print("=" * 80)
+    print(f"User: {username}")
+    print(f"Collection: {request.collection_name}")
+    print(f"Query: {request.query}")
+    print(f"Max results: {request.max_results or 'default'}")
+    print(f"Context provided: {bool(request.context)}")
+    
     start_time = time.time()
 
     try:
         # Step 1: Optimize query using LLM
+        print(f"\n[TOOLS API] Step 1: Formatting context...")
         context_str = format_context(request.context)
+        print(f"[TOOLS API] Context formatted ({len(context_str)} chars)")
 
+        print(f"\n[TOOLS API] Step 2: Loading query optimization prompt...")
         query_prompt = load_prompt(
             "rag_query.txt",
             user_query=request.query,
             context=context_str
         )
+        print(f"[TOOLS API] Prompt loaded ({len(query_prompt)} chars)")
 
+        print(f"\n[TOOLS API] Step 3: Calling LLM for query optimization...")
         messages = [{"role": "user", "content": query_prompt}]
         optimized_query = llm_backend.chat(
             messages,
             config.TOOL_MODELS.get("rag", config.OLLAMA_MODEL),
             0.3
         ).strip()
+        print(f"[TOOLS API] [OK] Optimized query: '{optimized_query}'")
 
         # Step 2: Retrieve documents
+        print(f"\n[TOOLS API] Step 4: Initializing RAGTool...")
         tool = RAGTool(username=username)
+        print(f"[TOOLS API] Calling tool.retrieve()...")
         retrieval_result = tool.retrieve(
             collection_name=request.collection_name,
             query=optimized_query,
             max_results=request.max_results
         )
+        print(f"[TOOLS API] [OK] Retrieval completed: {retrieval_result.get('num_results', 0)} documents")
 
         if not retrieval_result["success"]:
             return ToolResponse(

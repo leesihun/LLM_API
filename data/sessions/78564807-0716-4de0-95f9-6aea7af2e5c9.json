@@ -1,0 +1,14 @@
+{
+  "session_id": "78564807-0716-4de0-95f9-6aea7af2e5c9",
+  "updated_at": "2025-12-12T09:41:57.793201",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What was the latest game of Liverpool FC and who won? The current date is 2025/12/12"
+    },
+    {
+      "role": "assistant",
+      "content": "Liverpool beat Inter Milan 1-0 on December 12, 2025."
+    }
+  ]
+}

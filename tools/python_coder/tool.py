@@ -9,8 +9,18 @@ import subprocess
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+from datetime import datetime
 
 import config
+
+
+def log_to_prompts_file(message: str):
+    """Write message to prompts.log"""
+    try:
+        with open(config.PROMPTS_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(message + '\n')
+    except Exception as e:
+        print(f"[WARNING] Failed to write to prompts.log: {e}")
 
 
 class PythonCoderTool:
@@ -51,27 +61,70 @@ class PythonCoderTool:
         Returns:
             Execution result dictionary
         """
+        # Log to file
+        log_to_prompts_file("\n\n")
+        log_to_prompts_file("=" * 80)
+        log_to_prompts_file(f"TOOL EXECUTION: python_coder")
+        log_to_prompts_file("=" * 80)
+        log_to_prompts_file(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        log_to_prompts_file(f"")
+        log_to_prompts_file(f"INPUT:")
+        log_to_prompts_file(f"  Session ID: {self.session_id}")
+        log_to_prompts_file(f"  Workspace: {self.workspace}")
+        log_to_prompts_file(f"  Code Length: {len(code)} chars")
+        log_to_prompts_file(f"  Timeout: {timeout or self.timeout}s")
+        log_to_prompts_file(f"")
+        log_to_prompts_file(f"CODE:")
+        # Log full code to file
+        for line in code.split('\n'):
+            log_to_prompts_file(f"  {line}")
+
+        print("\n" + "=" * 80)
+        print("[PYTHON TOOL] execute() called")
+        print("=" * 80)
+        print(f"Session ID: {self.session_id}")
+        print(f"Workspace: {self.workspace}")
+        print(f"Code length: {len(code)} chars")
+        print(f"Context provided: {bool(context)}")
+
         exec_timeout = timeout or self.timeout
         start_time = time.time()
 
         # Log Python code execution
-        print(f"\n[PYTHON] Executing code in workspace: {self.workspace}")
+        print(f"\n[PYTHON] Preparing execution...")
+        print(f"  Timeout: {exec_timeout}s")
+        print(f"  Max output size: {self.max_output_size} bytes")
         code_preview = code[:200] + "..." if len(code) > 200 else code
-        print(f"[PYTHON] Code:\n{code_preview}")
-        print(f"[PYTHON] Timeout: {exec_timeout}s")
+        print(f"\n[PYTHON] Code to execute:")
+        print("-" * 40)
+        print(code_preview)
+        print("-" * 40)
 
         # Create execution script with restricted imports
-        script_path = self.workspace / f"exec_{int(time.time() * 1000)}.py"
+        script_name = f"exec_{int(time.time() * 1000)}.py"
+        script_path = self.workspace / script_name
+        print(f"\n[PYTHON] Creating execution script: {script_name}")
 
         # Wrap code with safety checks
+        print(f"[PYTHON] Wrapping code with safety restrictions...")
         wrapped_code = self._wrap_code(code)
+        print(f"[PYTHON] [OK] Code wrapped ({len(wrapped_code)} chars total)")
 
         # Write script
+        print(f"\n[PYTHON] Writing script to disk...")
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(wrapped_code)
+        print(f"[PYTHON] [OK] Script written: {script_path}")
 
         try:
             # Execute in subprocess with timeout
+            print(f"\n[PYTHON] Starting subprocess execution...")
+            print(f"  Python: {sys.executable}")
+            print(f"  Script: {script_path}")
+            print(f"  Working dir: {self.workspace}")
+            print(f"  Timeout: {exec_timeout}s")
+            print(f"\n[PYTHON] Executing...")
+            
             result = subprocess.run(
                 [sys.executable, str(script_path)],
                 cwd=str(self.workspace),
@@ -80,6 +133,8 @@ class PythonCoderTool:
                 timeout=exec_timeout,
                 env=self._get_safe_env()
             )
+            
+            print(f"[PYTHON] [OK] Subprocess completed")
 
             stdout = result.stdout
             stderr = result.stderr
@@ -110,6 +165,30 @@ class PythonCoderTool:
             if files:
                 print(f"[PYTHON] Files created: {list(files.keys())}")
 
+            # Log to file
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"OUTPUT:")
+            log_to_prompts_file(f"  Status: {'SUCCESS' if success else 'FAILED'}")
+            log_to_prompts_file(f"  Return Code: {returncode}")
+            log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
+            log_to_prompts_file(f"")
+            if stdout:
+                log_to_prompts_file(f"STDOUT:")
+                for line in stdout.split('\n'):
+                    log_to_prompts_file(f"  {line}")
+                log_to_prompts_file(f"")
+            if stderr:
+                log_to_prompts_file(f"STDERR:")
+                for line in stderr.split('\n'):
+                    log_to_prompts_file(f"  {line}")
+                log_to_prompts_file(f"")
+            if files:
+                log_to_prompts_file(f"FILES CREATED:")
+                for filename, meta in files.items():
+                    log_to_prompts_file(f"  {filename} ({meta['size']} bytes)")
+            log_to_prompts_file(f"")
+            log_to_prompts_file("=" * 80)
+
             return {
                 "success": success,
                 "stdout": stdout,
@@ -124,6 +203,16 @@ class PythonCoderTool:
         except subprocess.TimeoutExpired:
             execution_time = time.time() - start_time
             print(f"\n[PYTHON] ERROR: Execution timeout after {exec_timeout}s")
+
+            # Log to file
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"OUTPUT:")
+            log_to_prompts_file(f"  Status: TIMEOUT")
+            log_to_prompts_file(f"  Error: Execution timeout after {exec_timeout} seconds")
+            log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
+            log_to_prompts_file(f"")
+            log_to_prompts_file("=" * 80)
+
             return {
                 "success": False,
                 "stdout": "",
@@ -138,6 +227,16 @@ class PythonCoderTool:
         except Exception as e:
             execution_time = time.time() - start_time
             print(f"\n[PYTHON] ERROR: {str(e)}")
+
+            # Log to file
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"OUTPUT:")
+            log_to_prompts_file(f"  Status: ERROR")
+            log_to_prompts_file(f"  Error: {str(e)}")
+            log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
+            log_to_prompts_file(f"")
+            log_to_prompts_file("=" * 80)
+
             return {
                 "success": False,
                 "stdout": "",

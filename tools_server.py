@@ -4,9 +4,15 @@ Runs on a separate port (1006) to avoid deadlock when main server calls tools
 """
 import uvicorn
 import sys
+import io
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Set UTF-8 encoding for Windows console to handle emojis
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -65,7 +71,8 @@ def main():
         host=config.SERVER_HOST,
         port=config.TOOLS_PORT,
         reload=False,
-        log_level=config.LOG_LEVEL.lower()
+        log_level=config.LOG_LEVEL.lower(),
+        access_log=True
     )
 
 

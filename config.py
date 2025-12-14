@@ -21,7 +21,7 @@ LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 
 # Ollama Settings
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "gemma3:1b"  # Default model
+OLLAMA_MODEL = "gpt-oss:20b"  # Default model
 
 # Llama.cpp Settings
 LLAMACPP_HOST = "http://localhost:8080"
@@ -99,9 +99,9 @@ AVAILABLE_TOOLS = [
 # Tool-specific Model Configuration
 # Different tools can use different models optimized for their tasks
 TOOL_MODELS = {
-    "websearch": "gemma3:1b",  # Web search summarization
-    "python_coder": "gemma3:1b",  # Code generation
-    "rag": "gemma3:1b",  # Document retrieval
+    "websearch": "gpt-oss:20b",  # Web search summarization
+    "python_coder": "gpt-oss:20b",  # Code generation
+    "rag": "gpt-oss:20b",  # Document retrieval
 }
 
 # Tool-specific Model Parameters
@@ -110,7 +110,7 @@ TOOL_PARAMETERS = {
     "websearch": {
         "temperature": 0.7,
         "max_tokens": 2048,
-        "timeout": 300,  # 5 minutes for web search (includes 2 LLM calls + Tavily API call)
+        "timeout": 360,  # 1 minute for web search (includes 2 LLM calls + Tavily API call)
     },
     "python_coder": {
         "temperature": 0.3,  # Lower temp for more deterministic code
@@ -125,7 +125,7 @@ TOOL_PARAMETERS = {
 }
 
 # Default tool timeout (seconds)
-DEFAULT_TOOL_TIMEOUT = 300
+DEFAULT_TOOL_TIMEOUT = 60
 
 # ============================================================================
 # Web Search Tool Settings
@@ -133,9 +133,10 @@ DEFAULT_TOOL_TIMEOUT = 300
 WEBSEARCH_PROVIDER = "tavily"  # Options: "tavily", "serper", "mock"
 TAVILY_API_KEY = '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'
 TAVILY_MAX_RESULTS = 5  # Maximum search results to retrieve
-TAVILY_SEARCH_DEPTH = "basic"  # "basic" or "advanced" - use "basic" for faster responses
+TAVILY_SEARCH_DEPTH = "advanced"  # "basic" or "advanced" - use "basic" for faster responses
 TAVILY_INCLUDE_DOMAINS = []  # List of domains to include (empty = all)
 TAVILY_EXCLUDE_DOMAINS = []  # List of domains to exclude
+WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 
 # ============================================================================
 # Python Coder Tool Settings
@@ -153,6 +154,7 @@ PYTHON_ALLOWED_MODULES = [
     "requests", "pathlib", "os", "sys"
 ]
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
+PYTHON_CODER_TIMEOUT = 30  # Timeout for ReAct agent tool call
 
 # ============================================================================
 # RAG Tool Settings
@@ -174,6 +176,7 @@ RAG_SIMILARITY_METRIC = "cosine"  # "cosine", "l2", or "ip" (inner product)
 RAG_CHUNK_SIZE = 512  # Characters per chunk
 RAG_CHUNK_OVERLAP = 50  # Overlap between chunks
 RAG_MAX_RESULTS = 5  # Maximum documents to retrieve
+RAG_DEFAULT_COLLECTION = "default"  # Default collection name
 
 # Supported document formats
 RAG_SUPPORTED_FORMATS = [".txt", ".pdf", ".docx", ".md", ".json", ".csv"]

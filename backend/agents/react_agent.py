@@ -1,27 +1,29 @@
 """
-ReAct Agent - Reasoning and Acting
-Supports both prompt-based and Ollama native tool calling
+ReAct Agent - Reasoning and Acting (Rebuilt from scratch)
+
+Clean 2-step architecture:
+1. Generate Thought/Action/Action Input
+2. Execute tool and generate Observation with final_answer decision
 """
 import re
 import json
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 import config
 from backend.agents.base_agent import Agent
-from tools_config import format_tools_for_llm, format_tools_for_ollama_native
+from tools_config import format_tools_for_llm
 
 
 class ReActAgent(Agent):
     """
-    ReAct (Reasoning + Acting) agent with tool calling
-    Supports both prompt format and Ollama native tool calling
+    ReAct (Reasoning + Acting) agent with strict 2-step execution:
+    Step 1: LLM generates Thought/Action/Action Input
+    Step 2: Tool executes, LLM generates Observation + decides if done
     """
 
     def __init__(self, model: str = None, temperature: float = None):
         super().__init__(model, temperature)
-        self.format = config.REACT_FORMAT
         self.max_iterations = config.REACT_MAX_ITERATIONS
-        self.retry_on_error = config.REACT_RETRY_ON_ERROR
 
     def run(
         self,
@@ -29,7 +31,7 @@ class ReActAgent(Agent):
         conversation_history: List[Dict[str, str]]
     ) -> str:
         """
-        Run ReAct agent
+        Run ReAct agent with strict 2-step loop
 
         Args:
             user_input: User's message
@@ -37,30 +39,106 @@ class ReActAgent(Agent):
 
         Returns:
             Final answer
-        """
-        if self.format == "native":
-            return self._run_native(user_input, conversation_history)
-        else:
-            return self._run_prompt(user_input, conversation_history)
 
-    def _run_prompt(
-        self,
-        user_input: str,
-        conversation_history: List[Dict[str, str]]
-    ) -> str:
+        Raises:
+            ValueError: If parsing fails or max iterations reached
         """
-        Run using prompt-based ReAct format
+        # Initialize scratchpad
+        scratchpad = ""
 
-        Args:
-            user_input: User's message
-            conversation_history: Full conversation history
-
-        Returns:
-            Final answer
-        """
         # Get tools description
         tools_desc = format_tools_for_llm()
 
+        # Main reasoning loop
+        for iteration in range(self.max_iterations):
+            print(f"\n{'='*80}")
+            print(f"[REACT] ITERATION {iteration + 1}/{self.max_iterations}")
+            print(f"{'='*80}")
+
+            # STEP 1: Generate Thought/Action/Action Input
+            print(f"\n[REACT] STEP 1: Generating Thought/Action/Action Input...")
+
+            thought_action = self._step1_generate_action(
+                user_input=user_input,
+                conversation_history=conversation_history,
+                tools_desc=tools_desc,
+                scratchpad=scratchpad
+            )
+
+            # Add to scratchpad
+            scratchpad += thought_action + "\n\n"
+
+            # Parse the action
+            print(f"[REACT] Parsing action from response...")
+            action_info = self._parse_action(thought_action)
+
+            # STEP 2: Execute tool
+            print(f"\n[REACT] STEP 2: Executing tool '{action_info['action']}'...")
+
+            tool_result = self._execute_tool(
+                tool_name=action_info["action"],
+                tool_input=action_info["action_input"]
+            )
+
+            print(f"[REACT] Tool execution complete")
+
+            # STEP 3: Generate Observation + decide if done
+            print(f"\n[REACT] STEP 3: Generating observation and checking if complete...")
+
+            observation_result = self._step2_generate_observation(
+                user_input=user_input,
+                conversation_history=conversation_history,
+                scratchpad=scratchpad,
+                tool_result=tool_result,
+                action_info=action_info
+            )
+
+            # Add observation to scratchpad
+            scratchpad += f"Observation: {observation_result['observation']}\n\n"
+
+            # Check if we're done
+            if observation_result["final_answer"]:
+                print(f"\n[REACT] ✅ final_answer=true, generating final response...")
+
+                # Generate final answer based on all observations
+                final_answer = self._generate_final_answer(
+                    user_input=user_input,
+                    conversation_history=conversation_history,
+                    scratchpad=scratchpad
+                )
+
+                print(f"[REACT] 🏁 Returning final answer: {final_answer[:200]}..." if len(final_answer) > 200 else f"[REACT] 🏁 Returning final answer")
+                return final_answer
+            else:
+                print(f"[REACT] ⏭️  final_answer=false, continuing to next iteration...")
+
+        # Max iterations reached
+        error_msg = f"Maximum iterations ({self.max_iterations}) reached without completing task"
+        print(f"\n[REACT] ❌ {error_msg}")
+        raise ValueError(error_msg)
+
+    def _step1_generate_action(
+        self,
+        user_input: str,
+        conversation_history: List[Dict[str, str]],
+        tools_desc: str,
+        scratchpad: str
+    ) -> str:
+        """
+        STEP 1: Generate Thought/Action/Action Input
+
+        Args:
+            user_input: User's question
+            conversation_history: Chat history
+            tools_desc: Tools description
+            scratchpad: Current scratchpad
+
+        Returns:
+            LLM response with Thought/Action/Action Input
+
+        Raises:
+            ValueError: If response format is invalid
+        """
         # Load system prompt
         system_prompt = self.load_prompt(
             "agents/react_system.txt",
@@ -68,250 +146,340 @@ class ReActAgent(Agent):
             input=user_input
         )
 
-        # Initialize scratchpad (reasoning history)
-        scratchpad = ""
+        # Load thought prompt
+        history_str = self.format_conversation_history(conversation_history)
+        thought_prompt = self.load_prompt(
+            "agents/react_thought.txt",
+            history=history_str,
+            input=user_input,
+            scratchpad=scratchpad if scratchpad else "No previous actions yet."
+        )
 
-        # Reasoning loop
-        for iteration in range(self.max_iterations):
-            # Format current state
-            history_str = self.format_conversation_history(conversation_history)
+        # Call LLM
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": thought_prompt}
+        ]
 
-            thought_prompt = self.load_prompt(
-                "agents/react_thought.txt",
-                history=history_str,
-                input=user_input,
-                scratchpad=scratchpad
-            )
+        response = self.call_llm(messages)
 
-            # Get next action from LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": thought_prompt}
-            ]
+        # Validate response contains required fields
+        if "Thought:" not in response:
+            raise ValueError("LLM response missing 'Thought:' field")
+        if "Action:" not in response:
+            raise ValueError("LLM response missing 'Action:' field")
+        if "Action Input:" not in response:
+            raise ValueError("LLM response missing 'Action Input:' field")
 
-            response = self.call_llm(messages)
-            scratchpad += response + "\n\n"
+        return response
 
-            # Check for Final Answer
-            if "Final Answer:" in response:
-                # Extract final answer
-                final_answer = response.split("Final Answer:")[-1].strip()
-                return final_answer
-
-            # Parse action
-            action_info = self._parse_action(response)
-
-            if not action_info:
-                # No valid action found, ask LLM to continue
-                scratchpad += "Error: Invalid action format. Please follow the format:\nThought: ...\nAction: ...\nAction Input: [plain text string]\n\n"
-                continue
-
-            # Execute tool with context
-            tool_name = action_info["action"]
-            tool_input = action_info["action_input"]
-
-            # Build context for tool
-            context = {
-                "chat_history": conversation_history,
-                "react_scratchpad": scratchpad,
-                "current_thought": response,
-                "user_query": user_input
-            }
-
-            observation = self._execute_tool(tool_name, tool_input, context)
-
-            # Add observation to scratchpad
-            scratchpad += f"Observation: {observation}\n\n"
-
-            # If tool failed and retry is disabled, return error
-            if not self.retry_on_error and "error" in str(observation).lower():
-                return f"Tool execution failed: {observation}"
-
-        # Max iterations reached
-        return "I apologize, but I was unable to complete the task within the allowed reasoning steps. Please try rephrasing your question or breaking it into smaller parts."
-
-    def _run_native(
+    def _step2_generate_observation(
         self,
         user_input: str,
-        conversation_history: List[Dict[str, str]]
-    ) -> str:
+        conversation_history: List[Dict[str, str]],
+        scratchpad: str,
+        tool_result: Dict,
+        action_info: Dict[str, str]
+    ) -> Dict[str, any]:
         """
-        Run using Ollama native tool calling
+        STEP 2: Generate Observation and decide if task is complete
 
         Args:
-            user_input: User's message
-            conversation_history: Full conversation history
+            user_input: User's question
+            conversation_history: Chat history
+            scratchpad: Current scratchpad
+            tool_result: Full result dict from tool with 'data' field
+            action_info: Dict with 'action' and 'action_input'
 
         Returns:
-            Final answer
+            Dict with 'observation' (str) and 'final_answer' (bool)
+
+        Raises:
+            ValueError: If response format is invalid
         """
-        # Get tools in Ollama format
-        tools = format_tools_for_ollama_native()
+        # Format tool data for LLM
+        tool_data_str = self._format_tool_data(action_info["action"], tool_result)
 
-        # Load system prompt
-        system_prompt = self.load_prompt("agents/react_system.txt", tools=str(tools), input=user_input)
+        # Load observation prompt
+        history_str = self.format_conversation_history(conversation_history)
+        observation_prompt = self.load_prompt(
+            "agents/react_observation.txt",
+            history=history_str,
+            input=user_input,
+            scratchpad=scratchpad,
+            action=action_info["action"],
+            action_input=action_info["action_input"],
+            tool_data=tool_data_str
+        )
 
-        # Build messages
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(conversation_history)
-        messages.append({"role": "user", "content": user_input})
+        # Call LLM
+        messages = [
+            {"role": "user", "content": observation_prompt}
+        ]
 
-        # For native tool calling, we'd need Ollama's tool calling API
-        # This is a simplified version - actual implementation depends on Ollama's API
-        # For now, fall back to prompt-based approach
-        # TODO: Implement actual Ollama native tool calling when API is available
+        response = self.call_llm(messages)
 
-        return self._run_prompt(user_input, conversation_history)
+        # Parse the structured response
+        # Expected format:
+        # final_answer: true/false
+        # Observation: [text]
 
-    def _parse_action(self, response: str) -> Optional[Dict[str, any]]:
+        print(f"\n[REACT] Parsing observation response...")
+        print(f"Response preview: {response[:300]}...")
+
+        # Extract final_answer
+        final_answer_match = re.search(r"final_answer:\s*(true|false)", response, re.IGNORECASE)
+        if not final_answer_match:
+            raise ValueError("LLM response missing 'final_answer: true/false' field")
+
+        final_answer = final_answer_match.group(1).lower() == "true"
+
+        # Extract observation
+        observation_match = re.search(r"Observation:\s*(.+)", response, re.DOTALL | re.IGNORECASE)
+        if not observation_match:
+            raise ValueError("LLM response missing 'Observation:' field")
+
+        observation = observation_match.group(1).strip()
+
+        print(f"[REACT] ✅ Parsed: final_answer={final_answer}, observation={len(observation)} chars")
+
+        return {
+            "observation": observation,
+            "final_answer": final_answer
+        }
+
+    def _generate_final_answer(
+        self,
+        user_input: str,
+        conversation_history: List[Dict[str, str]],
+        scratchpad: str
+    ) -> str:
         """
-        Parse Action and Action Input from response
-        Now expects plain string input instead of JSON
+        Generate final answer based on all observations
+
+        Args:
+            user_input: User's question
+            conversation_history: Chat history
+            scratchpad: Complete scratchpad with all observations
+
+        Returns:
+            Final answer string
+
+        Raises:
+            ValueError: If response is invalid
+        """
+        # Load final answer prompt
+        history_str = self.format_conversation_history(conversation_history)
+        final_prompt = self.load_prompt(
+            "agents/react_final.txt",
+            history=history_str,
+            input=user_input,
+            scratchpad=scratchpad
+        )
+
+        # Call LLM
+        messages = [
+            {"role": "user", "content": final_prompt}
+        ]
+
+        response = self.call_llm(messages)
+
+        # Validate response is not empty
+        if not response or not response.strip():
+            raise ValueError("LLM returned empty final answer")
+
+        return response.strip()
+
+    def _parse_action(self, response: str) -> Dict[str, str]:
+        """
+        Parse Action and Action Input from response (strict)
 
         Args:
             response: LLM response
 
         Returns:
-            Dictionary with 'action' and 'action_input' (string) or None
-        """
-        # Look for Action:
-        action_match = re.search(r"Action:\s*(\w+)", response)
+            Dict with 'action' and 'action_input'
 
+        Raises:
+            ValueError: If parsing fails
+        """
+        # Extract Action
+        action_match = re.search(r"Action:\s*(\w+)", response)
         if not action_match:
-            return None
+            raise ValueError("Failed to parse 'Action:' from response")
 
         action = action_match.group(1)
 
-        # Look for Action Input: - extract everything until next major section or end
-        # Match pattern: "Action Input:" followed by content until we hit a newline with a section header or end
-        # Also stop at "Returns:" to avoid capturing tool documentation
+        # Extract Action Input
         input_match = re.search(
-            r"Action Input:\s*(.+?)(?:\n\n|\n(?=Thought:|Action:|Observation:|Final Answer:|Returns:)|$)",
+            r"Action Input:\s*(.+?)(?:\n\n|\n(?=Thought:|Action:|Observation:|Final Answer:)|$)",
             response,
             re.DOTALL | re.IGNORECASE
         )
-
         if not input_match:
-            return None
+            raise ValueError("Failed to parse 'Action Input:' from response")
 
-        # Get the raw string input
         action_input = input_match.group(1).strip()
 
-        # Validate: Action Input must not be empty
+        # Validate not empty
         if not action_input:
-            return None
+            raise ValueError("Action Input is empty")
+
+        print(f"[REACT] ✅ Parsed action: {action}, input: {action_input[:100]}..." if len(action_input) > 100 else f"[REACT] ✅ Parsed action: {action}, input: {action_input}")
 
         return {
             "action": action,
             "action_input": action_input
         }
 
-    def _convert_string_to_params(
-        self,
-        tool_name: str,
-        string_input: str,
-        context: Dict = None
-    ) -> Dict[str, any]:
+    def _execute_tool(self, tool_name: str, tool_input: str) -> Dict:
         """
-        Convert plain string input to tool parameters with validation
-
-        Args:
-            tool_name: Name of the tool
-            string_input: Plain string input from Action Input
-            context: Optional context dict
-
-        Returns:
-            Parameters dictionary for the tool
-
-        Raises:
-            ValueError: If input is invalid
-        """
-        # Validate input is not empty
-        if not string_input or not string_input.strip():
-            raise ValueError(f"Action Input for {tool_name} cannot be empty")
-
-        # Validate input length (prevent extremely long inputs)
-        MAX_INPUT_LENGTH = 50000  # 50K characters
-        if len(string_input) > MAX_INPUT_LENGTH:
-            raise ValueError(f"Action Input too long: {len(string_input)} characters (max: {MAX_INPUT_LENGTH})")
-
-        clean_input = string_input.strip()
-
-        if tool_name == "websearch":
-            # For websearch, input is the search query
-            if len(clean_input) < 1:
-                raise ValueError("Search query cannot be empty")
-
-            return {
-                "query": clean_input,
-                "max_results": 5  # default
-            }
-
-        elif tool_name == "python_coder":
-            # For python_coder, input is the actual code
-            if len(clean_input) < 1:
-                raise ValueError("Python code cannot be empty")
-
-            return {
-                "code": clean_input,
-                "session_id": context.get("session_id", self.session_id or "auto") if context else (self.session_id or "auto"),
-                "timeout": 30  # default
-            }
-
-        elif tool_name == "rag":
-            # For rag, input is the search query
-            if len(clean_input) < 1:
-                raise ValueError("Search query cannot be empty")
-
-            return {
-                "query": clean_input,
-                "collection_name": context.get("collection_name", "default") if context else "default",
-                "max_results": 5  # default
-            }
-
-        else:
-            # Unknown tool - raise error instead of guessing
-            raise ValueError(f"Unknown tool: {tool_name}")
-
-    def _execute_tool(
-        self,
-        tool_name: str,
-        string_input: str,
-        context: Dict = None
-    ) -> str:
-        """
-        Execute a tool with string input and return observation
+        Execute tool and return raw result (strict - no error handling)
 
         Args:
             tool_name: Tool to execute
-            string_input: Plain string input for the tool
-            context: Context to pass to tool
+            tool_input: String input for tool
 
         Returns:
-            Observation string
+            Tool result dict with 'data' field
+
+        Raises:
+            ValueError: If tool execution fails
         """
-        try:
-            # Convert string input to proper parameters
-            parameters = self._convert_string_to_params(tool_name, string_input, context)
+        # Convert string input to tool parameters
+        parameters = self._convert_string_to_params(tool_name, tool_input)
 
-            # Call the tool with converted parameters
-            result = self.call_tool(tool_name, parameters, context)
+        # Call tool via base agent
+        context = {
+            "session_id": self.session_id or "auto"
+        }
 
-            # Format result as observation
-            if isinstance(result, dict):
-                if "error" in result:
-                    return f"Error: {result['error']}"
+        result = self.call_tool(tool_name, parameters, context)
 
-                # Format based on tool response structure
-                if "answer" in result:
-                    return result["answer"]
-                else:
-                    return json.dumps(result, indent=2)
-            else:
-                return str(result)
+        # Check for errors (strict)
+        if isinstance(result, dict) and "error" in result and result["error"] is not None:
+            raise ValueError(f"Tool '{tool_name}' failed: {result['error']}")
 
-        except ValueError as e:
-            # Validation error from _convert_string_to_params
-            return f"Invalid input: {str(e)}"
-        except Exception as e:
-            return f"Tool execution error: {str(e)}"
+        # Return full result dict
+        return result
+
+    def _format_tool_data(self, tool_name: str, tool_result: Dict) -> str:
+        """
+        Format tool result data for LLM consumption
+
+        Args:
+            tool_name: Name of the tool
+            tool_result: Full result dict from tool
+
+        Returns:
+            Formatted string of tool data
+        """
+        if not isinstance(tool_result, dict) or "data" not in tool_result:
+            return json.dumps(tool_result, indent=2)
+
+        data = tool_result["data"]
+
+        # Format based on tool type
+        if tool_name == "websearch":
+            return self._format_websearch_data(data)
+        elif tool_name == "python_coder":
+            return self._format_python_coder_data(data)
+        elif tool_name == "rag":
+            return self._format_rag_data(data)
+        else:
+            return json.dumps(data, indent=2)
+
+    def _format_websearch_data(self, data: Dict) -> str:
+        """Format websearch results for LLM"""
+        results = data.get("results", [])
+
+        if not results:
+            return "No search results found."
+
+        formatted = [f"Search Query: {data.get('query', 'N/A')}\n"]
+        formatted.append(f"Found {data.get('num_results', 0)} results:\n")
+
+        for i, result in enumerate(results, 1):
+            title = result.get("title", "No title")
+            url = result.get("url", "")
+            content = result.get("content", "No content")
+            score = result.get("score", 0.0)
+
+            formatted.append(f"\n[{i}] {title}")
+            formatted.append(f"    URL: {url}")
+            formatted.append(f"    Relevance: {score:.2f}")
+            formatted.append(f"    Content: {content}")
+
+        return "\n".join(formatted)
+
+    def _format_python_coder_data(self, data: Dict) -> str:
+        """Format python_coder results for LLM"""
+        parts = []
+
+        if data.get("stdout"):
+            parts.append(f"Output:\n{data['stdout']}")
+
+        if data.get("stderr"):
+            parts.append(f"Error:\n{data['stderr']}")
+
+        if data.get("files"):
+            parts.append(f"Files: {', '.join(data['files'].keys())}")
+
+        return "\n\n".join(parts) if parts else "Code executed with no output"
+
+    def _format_rag_data(self, data: Dict) -> str:
+        """Format RAG results for LLM"""
+        documents = data.get("documents", [])
+
+        if not documents:
+            return "No documents found."
+
+        formatted = [f"Found {data.get('num_results', 0)} documents:\n"]
+
+        for i, doc in enumerate(documents, 1):
+            formatted.append(f"\n[{i}] {doc.get('document', 'Unknown')}")
+            formatted.append(f"    Score: {doc.get('score', 0.0):.2f}")
+            formatted.append(f"    Content: {doc.get('chunk', 'No content')}")
+
+        return "\n".join(formatted)
+
+    def _convert_string_to_params(self, tool_name: str, string_input: str) -> Dict[str, any]:
+        """
+        Convert string input to tool parameters (strict)
+
+        Args:
+            tool_name: Tool name
+            string_input: String input
+
+        Returns:
+            Parameters dict
+
+        Raises:
+            ValueError: If conversion fails or input invalid
+        """
+        # Validate input
+        if not string_input or not string_input.strip():
+            raise ValueError(f"Tool input for '{tool_name}' is empty")
+
+        clean_input = string_input.strip()
+
+        # Convert based on tool
+        if tool_name == "websearch":
+            return {
+                "query": clean_input,
+                "max_results": config.WEBSEARCH_MAX_RESULTS
+            }
+        elif tool_name == "python_coder":
+            return {
+                "code": clean_input,
+                "session_id": self.session_id or "auto",
+                "timeout": config.PYTHON_CODER_TIMEOUT
+            }
+        elif tool_name == "rag":
+            return {
+                "query": clean_input,
+                "collection_name": config.RAG_DEFAULT_COLLECTION,
+                "max_results": config.RAG_MAX_RESULTS
+            }
+        else:
+            raise ValueError(f"Unknown tool: '{tool_name}'")
