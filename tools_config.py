@@ -150,7 +150,7 @@ def format_tools_for_llm() -> str:
         Formatted string describing all available tools
     """
     tools = []
-    tools.append('Websearch, python_coder, rag')
+    tools.append('websearch, python_coder, rag')
 
     return "\n\n".join(tools)
 
