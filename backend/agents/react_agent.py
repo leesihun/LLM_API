@@ -386,7 +386,20 @@ class ReActAgent(Agent):
         if not isinstance(tool_result, dict):
             return json.dumps(tool_result, indent=2)
 
-        # Handle error cases
+        # Special handling for python_coder - always show stdout/stderr even on error
+        if tool_name == "python_coder":
+            if "data" in tool_result:
+                formatted = self._format_python_coder_data(tool_result["data"])
+                # If there's an error, add error indicator but keep the output
+                if "error" in tool_result and tool_result["error"] is not None:
+                    error_msg = tool_result["error"]
+                    return f"❌ EXECUTION FAILED ❌\nError: {error_msg}\n\n{formatted}"
+                return formatted
+            else:
+                # Fallback if no data field
+                return f"❌ TOOL ERROR ❌\nError: {tool_result.get('error', 'Unknown error')}"
+
+        # Handle error cases for other tools
         if "error" in tool_result and tool_result["error"] is not None:
             error_msg = tool_result["error"]
             return f"❌ TOOL EXECUTION FAILED ❌\nError: {error_msg}\n\nYou should analyze this error and decide your next action."
@@ -400,8 +413,6 @@ class ReActAgent(Agent):
         # Format based on tool type
         if tool_name == "websearch":
             return self._format_websearch_data(data)
-        elif tool_name == "python_coder":
-            return self._format_python_coder_data(data)
         elif tool_name == "rag":
             return self._format_rag_data(data)
         else:
@@ -431,19 +442,35 @@ class ReActAgent(Agent):
         return "\n".join(formatted)
 
     def _format_python_coder_data(self, data: Dict) -> str:
-        """Format python_coder results for LLM"""
+        """
+        Format python_coder results for LLM
+        Always shows stdout and stderr, even if empty
+        """
         parts = []
-
-        if data.get("stdout"):
-            parts.append(f"Output:\n{data['stdout']}")
-
-        if data.get("stderr"):
-            parts.append(f"Error:\n{data['stderr']}")
-
+        
+        # Always show stdout section
+        stdout = data.get("stdout", "")
+        if stdout:
+            parts.append(f"STDOUT:\n{stdout}")
+        else:
+            parts.append("STDOUT:\n(empty)")
+        
+        # Always show stderr section if there's any error
+        stderr = data.get("stderr", "")
+        if stderr:
+            parts.append(f"STDERR:\n{stderr}")
+        
+        # Show return code
+        returncode = data.get("returncode")
+        if returncode is not None:
+            parts.append(f"Return Code: {returncode}")
+        
+        # Show files created
         if data.get("files"):
-            parts.append(f"Files: {', '.join(data['files'].keys())}")
-
-        return "\n\n".join(parts) if parts else "Code executed with no output"
+            file_list = ", ".join(data["files"].keys())
+            parts.append(f"Files Created: {file_list}")
+        
+        return "\n\n".join(parts)
 
     def _format_rag_data(self, data: Dict) -> str:
         """Format RAG results for LLM"""
