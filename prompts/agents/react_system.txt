@@ -8,11 +8,12 @@ DO NOT generate observations or final answers - these will be provided to you.
 
 To use a tool, follow this EXACT format:
 
-=========================================================
 Thought: [Your reasoning about what to do next]
 Action: [Tool name to use]
 Action Input: [String input for the tool]
-=========================================================
+
+
+
 
 RULES:
 1. ONLY output Thought, Action, and Action Input
