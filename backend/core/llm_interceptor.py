@@ -59,17 +59,14 @@ class LLMInterceptor:
 
         # ==================== DATA SECTION ====================
         if is_request:
-            # REQUEST: Show exact messages being sent to LLM
+            # REQUEST: Show exact JSON structure sent to LLM API
+            import json
             messages = log_data.get("messages", [])
             lines.append("")
-            for msg in messages:
-                role = msg.get("role", "unknown").upper()
-                content = msg.get("content", "")
-                lines.append(f"[{role}]")
-                lines.append(content)
-                lines.append("")
+            lines.append(json.dumps(messages, indent=2, ensure_ascii=False))
+            lines.append("")
         else:
-            # RESPONSE: Show exact LLM output
+            # RESPONSE: Show exact LLM output text
             response_text = log_data.get("response", log_data.get("partial_response", ""))
             lines.append("")
             lines.append(response_text)
