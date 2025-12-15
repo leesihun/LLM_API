@@ -5,6 +5,7 @@ Provides unified interface for both backends with auto-fallback
 from typing import Iterator, List, Dict, Optional
 import httpx
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import config
 
@@ -38,11 +39,108 @@ class OllamaBackend(LLMBackend):
 
     def __init__(self, host: str = None):
         self.host = (host or config.OLLAMA_HOST).rstrip("/")
+        self._ssl_options = self._get_ssl_options()
+
+    def _get_ssl_options(self):
+        """Get SSL verification options with fallback strategy."""
+        ssl_options = []
+        # 1. Corporate certificate (if exists)
+        if Path("C:/DigitalCity.crt").exists():
+            ssl_options.append("C:/DigitalCity.crt")
+        # 2. Default SSL verification
+        ssl_options.append(True)
+        # 3. Disabled SSL verification (fallback for problematic certs)
+        ssl_options.append(False)
+        return ssl_options
+
+    def _make_request(self, method: str, url: str, **kwargs):
+        """
+        Make HTTP request with SSL fallback mechanism.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            url: Request URL
+            **kwargs: Additional arguments for httpx request
+
+        Returns:
+            httpx.Response object
+
+        Raises:
+            Exception: If all SSL options fail
+        """
+        last_error = None
+        for ssl_verify in self._ssl_options:
+            try:
+                if method.upper() == "GET":
+                    response = httpx.get(url, verify=ssl_verify, **kwargs)
+                elif method.upper() == "POST":
+                    response = httpx.post(url, verify=ssl_verify, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+
+                if ssl_verify is False:
+                    import warnings
+                    warnings.warn(f"[OllamaBackend] SSL verification disabled for {url}")
+
+                return response
+
+            except Exception as e:
+                error_msg = str(e)
+                # Only retry with different SSL option if it's SSL-related
+                if "SSL" in error_msg or "CERTIFICATE" in error_msg or "certificate" in error_msg.lower():
+                    last_error = e
+                    continue
+                else:
+                    # Non-SSL error, raise immediately
+                    raise
+
+        # All SSL options failed
+        raise last_error if last_error else Exception("All SSL verification options failed")
+
+    def _stream_request(self, method: str, url: str, **kwargs):
+        """
+        Make streaming HTTP request with SSL fallback mechanism.
+
+        Args:
+            method: HTTP method (POST, etc.)
+            url: Request URL
+            **kwargs: Additional arguments for httpx.stream
+
+        Returns:
+            Context manager for httpx streaming response
+
+        Raises:
+            Exception: If all SSL options fail
+        """
+        last_error = None
+        for ssl_verify in self._ssl_options:
+            try:
+                client = httpx.Client(verify=ssl_verify)
+                stream_context = client.stream(method, url, **kwargs)
+
+                if ssl_verify is False:
+                    import warnings
+                    warnings.warn(f"[OllamaBackend] SSL verification disabled for streaming {url}")
+
+                return stream_context
+
+            except Exception as e:
+                error_msg = str(e)
+                # Only retry with different SSL option if it's SSL-related
+                if "SSL" in error_msg or "CERTIFICATE" in error_msg or "certificate" in error_msg.lower():
+                    last_error = e
+                    continue
+                else:
+                    # Non-SSL error, raise immediately
+                    raise
+
+        # All SSL options failed
+        raise last_error if last_error else Exception("All SSL verification options failed")
 
     def is_available(self) -> bool:
         """Check if Ollama is running"""
         try:
-            response = httpx.get(f"{self.host}/api/tags", timeout=2.0)
+            response = self._make_request("GET", f"{self.host}/api/tags", timeout=2.0)
             return response.status_code == 200
         except Exception:
             return False
@@ -50,7 +148,7 @@ class OllamaBackend(LLMBackend):
     def list_models(self) -> List[str]:
         """List available Ollama models"""
         try:
-            response = httpx.get(f"{self.host}/api/tags", timeout=5.0)
+            response = self._make_request("GET", f"{self.host}/api/tags", timeout=5.0)
             response.raise_for_status()
             data = response.json()
             return [model["name"] for model in data.get("models", [])]
@@ -68,7 +166,8 @@ class OllamaBackend(LLMBackend):
             }
         }
 
-        response = httpx.post(
+        response = self._make_request(
+            "POST",
             f"{self.host}/api/chat",
             json=payload,
             timeout=config.STREAM_TIMEOUT
@@ -88,7 +187,7 @@ class OllamaBackend(LLMBackend):
             }
         }
 
-        with httpx.stream(
+        with self._stream_request(
             "POST",
             f"{self.host}/api/chat",
             json=payload,
@@ -113,11 +212,108 @@ class LlamaCppBackend(LLMBackend):
 
     def __init__(self, host: str = None):
         self.host = (host or config.LLAMACPP_HOST).rstrip("/")
+        self._ssl_options = self._get_ssl_options()
+
+    def _get_ssl_options(self):
+        """Get SSL verification options with fallback strategy."""
+        ssl_options = []
+        # 1. Corporate certificate (if exists)
+        if Path("C:/DigitalCity.crt").exists():
+            ssl_options.append("C:/DigitalCity.crt")
+        # 2. Default SSL verification
+        ssl_options.append(True)
+        # 3. Disabled SSL verification (fallback for problematic certs)
+        ssl_options.append(False)
+        return ssl_options
+
+    def _make_request(self, method: str, url: str, **kwargs):
+        """
+        Make HTTP request with SSL fallback mechanism.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            url: Request URL
+            **kwargs: Additional arguments for httpx request
+
+        Returns:
+            httpx.Response object
+
+        Raises:
+            Exception: If all SSL options fail
+        """
+        last_error = None
+        for ssl_verify in self._ssl_options:
+            try:
+                if method.upper() == "GET":
+                    response = httpx.get(url, verify=ssl_verify, **kwargs)
+                elif method.upper() == "POST":
+                    response = httpx.post(url, verify=ssl_verify, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+
+                if ssl_verify is False:
+                    import warnings
+                    warnings.warn(f"[LlamaCppBackend] SSL verification disabled for {url}")
+
+                return response
+
+            except Exception as e:
+                error_msg = str(e)
+                # Only retry with different SSL option if it's SSL-related
+                if "SSL" in error_msg or "CERTIFICATE" in error_msg or "certificate" in error_msg.lower():
+                    last_error = e
+                    continue
+                else:
+                    # Non-SSL error, raise immediately
+                    raise
+
+        # All SSL options failed
+        raise last_error if last_error else Exception("All SSL verification options failed")
+
+    def _stream_request(self, method: str, url: str, **kwargs):
+        """
+        Make streaming HTTP request with SSL fallback mechanism.
+
+        Args:
+            method: HTTP method (POST, etc.)
+            url: Request URL
+            **kwargs: Additional arguments for httpx.stream
+
+        Returns:
+            Context manager for httpx streaming response
+
+        Raises:
+            Exception: If all SSL options fail
+        """
+        last_error = None
+        for ssl_verify in self._ssl_options:
+            try:
+                client = httpx.Client(verify=ssl_verify)
+                stream_context = client.stream(method, url, **kwargs)
+
+                if ssl_verify is False:
+                    import warnings
+                    warnings.warn(f"[LlamaCppBackend] SSL verification disabled for streaming {url}")
+
+                return stream_context
+
+            except Exception as e:
+                error_msg = str(e)
+                # Only retry with different SSL option if it's SSL-related
+                if "SSL" in error_msg or "CERTIFICATE" in error_msg or "certificate" in error_msg.lower():
+                    last_error = e
+                    continue
+                else:
+                    # Non-SSL error, raise immediately
+                    raise
+
+        # All SSL options failed
+        raise last_error if last_error else Exception("All SSL verification options failed")
 
     def is_available(self) -> bool:
         """Check if llama.cpp server is running"""
         try:
-            response = httpx.get(f"{self.host}/v1/models", timeout=2.0)
+            response = self._make_request("GET", f"{self.host}/v1/models", timeout=2.0)
             return response.status_code == 200
         except Exception:
             return False
@@ -125,7 +321,7 @@ class LlamaCppBackend(LLMBackend):
     def list_models(self) -> List[str]:
         """List available models (llama.cpp typically has one loaded model)"""
         try:
-            response = httpx.get(f"{self.host}/v1/models", timeout=5.0)
+            response = self._make_request("GET", f"{self.host}/v1/models", timeout=5.0)
             response.raise_for_status()
             data = response.json()
             return [model["id"] for model in data.get("data", [])]
@@ -141,7 +337,8 @@ class LlamaCppBackend(LLMBackend):
             "stream": False
         }
 
-        response = httpx.post(
+        response = self._make_request(
+            "POST",
             f"{self.host}/v1/chat/completions",
             json=payload,
             timeout=config.STREAM_TIMEOUT
@@ -159,7 +356,7 @@ class LlamaCppBackend(LLMBackend):
             "stream": True
         }
 
-        with httpx.stream(
+        with self._stream_request(
             "POST",
             f"{self.host}/v1/chat/completions",
             json=payload,
