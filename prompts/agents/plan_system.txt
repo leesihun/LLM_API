@@ -29,6 +29,4 @@ Guidelines:
 - Consider dependencies between steps
 - Be specific about what information each step should gather
 
-User request: {input}
-
 Respond with ONLY the JSON plan, no additional text.

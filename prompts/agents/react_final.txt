@@ -4,7 +4,7 @@ Past conversation history:
 {history}
 ----------------------------------------------------
 
-User Question: {input}
+Original User Question: {input}
 ----------------------------------------------------
 
 All thoughts, actions, and observations:
