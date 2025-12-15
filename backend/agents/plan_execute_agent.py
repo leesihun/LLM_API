@@ -201,9 +201,9 @@ class PlanExecuteAgent(Agent):
         description = step_info.get("description", "")
 
         # STRICT: Validate tool
-        if tool != "null" and tool not in config.AVAILABLE_TOOLS:
+        if tool is not None and tool not in config.AVAILABLE_TOOLS:
             return {
-                "answer": f"Invalid tool '{tool}'. Must be one of {config.AVAILABLE_TOOLS} or 'null'",
+                "answer": f"Invalid tool '{tool}'. Must be one of {config.AVAILABLE_TOOLS} or null",
                 "success": False
             }
 
@@ -211,7 +211,7 @@ class PlanExecuteAgent(Agent):
         prev_steps_str = self._format_previous_steps(previous_results)
 
         # BRANCH: null tool = direct LLM, else = ReAct with tool
-        if tool == "null":
+        if tool is None:
             return self._execute_reasoning_step(step_num, description, prev_steps_str, goal, context)
         else:
             return self._execute_tool_step(step_num, step_info, prev_steps_str, goal, context)
