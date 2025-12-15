@@ -1,12 +1,13 @@
 """
 Python Code Executor Tool
-Executes Python code in sandboxed environment within session scratch directory
+Executes Python code in session scratch directory
 """
 import os
 import sys
 import time
 import subprocess
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -25,8 +26,8 @@ def log_to_prompts_file(message: str):
 
 class PythonCoderTool:
     """
-    Execute Python code in sandboxed session directory
-    Supports reading/editing files from previous executions
+    Execute Python code in session directory
+    No sandboxing - raw execution with natural error handling
     """
 
     def __init__(self, session_id: str):
@@ -42,7 +43,50 @@ class PythonCoderTool:
 
         self.timeout = config.PYTHON_EXECUTOR_TIMEOUT
         self.max_output_size = config.PYTHON_EXECUTOR_MAX_OUTPUT_SIZE
-        self.allowed_modules = config.PYTHON_ALLOWED_MODULES
+
+    def _generate_script_name(self, code: str) -> str:
+        """
+        Generate human-readable script name from code content
+
+        Args:
+            code: Python code
+
+        Returns:
+            Descriptive script name (e.g., "calc_factorial.py", "fibonacci.py")
+        """
+        # Try to extract meaningful name from code
+        name_parts = []
+
+        # Check for function/class definitions (first priority - more descriptive)
+        func_matches = re.findall(r'^\s*def\s+(\w+)', code, re.MULTILINE)
+        class_matches = re.findall(r'^\s*class\s+(\w+)', code, re.MULTILINE)
+
+        if func_matches:
+            name_parts.append(func_matches[0])
+        elif class_matches:
+            name_parts.append(class_matches[0])
+
+        # Check for imports (secondary - add context)
+        import_matches = re.findall(r'^\s*import\s+(\w+)', code, re.MULTILINE)
+        from_matches = re.findall(r'^\s*from\s+(\w+)', code, re.MULTILINE)
+        imports = import_matches + from_matches
+
+        if imports and not name_parts:
+            # Only use import name if no function/class found
+            # Add "_script" suffix to avoid module name collision
+            name_parts.append(imports[0] + "_script")
+
+        # Generate name
+        if name_parts:
+            # Join with underscore, limit length
+            name = "_".join(name_parts[:2])  # Max 2 parts
+            name = name[:50]  # Max 50 chars
+            # Sanitize
+            name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+            return f"{name}.py"
+
+        # Fallback to timestamp
+        return f"script_{int(time.time() * 1000)}.py"
 
     def execute(
         self,
@@ -51,7 +95,7 @@ class PythonCoderTool:
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Execute Python code in sandboxed environment
+        Execute Python code (raw, no sandboxing)
 
         Args:
             code: Python code to execute
@@ -61,79 +105,59 @@ class PythonCoderTool:
         Returns:
             Execution result dictionary
         """
-        # Log to file
+        exec_timeout = timeout or self.timeout
+        start_time = time.time()
+
+        # Generate human-readable script name
+        script_name = self._generate_script_name(code)
+        script_path = self.workspace / script_name
+
+        # Log to prompts.log
         log_to_prompts_file("\n\n")
         log_to_prompts_file("=" * 80)
         log_to_prompts_file(f"TOOL EXECUTION: python_coder")
         log_to_prompts_file("=" * 80)
         log_to_prompts_file(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        log_to_prompts_file(f"")
-        log_to_prompts_file(f"INPUT:")
-        log_to_prompts_file(f"  Session ID: {self.session_id}")
-        log_to_prompts_file(f"  Workspace: {self.workspace}")
-        log_to_prompts_file(f"  Code Length: {len(code)} chars")
-        log_to_prompts_file(f"  Timeout: {timeout or self.timeout}s")
+        log_to_prompts_file(f"Session ID: {self.session_id}")
+        log_to_prompts_file(f"Workspace: {self.workspace}")
+        log_to_prompts_file(f"Script: {script_name}")
+        log_to_prompts_file(f"Code Length: {len(code)} chars")
+        log_to_prompts_file(f"Timeout: {exec_timeout}s")
         log_to_prompts_file(f"")
         log_to_prompts_file(f"CODE:")
-        # Log full code to file
         for line in code.split('\n'):
             log_to_prompts_file(f"  {line}")
 
+        # Console logging
         print("\n" + "=" * 80)
         print("[PYTHON TOOL] execute() called")
         print("=" * 80)
         print(f"Session ID: {self.session_id}")
         print(f"Workspace: {self.workspace}")
+        print(f"Script: {script_name}")
         print(f"Code length: {len(code)} chars")
-        print(f"Context provided: {bool(context)}")
+        print(f"Timeout: {exec_timeout}s")
 
-        exec_timeout = timeout or self.timeout
-        start_time = time.time()
-
-        # Log Python code execution
-        print(f"\n[PYTHON] Preparing execution...")
-        print(f"  Timeout: {exec_timeout}s")
-        print(f"  Max output size: {self.max_output_size} bytes")
-        code_preview = code[:200] + "..." if len(code) > 200 else code
-        print(f"\n[PYTHON] Code to execute:")
-        print("-" * 40)
-        print(code_preview)
-        print("-" * 40)
-
-        # Create execution script with restricted imports
-        script_name = f"exec_{int(time.time() * 1000)}.py"
-        script_path = self.workspace / script_name
-        print(f"\n[PYTHON] Creating execution script: {script_name}")
-
-        # Wrap code with safety checks
-        print(f"[PYTHON] Wrapping code with safety restrictions...")
-        wrapped_code = self._wrap_code(code)
-        print(f"[PYTHON] [OK] Code wrapped ({len(wrapped_code)} chars total)")
-
-        # Write script
+        # Write raw code to file
         print(f"\n[PYTHON] Writing script to disk...")
-        with open(script_path, 'w', encoding='utf-8') as f:
-            f.write(wrapped_code)
+        script_path.write_text(code, encoding='utf-8')
         print(f"[PYTHON] [OK] Script written: {script_path}")
 
         try:
-            # Execute in subprocess with timeout
-            print(f"\n[PYTHON] Starting subprocess execution...")
-            print(f"  Python: {sys.executable}")
-            print(f"  Script: {script_path}")
-            print(f"  Working dir: {self.workspace}")
-            print(f"  Timeout: {exec_timeout}s")
+            # Execute with cwd set to workspace
             print(f"\n[PYTHON] Executing...")
-            
+            print(f"  Python: {sys.executable}")
+            print(f"  Script: {script_name}")
+            print(f"  Working dir: {self.workspace}")
+
             result = subprocess.run(
-                [sys.executable, str(script_path)],
+                [sys.executable, script_name],
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
-                timeout=exec_timeout,
-                env=self._get_safe_env()
+                timeout=exec_timeout
             )
-            
+
             print(f"[PYTHON] [OK] Subprocess completed")
 
             stdout = result.stdout
@@ -147,13 +171,10 @@ class PythonCoderTool:
                 stderr = stderr[:self.max_output_size] + "\n... (output truncated)"
 
             execution_time = time.time() - start_time
-
-            # Get list of files created/modified
             files = self._get_workspace_files()
-
             success = returncode == 0
 
-            # Log execution result
+            # Console logging
             print(f"\n[PYTHON] Execution completed in {execution_time:.2f}s")
             print(f"[PYTHON] Return code: {returncode}")
             if stdout:
@@ -163,27 +184,27 @@ class PythonCoderTool:
                 stderr_preview = stderr[:300] + "..." if len(stderr) > 300 else stderr
                 print(f"[PYTHON] STDERR:\n{stderr_preview}")
             if files:
-                print(f"[PYTHON] Files created: {list(files.keys())}")
+                print(f"[PYTHON] Files in workspace: {list(files.keys())}")
 
-            # Log to file
+            # Log to prompts.log
             log_to_prompts_file(f"")
             log_to_prompts_file(f"OUTPUT:")
             log_to_prompts_file(f"  Status: {'SUCCESS' if success else 'FAILED'}")
             log_to_prompts_file(f"  Return Code: {returncode}")
             log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
-            log_to_prompts_file(f"")
             if stdout:
+                log_to_prompts_file(f"")
                 log_to_prompts_file(f"STDOUT:")
                 for line in stdout.split('\n'):
                     log_to_prompts_file(f"  {line}")
-                log_to_prompts_file(f"")
             if stderr:
+                log_to_prompts_file(f"")
                 log_to_prompts_file(f"STDERR:")
                 for line in stderr.split('\n'):
                     log_to_prompts_file(f"  {line}")
-                log_to_prompts_file(f"")
             if files:
-                log_to_prompts_file(f"FILES CREATED:")
+                log_to_prompts_file(f"")
+                log_to_prompts_file(f"FILES:")
                 for filename, meta in files.items():
                     log_to_prompts_file(f"  {filename} ({meta['size']} bytes)")
             log_to_prompts_file(f"")
@@ -202,13 +223,14 @@ class PythonCoderTool:
 
         except subprocess.TimeoutExpired:
             execution_time = time.time() - start_time
-            print(f"\n[PYTHON] ERROR: Execution timeout after {exec_timeout}s")
+            error_msg = f"Execution timeout after {exec_timeout} seconds"
 
-            # Log to file
+            print(f"\n[PYTHON] ERROR: {error_msg}")
+
             log_to_prompts_file(f"")
             log_to_prompts_file(f"OUTPUT:")
             log_to_prompts_file(f"  Status: TIMEOUT")
-            log_to_prompts_file(f"  Error: Execution timeout after {exec_timeout} seconds")
+            log_to_prompts_file(f"  Error: {error_msg}")
             log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
             log_to_prompts_file(f"")
             log_to_prompts_file("=" * 80)
@@ -216,23 +238,24 @@ class PythonCoderTool:
             return {
                 "success": False,
                 "stdout": "",
-                "stderr": f"Execution timeout after {exec_timeout} seconds",
+                "stderr": error_msg,
                 "returncode": -1,
                 "execution_time": execution_time,
                 "files": self._get_workspace_files(),
                 "workspace": str(self.workspace),
-                "error": "Timeout"
+                "error": error_msg
             }
 
         except Exception as e:
             execution_time = time.time() - start_time
-            print(f"\n[PYTHON] ERROR: {str(e)}")
+            error_msg = str(e)
 
-            # Log to file
+            print(f"\n[PYTHON] ERROR: {error_msg}")
+
             log_to_prompts_file(f"")
             log_to_prompts_file(f"OUTPUT:")
             log_to_prompts_file(f"  Status: ERROR")
-            log_to_prompts_file(f"  Error: {str(e)}")
+            log_to_prompts_file(f"  Error: {error_msg}")
             log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
             log_to_prompts_file(f"")
             log_to_prompts_file("=" * 80)
@@ -240,86 +263,13 @@ class PythonCoderTool:
             return {
                 "success": False,
                 "stdout": "",
-                "stderr": str(e),
+                "stderr": error_msg,
                 "returncode": -1,
                 "execution_time": execution_time,
                 "files": self._get_workspace_files(),
                 "workspace": str(self.workspace),
-                "error": str(e)
+                "error": error_msg
             }
-
-    def _wrap_code(self, code: str) -> str:
-        """
-        Wrap code with safety restrictions
-
-        Args:
-            code: Original code
-
-        Returns:
-            Wrapped code with import restrictions
-        """
-        # Add import hook to restrict modules
-        wrapper = f'''
-import sys
-import builtins
-
-# Allowed modules
-ALLOWED_MODULES = {self.allowed_modules}
-
-# Store original import
-_original_import = builtins.__import__
-
-def restricted_import(name, *args, **kwargs):
-    """Restrict imports to allowed modules"""
-    base_module = name.split('.')[0]
-    if base_module not in ALLOWED_MODULES:
-        raise ImportError(f"Module '{{name}}' is not allowed in sandboxed execution")
-    return _original_import(name, *args, **kwargs)
-
-# Replace built-in import
-builtins.__import__ = restricted_import
-
-# User code starts here
-try:
-{self._indent_code(code, 4)}
-except Exception as e:
-    import traceback
-    print("EXECUTION ERROR:", file=sys.stderr)
-    traceback.print_exc()
-    sys.exit(1)
-'''
-        return wrapper
-
-    def _indent_code(self, code: str, spaces: int) -> str:
-        """
-        Indent code by specified spaces
-
-        Args:
-            code: Code to indent
-            spaces: Number of spaces
-
-        Returns:
-            Indented code
-        """
-        indent = ' ' * spaces
-        return '\n'.join(indent + line for line in code.split('\n'))
-
-    def _get_safe_env(self) -> Dict[str, str]:
-        """
-        Get safe environment variables
-
-        Returns:
-            Environment dict
-        """
-        # Start with minimal environment
-        safe_env = {
-            'PYTHONPATH': '',
-            'PATH': os.environ.get('PATH', ''),
-            'SYSTEMROOT': os.environ.get('SYSTEMROOT', ''),  # Required on Windows
-            'TEMP': str(self.workspace),
-            'TMP': str(self.workspace),
-        }
-        return safe_env
 
     def _get_workspace_files(self) -> Dict[str, Any]:
         """

@@ -143,16 +143,6 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # ============================================================================
 PYTHON_EXECUTOR_TIMEOUT = 30  # Execution timeout in seconds
 PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024  # 1MB max output
-PYTHON_ALLOWED_MODULES = [
-    # Standard library
-    "math", "random", "datetime", "json", "re", "collections",
-    "itertools", "functools", "operator", "string", "time",
-    # Data science
-    "numpy", "pandas", "matplotlib", "seaborn", "scipy",
-    "sklearn", "plotly", "PIL",
-    # Utilities
-    "requests", "pathlib", "os", "sys"
-]
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
 PYTHON_CODER_TIMEOUT = 30  # Timeout for ReAct agent tool call
 
