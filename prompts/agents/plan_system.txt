@@ -20,7 +20,7 @@ Create a plan in this JSON format:
     }},
     ...
   ],
-  "goal": "Overall goal of the plan"
+  "goal": "Final goal of the plan"
 }}
 
 Guidelines:

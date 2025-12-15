@@ -1,9 +1,5 @@
 You are analyzing raw tool results to determine if you can answer the user's question.
 
-Past conversation history:
-{history}
-----------------------------------------------------
-
 User Question: {input}
 ----------------------------------------------------
 

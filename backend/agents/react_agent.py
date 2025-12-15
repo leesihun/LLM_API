@@ -147,19 +147,16 @@ class ReActAgent(Agent):
         )
 
         # Load thought prompt
-        history_str = self.format_conversation_history(conversation_history)
         thought_prompt = self.load_prompt(
             "agents/react_thought.txt",
-            history=history_str,
             input=user_input,
             scratchpad=scratchpad if scratchpad else "No previous actions yet."
         )
 
-        # Call LLM
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": thought_prompt}
-        ]
+        # Build messages: system + conversation history + thought prompt
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(conversation_history)
+        messages.append({"role": "user", "content": thought_prompt})
 
         response = self.call_llm(messages)
 
@@ -201,10 +198,8 @@ class ReActAgent(Agent):
         tool_data_str = self._format_tool_data(action_info["action"], tool_result)
 
         # Load observation prompt
-        history_str = self.format_conversation_history(conversation_history)
         observation_prompt = self.load_prompt(
             "agents/react_observation.txt",
-            history=history_str,
             input=user_input,
             scratchpad=scratchpad,
             action=action_info["action"],
@@ -212,10 +207,9 @@ class ReActAgent(Agent):
             tool_data=tool_data_str
         )
 
-        # Call LLM
-        messages = [
-            {"role": "user", "content": observation_prompt}
-        ]
+        # Build messages: conversation history + observation prompt
+        messages = list(conversation_history)
+        messages.append({"role": "user", "content": observation_prompt})
 
         response = self.call_llm(messages)
 
@@ -269,18 +263,15 @@ class ReActAgent(Agent):
             ValueError: If response is invalid
         """
         # Load final answer prompt
-        history_str = self.format_conversation_history(conversation_history)
         final_prompt = self.load_prompt(
             "agents/react_final.txt",
-            history=history_str,
             input=user_input,
             scratchpad=scratchpad
         )
 
-        # Call LLM
-        messages = [
-            {"role": "user", "content": final_prompt}
-        ]
+        # Build messages: conversation history + final prompt
+        messages = list(conversation_history)
+        messages.append({"role": "user", "content": final_prompt})
 
         response = self.call_llm(messages)
 

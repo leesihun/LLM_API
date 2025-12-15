@@ -1,9 +1,5 @@
 You are generating the final answer to the user's question based on all the information you've gathered.
 
-Past conversation history:
-{history}
-----------------------------------------------------
-
 Original User Question: {input}
 ----------------------------------------------------
 
