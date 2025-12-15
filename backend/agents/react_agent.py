@@ -151,9 +151,10 @@ class ReActAgent(Agent):
             scratchpad=scratchpad if scratchpad else "No previous actions yet."
         )
 
-        # Build messages: system + conversation history + thought prompt
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(conversation_history)
+        # Build messages: conversation history + system prompt + thought prompt
+        # System prompt should frame the current task, not be at the start of all history
+        messages = list(conversation_history)
+        messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": thought_prompt})
 
         response = self.call_llm(messages)
