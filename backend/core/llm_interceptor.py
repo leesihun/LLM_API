@@ -59,12 +59,22 @@ class LLMInterceptor:
 
         # ==================== DATA SECTION ====================
         if is_request:
-            # REQUEST: Show exact JSON structure sent to LLM API
-            import json
+            # REQUEST: Show exact message structure sent to LLM
+            # Each message's content is displayed with line breaks preserved
             messages = log_data.get("messages", [])
             lines.append("")
-            lines.append(json.dumps(messages, indent=2, ensure_ascii=False))
-            lines.append("")
+            for i, msg in enumerate(messages):
+                lines.append(f"Message {i+1}:")
+                lines.append(f"  role: {msg.get('role', 'unknown')}")
+                lines.append(f"  content:")
+                content = msg.get('content', '')
+                # Preserve line breaks in content, indent by 4 spaces
+                for line in content.split('\n'):
+                    if line:
+                        lines.append(f"    {line}")
+                    else:
+                        lines.append("")
+                lines.append("")
         else:
             # RESPONSE: Show exact LLM output text
             response_text = log_data.get("response", log_data.get("partial_response", ""))
