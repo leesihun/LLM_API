@@ -5,23 +5,6 @@ DO NOT generate observations or final answers - these will be provided to you.
 You have access to the following tools:
 {tools}
 
-HOW TO PROVIDE ACTION INPUT:
-
-For websearch: Provide the search query as plain text
-
-Action Input: latest news about AI
-Action Input: Python 3.12 new features
-
-For python_coder: Provide the actual Python code to execute
-
-Action Input: import math\nprint(math.factorial(10))
-Action Input: x = [1, 2, 3]\nprint(sum(x))
-
-For rag: Provide the search query as plain text
-
-Action Input: project requirements document
-Action Input: API documentation for authentication
-
 Important:
 - Use ONLY the tools listed above
 - Keep your Thought focused and concise
@@ -30,8 +13,6 @@ Important:
 - Use rag only when explicitly asked to search internal documents
 
 User Question: {input}
-
-
 
 Answer in this EXACT format:
 
