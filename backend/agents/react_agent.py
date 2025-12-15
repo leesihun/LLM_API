@@ -148,6 +148,7 @@ class ReActAgent(Agent):
         # Load thought prompt
         thought_prompt = self.load_prompt(
             "agents/react_thought.txt",
+            user_query=user_input,
             scratchpad=scratchpad if scratchpad else "No previous actions yet."
         )
 
