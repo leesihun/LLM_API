@@ -32,5 +32,10 @@ RULES:
 5. For websearch: Look at all search results and extract relevant facts (dates, scores, names, etc.)
 6. Be precise - if asking "who won", extract the winner; if asking "what was the score", extract the exact score
 7. Do NOT continue searching if the data already contains the answer
+8. If tool execution FAILED (error message shown):
+   - Set final_answer to "false"
+   - Analyze WHY it failed
+   - In your observation, explain the error and plan a different approach
+   - Consider: different input format, different tool, or refined query
 
 Output your response now:

@@ -16,6 +16,9 @@ CRITICAL RULES:
 3. Do NOT predict future observations or actions
 4. Stop immediately after generating ONE action
 5. The tool will execute and provide an observation, then you'll decide what to do next
+6. Action Input should be strictly ONLY the input for the tool.
+python_coder : [Full, Pure Python code without '' or any marker]
+websearch, rag: [Pure search query]
 
 Output EXACTLY ONE thought/action/action input pair in this format:
 

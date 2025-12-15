@@ -323,34 +323,54 @@ class ReActAgent(Agent):
 
     def _execute_tool(self, tool_name: str, tool_input: str) -> Dict:
         """
-        Execute tool and return raw result (strict - no error handling)
+        Execute tool and return result (with error handling based on config)
 
         Args:
             tool_name: Tool to execute
             tool_input: String input for tool
 
         Returns:
-            Tool result dict with 'data' field
+            Tool result dict - either success with 'data' field or error with 'error' field
 
         Raises:
-            ValueError: If tool execution fails
+            ValueError: If tool execution fails and REACT_RETRY_ON_ERROR is False
         """
-        # Convert string input to tool parameters
-        parameters = self._convert_string_to_params(tool_name, tool_input)
+        try:
+            # Convert string input to tool parameters
+            parameters = self._convert_string_to_params(tool_name, tool_input)
 
-        # Call tool via base agent
-        context = {
-            "session_id": self.session_id or "auto"
-        }
+            # Call tool via base agent
+            context = {
+                "session_id": self.session_id or "auto"
+            }
 
-        result = self.call_tool(tool_name, parameters, context)
+            result = self.call_tool(tool_name, parameters, context)
 
-        # Check for errors (strict)
-        if isinstance(result, dict) and "error" in result and result["error"] is not None:
-            raise ValueError(f"Tool '{tool_name}' failed: {result['error']}")
+            # Check for errors
+            if isinstance(result, dict) and "error" in result and result["error"] is not None:
+                if config.REACT_RETRY_ON_ERROR:
+                    # Return error result - let LLM decide what to do
+                    print(f"[REACT] Tool '{tool_name}' returned error: {result['error']}")
+                    return result
+                else:
+                    # Strict mode - raise error immediately
+                    raise ValueError(f"Tool '{tool_name}' failed: {result['error']}")
 
-        # Return full result dict
-        return result
+            # Return successful result
+            return result
+
+        except Exception as e:
+            if config.REACT_RETRY_ON_ERROR:
+                # Return error as result - let LLM decide what to do
+                error_msg = str(e)
+                print(f"[REACT] Tool '{tool_name}' raised exception: {error_msg}")
+                return {
+                    "error": error_msg,
+                    "data": None
+                }
+            else:
+                # Strict mode - propagate exception
+                raise
 
     def _format_tool_data(self, tool_name: str, tool_result: Dict) -> str:
         """
@@ -361,9 +381,18 @@ class ReActAgent(Agent):
             tool_result: Full result dict from tool
 
         Returns:
-            Formatted string of tool data
+            Formatted string of tool data (success or error)
         """
-        if not isinstance(tool_result, dict) or "data" not in tool_result:
+        if not isinstance(tool_result, dict):
+            return json.dumps(tool_result, indent=2)
+
+        # Handle error cases
+        if "error" in tool_result and tool_result["error"] is not None:
+            error_msg = tool_result["error"]
+            return f"❌ TOOL EXECUTION FAILED ❌\nError: {error_msg}\n\nYou should analyze this error and decide your next action."
+
+        # Handle missing data
+        if "data" not in tool_result:
             return json.dumps(tool_result, indent=2)
 
         data = tool_result["data"]
