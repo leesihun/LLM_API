@@ -50,6 +50,11 @@ class LLMInterceptor:
 
         # Header
         lines.append("")
+        lines.append("")
+        lines.append("")
+        lines.append("")
+        lines.append("")
+        lines.append("")
         lines.append("=" * 80)
         if is_request:
             lines.append(">>> REQUEST TO LLM")

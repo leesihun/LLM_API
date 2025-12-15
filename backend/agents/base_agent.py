@@ -161,8 +161,8 @@ class Agent(ABC):
         endpoint = schema["endpoint"]
         method = schema.get("method", "POST")
 
-        # Build URL using tools port (1006) to avoid deadlock
-        base_url = f"http://localhost:{config.TOOLS_PORT}"
+        # Build URL using tools host and port (may be on different machine)
+        base_url = f"http://{config.TOOLS_HOST}:{config.TOOLS_PORT}"
         url = f"{base_url}{endpoint}"
 
         # Add context to parameters if provided
@@ -197,13 +197,13 @@ class Agent(ABC):
             if method == "POST":
                 print(f"[BASE_AGENT] Sending POST request...")
                 response = httpx.post(url, json=parameters, timeout=tool_timeout)
-                print(f"[BASE_AGENT] ✅ Received response: HTTP {response.status_code}")
+                print(f"[BASE_AGENT] [OK] Received response: HTTP {response.status_code}")
             elif method == "GET":
                 print(f"[BASE_AGENT] Sending GET request...")
                 response = httpx.get(url, params=parameters, timeout=tool_timeout)
-                print(f"[BASE_AGENT] ✅ Received response: HTTP {response.status_code}")
+                print(f"[BASE_AGENT] [OK] Received response: HTTP {response.status_code}")
             else:
-                print(f"[BASE_AGENT] ❌ Unsupported method: {method}")
+                print(f"[BASE_AGENT] [ERROR] Unsupported method: {method}")
                 result = {"error": f"Unsupported method: {method}", "success": False}
                 # Log failed tool call
                 self.tool_calls.append({
@@ -218,7 +218,7 @@ class Agent(ABC):
             response.raise_for_status()
             print(f"[BASE_AGENT] Parsing JSON response...")
             result = response.json()
-            print(f"[BASE_AGENT] ✅ JSON parsed successfully")
+            print(f"[BASE_AGENT] [OK] JSON parsed successfully")
 
             duration = time.time() - start_time
 

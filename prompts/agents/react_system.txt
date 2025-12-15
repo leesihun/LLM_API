@@ -18,4 +18,4 @@ Answer in this EXACT format:
 
 Thought: [Your reasoning about what to do next]
 Action: [Tool name to use]
-Action Input: [String input for the tool]
+Action Input: [Input for the tool (python code, search query, etc.)]

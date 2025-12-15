@@ -98,7 +98,7 @@ class ReActAgent(Agent):
 
             # Check if we're done
             if observation_result["final_answer"]:
-                print(f"\n[REACT] ✅ final_answer=true, generating final response...")
+                print(f"\n[REACT] [OK] final_answer=true, generating final response...")
 
                 # Generate final answer based on all observations
                 final_answer = self._generate_final_answer(
@@ -107,14 +107,14 @@ class ReActAgent(Agent):
                     scratchpad=scratchpad
                 )
 
-                print(f"[REACT] 🏁 Returning final answer: {final_answer[:200]}..." if len(final_answer) > 200 else f"[REACT] 🏁 Returning final answer")
+                print(f"[REACT] [DONE] Returning final answer: {final_answer[:200]}..." if len(final_answer) > 200 else f"[REACT] [DONE] Returning final answer")
                 return final_answer
             else:
-                print(f"[REACT] ⏭️  final_answer=false, continuing to next iteration...")
+                print(f"[REACT] [CONTINUE] final_answer=false, continuing to next iteration...")
 
         # Max iterations reached
         error_msg = f"Maximum iterations ({self.max_iterations}) reached without completing task"
-        print(f"\n[REACT] ❌ {error_msg}")
+        print(f"\n[REACT] [ERROR] {error_msg}")
         raise ValueError(error_msg)
 
     def _step1_generate_action(
@@ -241,7 +241,7 @@ class ReActAgent(Agent):
 
         observation = observation_match.group(1).strip()
 
-        print(f"[REACT] ✅ Parsed: final_answer={final_answer}, observation={len(observation)} chars")
+        print(f"[REACT] [OK] Parsed: final_answer={final_answer}, observation={len(observation)} chars")
 
         return {
             "observation": observation,
@@ -325,7 +325,7 @@ class ReActAgent(Agent):
         if not action_input:
             raise ValueError("Action Input is empty")
 
-        print(f"[REACT] ✅ Parsed action: {action}, input: {action_input[:100]}..." if len(action_input) > 100 else f"[REACT] ✅ Parsed action: {action}, input: {action_input}")
+        print(f"[REACT] [OK] Parsed action: {action}, input: {action_input[:100]}..." if len(action_input) > 100 else f"[REACT] [OK] Parsed action: {action}, input: {action_input}")
 
         return {
             "action": action,
