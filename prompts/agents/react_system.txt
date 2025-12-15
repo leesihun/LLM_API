@@ -11,8 +11,6 @@ Important:
 - Use websearch for general queries (prefer this over rag)
 - Use rag only when explicitly asked to search internal documents
 
-Context: {input}
-
 
 
 

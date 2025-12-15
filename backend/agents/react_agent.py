@@ -142,14 +142,12 @@ class ReActAgent(Agent):
         # Load system prompt
         system_prompt = self.load_prompt(
             "agents/react_system.txt",
-            tools=tools_desc,
-            input=user_input
+            tools=tools_desc
         )
 
         # Load thought prompt
         thought_prompt = self.load_prompt(
             "agents/react_thought.txt",
-            input=user_input,
             scratchpad=scratchpad if scratchpad else "No previous actions yet."
         )
 
@@ -200,7 +198,6 @@ class ReActAgent(Agent):
         # Load observation prompt
         observation_prompt = self.load_prompt(
             "agents/react_observation.txt",
-            input=user_input,
             scratchpad=scratchpad,
             action=action_info["action"],
             action_input=action_info["action_input"],
@@ -265,7 +262,6 @@ class ReActAgent(Agent):
         # Load final answer prompt
         final_prompt = self.load_prompt(
             "agents/react_final.txt",
-            input=user_input,
             scratchpad=scratchpad
         )
 

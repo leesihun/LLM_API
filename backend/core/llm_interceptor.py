@@ -173,8 +173,14 @@ class LLMInterceptor:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_id = str(uuid.uuid4())[:8]
 
+        # Get actual backend name (for AutoLLMBackend, show which backend is actually used)
+        backend_name = self.backend.__class__.__name__
+        if hasattr(self.backend, 'get_active_backend_name'):
+            backend_name = f"Auto({self.backend.get_active_backend_name()})"
+
         # Console log for LLM call
         print(f"\n[LLM] Calling model: {model}")
+        print(f"[LLM] Backend: {backend_name}")
         print(f"[LLM] Temperature: {temperature}")
         print(f"[LLM] Agent: {agent_type or 'N/A'}")
         print(f"[LLM] Messages: {len(messages)}")
@@ -190,7 +196,7 @@ class LLMInterceptor:
             "model": model,
             "temperature": temperature,
             "messages": messages,
-            "backend": self.backend.__class__.__name__,
+            "backend": backend_name,
             "session_id": session_id or "N/A",
             "agent_type": agent_type or "N/A",
             "tool_calls": tool_calls or [],
@@ -214,7 +220,7 @@ class LLMInterceptor:
             "model": model,
             "temperature": temperature,
             "messages": messages,
-            "backend": self.backend.__class__.__name__,
+            "backend": backend_name,
             "session_id": session_id or "N/A",
             "agent_type": agent_type or "N/A",
             "tool_calls": tool_calls or []
@@ -289,6 +295,11 @@ class LLMInterceptor:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_id = str(uuid.uuid4())[:8]
 
+        # Get actual backend name (for AutoLLMBackend, show which backend is actually used)
+        backend_name = self.backend.__class__.__name__
+        if hasattr(self.backend, 'get_active_backend_name'):
+            backend_name = f"Auto({self.backend.get_active_backend_name()})"
+
         # Log REQUEST immediately (real-time)
         request_log = {
             "id": log_id,
@@ -298,7 +309,7 @@ class LLMInterceptor:
             "model": model,
             "temperature": temperature,
             "messages": messages,
-            "backend": self.backend.__class__.__name__,
+            "backend": backend_name,
             "session_id": session_id or "N/A",
             "agent_type": agent_type or "N/A",
             "tool_calls": tool_calls or [],
@@ -322,7 +333,7 @@ class LLMInterceptor:
             "model": model,
             "temperature": temperature,
             "messages": messages,
-            "backend": self.backend.__class__.__name__,
+            "backend": backend_name,
             "session_id": session_id or "N/A",
             "agent_type": agent_type or "N/A",
             "tool_calls": tool_calls or []

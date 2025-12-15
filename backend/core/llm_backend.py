@@ -390,6 +390,12 @@ class AutoLLMBackend(LLMBackend):
         self.llamacpp = LlamaCppBackend()
         self._active_backend: Optional[LLMBackend] = None
 
+    def get_active_backend_name(self) -> str:
+        """Get the name of the currently active backend"""
+        if self._active_backend is None:
+            self._get_backend()  # Initialize backend
+        return self._active_backend.__class__.__name__ if self._active_backend else "Unknown"
+
     def _get_backend(self) -> LLMBackend:
         """Get the active backend, detecting availability if needed"""
         if self._active_backend is None:

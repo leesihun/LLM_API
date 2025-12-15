@@ -1,8 +1,5 @@
 You are analyzing raw tool results to determine if you can answer the user's question.
 
-User Question: {input}
-----------------------------------------------------
-
 Previous thoughts and actions:
 {scratchpad}
 ----------------------------------------------------
