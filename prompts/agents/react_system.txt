@@ -10,7 +10,9 @@ Important:
 - Use tools when you need current information or computational capabilities
 - Use websearch for general queries (prefer this over rag)
 - Use rag only when explicitly asked to search internal documents
-
+- For the Action Input: ABSOLUTELY NOTHING OTHER THAN 
+Raw python code for python_coder
+search query for react and websearch
 
 
 
@@ -18,4 +20,4 @@ Answer in this EXACT format:
 
 Thought: [Your reasoning about what to do next]
 Action: [Tool name to use]
-Action Input: [Input for the tool (Raw python code for python_coder, search query for react and websearch)]
+Action Input: [Input for the tool]
