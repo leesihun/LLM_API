@@ -13,11 +13,15 @@ What should you do next?
 
 Output EXACTLY ONE thought/action pair in this format:
 
-=========================================================
 Thought: [Your reasoning about what to do next]
 Action: [Tool name]
 Action Input: [String input for the tool]
-=========================================================
+
+
+
+
+
+
 
 CRITICAL RULES:
 1. Generate EXACTLY ONE Thought/Action/Action Input triplet
