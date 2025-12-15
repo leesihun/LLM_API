@@ -33,8 +33,8 @@ class LLMInterceptor:
     def _format_human_readable(self, log_data: Dict) -> str:
         """
         Format log entry with two sections:
-        1. Data section - exact messages/responses/tool calls (what LLM sees)
-        2. Stats section - metadata and performance metrics
+        1. DATA section - exact messages/responses (what LLM sees/returns)
+        2. STATS section - metadata and performance metrics
 
         Args:
             log_data: Dictionary containing log information
@@ -48,111 +48,75 @@ class LLMInterceptor:
         response = log_data.get("response", "")
         is_request = response in ["[WAITING FOR RESPONSE...]", "[STREAMING...]"]
 
-        # ==================== DATA SECTION ====================
-
+        # Header
+        lines.append("")
+        lines.append("=" * 80)
         if is_request:
-            # REQUEST: Show messages being sent to LLM
-            messages = log_data.get("messages", [])
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            lines.append("MESSAGES TO LLM:")
-            lines.append("")
-            lines.append("")
-
-            # Pretty-print each message individually for better readability
-            for i, msg in enumerate(messages):
-                role = msg.get("role", "unknown")
-                content = msg.get("content", "")
-                lines.append(f"\n--- Message {i+1} ({role}) --- (This line is for humans)")
-                lines.append(content)
-                lines.append("---")
-
-            # Show tool calls if present
-            tool_calls = log_data.get("tool_calls", [])
-            if tool_calls:
-                lines.append("")
-                lines.append("TOOL CALLS: (This line is for humans)")
-                for i, tool_call in enumerate(tool_calls):
-                    lines.append(f"\n--- Tool Call {i+1} ---")
-                    lines.append(f"Tool:  (This line is for humans)")
-                    lines.append("")
-                    lines.append(f"{tool_call.get('name', 'unknown')}")
-                    lines.append("")
-                    lines.append(f"Input: (This line is for humans)")
-                    # Pretty-print the input JSON
-                    tool_input = tool_call.get('input', {})
-                    lines.append("")
-                    if isinstance(tool_input, dict):
-                        for key, value in tool_input.items():
-                            lines.append(f"  {key}: {value}")
-                    else:
-                        lines.append(f"  {tool_input}")
-                    lines.append("")
-                    lines.append(f"Output: (This line is for humans)")
-                    lines.append("")
-                    lines.append(f"{tool_call.get('output', '')}")
-                    lines.append("")
-                    lines.append("---")
+            lines.append(">>> REQUEST TO LLM")
         else:
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            lines.append("")
-            # RESPONSE: Show LLM's response
-            response = log_data.get("response", log_data.get("partial_response", ""))
-            lines.append("LLM RESPONSE: (This line is for humans)")
-            lines.append("")
-            lines.append(response)
-
+            lines.append("<<< RESPONSE FROM LLM")
         lines.append("=" * 80)
 
-        # ==================== STATS SECTION ====================
-
-        lines.append("STATS:")
-
+        # ==================== DATA SECTION ====================
         if is_request:
-            # REQUEST stats
-            lines.append(f"  Timestamp: {log_data.get('timestamp', 'N/A')}")
-            lines.append(f"  Model: {log_data.get('model', 'N/A')}")
-            lines.append(f"  Backend: {log_data.get('backend', 'N/A')}")
-            lines.append(f"  Temperature: {log_data.get('temperature', 'N/A')}")
-            lines.append(f"  Session ID: {log_data.get('session_id', 'N/A')}")
-            lines.append(f"  Agent: {log_data.get('agent_type', 'N/A')}")
-            lines.append(f"  Streaming: {'Yes' if log_data.get('streaming', False) else 'No'}")
+            # REQUEST: Show exact messages being sent to LLM
+            messages = log_data.get("messages", [])
+            lines.append("")
+            for msg in messages:
+                role = msg.get("role", "unknown").upper()
+                content = msg.get("content", "")
+                lines.append(f"[{role}]")
+                lines.append(content)
+                lines.append("")
         else:
-            # RESPONSE stats
-            lines.append(f"  Timestamp: {log_data.get('timestamp', 'N/A')}")
+            # RESPONSE: Show exact LLM output
+            response_text = log_data.get("response", log_data.get("partial_response", ""))
+            lines.append("")
+            lines.append(response_text)
+            lines.append("")
 
+        lines.append("-" * 80)
+
+        # ==================== STATS SECTION ====================
+        lines.append("STATS:")
+        lines.append(f"  Timestamp:   {log_data.get('timestamp', 'N/A')}")
+        lines.append(f"  Model:       {log_data.get('model', 'N/A')}")
+        lines.append(f"  Backend:     {log_data.get('backend', 'N/A')}")
+        lines.append(f"  Temperature: {log_data.get('temperature', 'N/A')}")
+
+        if log_data.get('session_id') and log_data['session_id'] != 'N/A':
+            lines.append(f"  Session:     {log_data['session_id']}")
+        if log_data.get('agent_type') and log_data['agent_type'] != 'N/A':
+            lines.append(f"  Agent:       {log_data['agent_type']}")
+
+        lines.append(f"  Streaming:   {'Yes' if log_data.get('streaming', False) else 'No'}")
+
+        if not is_request:
+            # Add response-specific stats
             duration = log_data.get("duration_seconds", 0)
-            lines.append(f"  Duration: {duration:.2f}s")
+            lines.append(f"  Duration:    {duration:.2f}s")
 
             estimated_tokens = log_data.get("estimated_tokens", {})
             tokens_in = estimated_tokens.get("input", 0)
             tokens_out = estimated_tokens.get("output", 0)
             tokens_total = estimated_tokens.get("total", 0)
-            lines.append(f"  Tokens: {tokens_in} input + {tokens_out} output = {tokens_total} total")
+            lines.append(f"  Tokens:      {tokens_in} in + {tokens_out} out = {tokens_total} total")
 
             if duration > 0 and tokens_out > 0:
                 tokens_per_sec = tokens_out / duration
-                lines.append(f"  Tokens/sec: {tokens_per_sec:.2f}")
+                lines.append(f"  Speed:       {tokens_per_sec:.1f} tokens/sec")
 
             success = log_data.get("success", False)
             error = log_data.get("error", None)
             if success:
-                lines.append(f"  Status: SUCCESS")
+                lines.append(f"  Status:      SUCCESS")
             else:
-                lines.append(f"  Status: FAILED")
+                lines.append(f"  Status:      FAILED")
                 if error:
-                    lines.append(f"  Error: {error}")
+                    lines.append(f"  Error:       {error}")
 
         lines.append("=" * 80)
-        lines.append("")  # Blank line between entries
+        lines.append("")
 
         return '\n'.join(lines)
 
