@@ -232,13 +232,16 @@ async def python_coder(
 ):
     """
     Execute Python code in sandboxed environment
+    
+    NEVER raises HTTP exceptions - always returns ToolResponse with error details
+    Even on failure, stdout/stderr are included in the response
 
     Args:
         request: Code execution request
         current_user: Authenticated user (optional)
 
     Returns:
-        Execution results
+        Execution results with stdout/stderr always included
     """
     print("\n" + "=" * 80)
     print("[TOOLS API] /api/tools/python_coder endpoint called")
@@ -250,6 +253,8 @@ async def python_coder(
     print(f"Context provided: {bool(request.context)}")
     
     start_time = time.time()
+    tool = None
+    result = None
 
     try:
         # Initialize tool with session ID
@@ -257,7 +262,28 @@ async def python_coder(
         tool = PythonCoderTool(session_id=request.session_id)
         print(f"[TOOLS API] [OK] Tool initialized")
 
-        # Execute code
+    except Exception as e:
+        # Tool initialization failed - return immediately
+        error_msg = f"Failed to initialize Python executor: {str(e)}"
+        print(f"[TOOLS API] ERROR: {error_msg}")
+        execution_time = time.time() - start_time
+        
+        return ToolResponse(
+            success=False,
+            answer=f"Tool initialization error: {str(e)}",
+            data={
+                "stdout": "",
+                "stderr": error_msg,
+                "files": {},
+                "workspace": "",
+                "returncode": -1
+            },
+            metadata={"execution_time": execution_time},
+            error=str(e)
+        )
+
+    try:
+        # Execute code - this should handle all execution errors internally
         print(f"\n[TOOLS API] Calling tool.execute()...")
         result = tool.execute(
             code=request.code,
@@ -266,14 +292,29 @@ async def python_coder(
         )
         print(f"[TOOLS API] [OK] Execution completed: {'SUCCESS' if result['success'] else 'FAILED'}")
 
-        # Format answer
+        # Format human-readable answer
         if result["success"]:
-            answer = f"Code executed successfully.\n\nOutput:\n{result['stdout']}"
+            # Success - show output and files
+            answer = "Code executed successfully."
+            if result['stdout']:
+                answer += f"\n\nOutput:\n{result['stdout']}"
+            else:
+                answer += "\n\n(No output)"
+                
             if result['files']:
                 file_list = ", ".join(result['files'].keys())
                 answer += f"\n\nFiles in workspace: {file_list}"
         else:
-            answer = f"Code execution failed.\n\nError:\n{result['stderr']}"
+            # Failure - show both stdout and stderr
+            answer = "Code execution failed."
+            
+            if result['stdout']:
+                answer += f"\n\nOutput (before error):\n{result['stdout']}"
+                
+            if result['stderr']:
+                answer += f"\n\nError:\n{result['stderr']}"
+            else:
+                answer += "\n\n(No error message)"
 
         execution_time = time.time() - start_time
 
@@ -295,11 +336,36 @@ async def python_coder(
         )
 
     except Exception as e:
+        # Unexpected error during execution or response formatting
+        # This should rarely happen since tool.execute() handles its own errors
+        error_msg = f"Unexpected error in Python executor: {str(e)}"
+        print(f"[TOOLS API] CRITICAL ERROR: {error_msg}")
+        execution_time = time.time() - start_time
+        
+        # Try to extract any partial results from the tool if available
+        stdout = ""
+        stderr = error_msg
+        files = {}
+        workspace = str(tool.workspace) if tool else ""
+        
+        # If we got a partial result before the error, include it
+        if result and isinstance(result, dict):
+            stdout = result.get("stdout", "")
+            stderr = result.get("stderr", "") + f"\n\nAdditional error: {error_msg}"
+            files = result.get("files", {})
+            workspace = result.get("workspace", workspace)
+        
         return ToolResponse(
             success=False,
-            answer=f"Python execution error: {str(e)}",
-            data={},
-            metadata={"execution_time": time.time() - start_time},
+            answer=f"Unexpected execution error: {str(e)}",
+            data={
+                "stdout": stdout,
+                "stderr": stderr,
+                "files": files,
+                "workspace": workspace,
+                "returncode": -1
+            },
+            metadata={"execution_time": execution_time},
             error=str(e)
         )
 
@@ -309,13 +375,18 @@ async def list_python_files(
     session_id: str,
     current_user: Optional[dict] = Depends(get_optional_user)
 ):
-    """List files in Python coder workspace"""
+    """
+    List files in Python coder workspace
+    
+    Returns success response even on errors (no HTTP exceptions)
+    """
     try:
         tool = PythonCoderTool(session_id=session_id)
         files = tool.list_files()
-        return {"success": True, "files": files}
+        return {"success": True, "files": files, "error": None}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[TOOLS API] ERROR listing Python files: {str(e)}")
+        return {"success": False, "files": [], "error": str(e)}
 
 
 @router.get("/python_coder/files/{session_id}/{filename}")
@@ -324,19 +395,37 @@ async def read_python_file(
     filename: str,
     current_user: Optional[dict] = Depends(get_optional_user)
 ):
-    """Read a file from Python coder workspace"""
+    """
+    Read a file from Python coder workspace
+    
+    Returns success response even on errors (no HTTP exceptions)
+    """
     try:
         tool = PythonCoderTool(session_id=session_id)
         content = tool.read_file(filename)
 
         if content is None:
-            raise HTTPException(status_code=404, detail="File not found")
+            return {
+                "success": False,
+                "filename": filename,
+                "content": "",
+                "error": f"File '{filename}' not found in workspace"
+            }
 
-        return {"success": True, "filename": filename, "content": content}
-    except HTTPException:
-        raise
+        return {
+            "success": True,
+            "filename": filename,
+            "content": content,
+            "error": None
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[TOOLS API] ERROR reading Python file '{filename}': {str(e)}")
+        return {
+            "success": False,
+            "filename": filename,
+            "content": "",
+            "error": str(e)
+        }
 
 
 @router.post("/rag/collections", response_model=ToolResponse)
