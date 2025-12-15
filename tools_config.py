@@ -149,31 +149,10 @@ def format_tools_for_llm() -> str:
     Returns:
         Formatted string describing all available tools
     """
-    tool_descriptions = []
+    tools = []
+    tools.append('Websearch, python_coder, rag')
 
-    for tool_name, schema in TOOL_SCHEMAS.items():
-        desc = f"Tool: {tool_name}\n"
-        desc += f"Description: {schema['description']}\n"
-
-        # Add string input format guidance instead of JSON schema
-        if tool_name == "websearch":
-            desc += "Action Input Format: Provide the search query as plain text\n"
-            desc += "Example: Action Input: machine learning tutorials\n"
-            desc += "Example: Action Input: latest AI news"
-
-        elif tool_name == "python_coder":
-            desc += "Action Input Format: Provide the actual Python code to execute\n"
-            desc += "Example: Action Input: import math\\nprint(math.factorial(10))\n"
-            desc += "Example: Action Input: import numpy as np\\nprint(np.array([1,2,3]).mean())"
-
-        elif tool_name == "rag":
-            desc += "Action Input Format: Provide the search query as plain text\n"
-            desc += "Example: Action Input: project requirements\n"
-            desc += "Example: Action Input: API documentation"
-
-        tool_descriptions.append(desc)
-
-    return "\n\n".join(tool_descriptions)
+    return "\n\n".join(tools)
 
 
 def format_tools_for_ollama_native() -> List[Dict[str, Any]]:

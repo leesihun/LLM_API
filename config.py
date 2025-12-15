@@ -82,7 +82,7 @@ REACT_MAX_ITERATIONS = 10  # Maximum reasoning iterations
 REACT_RETRY_ON_ERROR = True  # Retry failed tool calls
 
 # Plan-Execute Agent Settings
-PLAN_MAX_STEPS = 10  # Maximum plan steps
+PLAN_MAX_STEPS = 20  # Maximum plan steps
 PLAN_REPLAN_ON_FAILURE = True  # Re-plan when a step fails
 PLAN_SHARE_CONTEXT = True  # Share context across plan execution steps
 

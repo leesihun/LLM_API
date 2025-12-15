@@ -310,40 +310,40 @@ class Agent(ABC):
         try:
             log_path = config.PROMPTS_LOG_PATH
 
-            # Format the log entry
+            # # Format the log entry
             lines = []
-            lines.append("")
-            lines.append("")
-            lines.append("=" * 80)
-            lines.append(f"TOOL EXECUTION: {tool_name}")
-            lines.append("=" * 80)
-            lines.append("")
+            # lines.append("")
+            # lines.append("")
+            # lines.append("=" * 80)
+            # lines.append(f"TOOL EXECUTION: {tool_name}")
+            # lines.append("=" * 80)
+            # lines.append("")
 
-            # INPUT section
-            lines.append("TOOL INPUT:")
-            # Remove context from parameters for cleaner logging
-            clean_params = {k: v for k, v in parameters.items() if k != "context"}
-            for key, value in clean_params.items():
-                # Truncate long values
-                str_value = str(value)
-                if len(str_value) > 200:
-                    str_value = str_value[:200] + "... [truncated]"
-                lines.append(f"  {key}: {str_value}")
-            lines.append("")
+            # # INPUT section
+            # lines.append("TOOL INPUT:")
+            # # Remove context from parameters for cleaner logging
+            # clean_params = {k: v for k, v in parameters.items() if k != "context"}
+            # for key, value in clean_params.items():
+            #     # Truncate long values
+            #     str_value = str(value)
+            #     if len(str_value) > 200:
+            #         str_value = str_value[:200] + "... [truncated]"
+            #     lines.append(f"  {key}: {str_value}")
+            # lines.append("")
 
-            # OUTPUT section
-            lines.append("TOOL OUTPUT:")
-            if "answer" in result:
-                lines.append(f"  Answer: {result['answer']}")
-            if "data" in result:
-                data_str = json.dumps(result["data"], indent=2)
-                # Truncate long data
-                if len(data_str) > 500:
-                    data_str = data_str[:500] + "... [truncated]"
-                lines.append(f"  Data: {data_str}")
-            if "error" in result:
-                lines.append(f"  Error: {result['error']}")
-            lines.append("")
+            # # OUTPUT section
+            # lines.append("TOOL OUTPUT:")
+            # if "answer" in result:
+            #     lines.append(f"  Answer: {result['answer']}")
+            # if "data" in result:
+            #     data_str = json.dumps(result["data"], indent=2)
+            #     # Truncate long data
+            #     if len(data_str) > 500:
+            #         data_str = data_str[:500] + "... [truncated]"
+            #     lines.append(f"  Data: {data_str}")
+            # if "error" in result:
+            #     lines.append(f"  Error: {result['error']}")
+            # lines.append("")
 
             # STATS section
             lines.append("=" * 80)

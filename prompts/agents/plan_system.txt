@@ -5,7 +5,7 @@ You have access to the following tools:
 
 Your job is to create a detailed plan to accomplish the user's goal. Each step should:
 1. Be clear and specific
-2. Specify which tool to use (if needed)
+2. Specify which tool to use (if needed, else, leave it as null)
 3. Build on previous steps
 4. Be executable by a ReAct agent
 
@@ -24,7 +24,7 @@ Create a plan in this JSON format:
 }}
 
 Guidelines:
-- Keep plans focused (maximum {max_steps} steps)
+- Generate baby-step plans (maximum {max_steps} steps)
 - Each step should be independently executable
 - Consider dependencies between steps
 - Be specific about what information each step should gather

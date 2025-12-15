@@ -185,25 +185,106 @@ class PlanExecuteAgent(Agent):
         context: List[Dict[str, str]]
     ) -> Dict:
         """
-        Execute a single step using ReAct agent
+        Execute a single step - either direct LLM call (tool='null') or ReAct agent (tool-based)
 
         Args:
             step_num: Step number
             step_info: Step information
-            previous_results: Results from previous steps
             goal: Overall goal
+            previous_results: Results from previous steps
             context: Shared context (if enabled)
 
         Returns:
             Step result dict with 'answer' and 'success'
         """
-        # Format previous steps
-        prev_steps_str = ""
-        for res in previous_results:
-            prev_steps_str += f"Step {res['step']}: {res['description']}\n"
-            prev_steps_str += f"Result: {res['result']}\n\n"
+        tool = step_info.get("tool")
+        description = step_info.get("description", "")
 
-        # Create step execution prompt
+        # STRICT: Validate tool
+        if tool != "null" and tool not in config.AVAILABLE_TOOLS:
+            return {
+                "answer": f"Invalid tool '{tool}'. Must be one of {config.AVAILABLE_TOOLS} or 'null'",
+                "success": False
+            }
+
+        # Format previous steps
+        prev_steps_str = self._format_previous_steps(previous_results)
+
+        # BRANCH: null tool = direct LLM, else = ReAct with tool
+        if tool == "null":
+            return self._execute_reasoning_step(step_num, description, prev_steps_str, goal, context)
+        else:
+            return self._execute_tool_step(step_num, step_info, prev_steps_str, goal, context)
+
+    def _execute_reasoning_step(
+        self,
+        step_num: int,
+        description: str,
+        prev_steps_str: str,
+        goal: str,
+        context: List[Dict[str, str]]
+    ) -> Dict:
+        """
+        Execute reasoning step with direct LLM call (no tool)
+
+        Args:
+            step_num: Step number
+            description: Step description
+            prev_steps_str: Formatted previous steps
+            goal: Overall goal
+            context: Full conversation context
+
+        Returns:
+            Step result dict with 'answer' and 'success'
+        """
+        # Build step prompt
+        step_prompt = f"""You are executing step {step_num} of a multi-step plan.
+
+Overall Goal: {goal}
+
+Current Step: {description}
+
+Previous Steps:
+{prev_steps_str}
+
+Based on the previous steps and the overall goal, complete this step and provide your answer."""
+
+        # Use full conversation context + current step
+        messages = context + [{"role": "user", "content": step_prompt}]
+
+        try:
+            answer = self.call_llm(messages)
+            return {
+                "answer": answer,
+                "success": True
+            }
+        except Exception as e:
+            return {
+                "answer": f"Reasoning step failed: {str(e)}",
+                "success": False
+            }
+
+    def _execute_tool_step(
+        self,
+        step_num: int,
+        step_info: Dict,
+        prev_steps_str: str,
+        goal: str,
+        context: List[Dict[str, str]]
+    ) -> Dict:
+        """
+        Execute tool-based step using ReAct agent
+
+        Args:
+            step_num: Step number
+            step_info: Step information
+            prev_steps_str: Formatted previous steps
+            goal: Overall goal
+            context: Shared context
+
+        Returns:
+            Step result dict with 'answer' and 'success'
+        """
         tools_desc = format_tools_for_llm()
 
         step_prompt = self.load_prompt(
@@ -217,6 +298,8 @@ class PlanExecuteAgent(Agent):
 
         # Use ReAct agent to execute this step
         react_agent = ReActAgent(model=self.model, temperature=self.temperature)
+        react_agent.session_id = self.session_id
+        react_agent.tool_calls = self.tool_calls
 
         try:
             result = react_agent.run(step_prompt, context)
@@ -226,9 +309,30 @@ class PlanExecuteAgent(Agent):
             }
         except Exception as e:
             return {
-                "answer": f"Step failed: {str(e)}",
+                "answer": f"Tool step failed: {str(e)}",
                 "success": False
             }
+
+    def _format_previous_steps(self, previous_results: List[Dict]) -> str:
+        """
+        Format previous step results as string
+
+        Args:
+            previous_results: List of previous step results
+
+        Returns:
+            Formatted string
+        """
+        if not previous_results:
+            return "None"
+
+        formatted = []
+        for res in previous_results:
+            formatted.append(f"Step {res['step']}: {res['description']}")
+            formatted.append(f"Result: {res['result']}")
+            formatted.append("")
+
+        return "\n".join(formatted)
 
     def _synthesize_answer(
         self,
