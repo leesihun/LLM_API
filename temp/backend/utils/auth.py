@@ -32,7 +32,18 @@ def hash_password(password: str) -> str:
 
     Returns:
         Hashed password string
+        
+    Raises:
+        ValueError: If password exceeds 72 bytes (bcrypt limitation)
     """
+    # Bcrypt has a 72 byte limit for passwords
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        raise ValueError(
+            f"Password cannot exceed 72 bytes. Current password is {len(password_bytes)} bytes. "
+            "Please use a shorter password."
+        )
+    
     return pwd_context.hash(password)
 
 

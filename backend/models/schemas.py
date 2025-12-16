@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 # Auth Schemas
 # ============================================================================
 class SignupRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., min_length=3, max_length=50, description="Username (3-50 characters)")
+    password: str = Field(..., min_length=8, description="Password (8+ characters, max 72 bytes)")
     role: str = "user"
 
 

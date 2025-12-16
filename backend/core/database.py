@@ -67,12 +67,24 @@ class Database:
         """Create default admin user if not exists"""
         # Import here to avoid circular dependency
         from passlib.context import CryptContext
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                password_hash = pwd_context.hash(config.DEFAULT_ADMIN_PASSWORD)
+                
+                # Validate password length before hashing (bcrypt limit: 72 bytes)
+                password_bytes = config.DEFAULT_ADMIN_PASSWORD.encode('utf-8')
+                password_to_hash = config.DEFAULT_ADMIN_PASSWORD
+                
+                if len(password_bytes) > 72:
+                    print(f"Warning: DEFAULT_ADMIN_PASSWORD exceeds 72 bytes ({len(password_bytes)} bytes).")
+                    print("Please update config.DEFAULT_ADMIN_PASSWORD to be 72 bytes or less.")
+                    # Truncate to 72 bytes as a fallback
+                    password_to_hash = config.DEFAULT_ADMIN_PASSWORD.encode('utf-8')[:72].decode('utf-8', errors='ignore')
+                
+                pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+                password_hash = pwd_context.hash(password_to_hash)
+                
                 cursor.execute(
                     "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)",
                     (

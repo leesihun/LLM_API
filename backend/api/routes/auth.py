@@ -25,8 +25,15 @@ def signup(request: SignupRequest):
             detail="Username already exists"
         )
 
-    # Create user
-    password_hash = hash_password(request.password)
+    # Validate and create user
+    try:
+        password_hash = hash_password(request.password)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
     success = db.create_user(request.username, password_hash, request.role)
 
     if not success:
