@@ -121,13 +121,13 @@ def _prepare_messages_with_files(
 @router.post("/chat/completions")
 async def chat_completions(
     # Multipart form fields
-    model: str = Form(...),
+    model: Optional[str] = Form(None),
     messages: str = Form(...),  # JSON string
     stream: str = Form("false"),
     temperature: Optional[str] = Form(None),
     max_tokens: Optional[str] = Form(None),
     session_id: Optional[str] = Form(None),
-    agent_type: str = Form("chat"),
+    agent_type: Optional[str] = Form(None),
     files: Optional[List[UploadFile]] = File(None),
     # Auth (optional)
     current_user: Optional[dict] = Depends(get_optional_user)
@@ -142,13 +142,13 @@ async def chat_completions(
     - x_session_id in response for tracking
 
     Args:
-        model: Model name
+        model: Optional model name (defaults to config.OLLAMA_MODEL)
         messages: JSON string of message list
         stream: "true" or "false" for streaming
         temperature: Optional temperature override
         max_tokens: Optional max tokens override
         session_id: Optional session ID to continue conversation
-        agent_type: Agent type (chat, auto, react, plan_execute)
+        agent_type: Optional agent type (defaults to config.DEFAULT_AGENT: chat, auto, react, plan_execute)
         files: Optional file uploads
         current_user: Authenticated user (if any)
     """
@@ -163,6 +163,10 @@ async def chat_completions(
         # Parse optional parameters
         temp = float(temperature) if temperature else config.DEFAULT_TEMPERATURE
         max_tok = int(max_tokens) if max_tokens else config.DEFAULT_MAX_TOKENS
+        
+        # Use defaults from config if not specified
+        model_name = model or config.OLLAMA_MODEL
+        agent_type_name = agent_type or config.DEFAULT_AGENT
 
         # Determine username (default to "guest" if not authenticated)
         username = current_user["username"] if current_user else "guest"
@@ -199,7 +203,7 @@ async def chat_completions(
         llm_messages, file_metadata = _prepare_messages_with_files(chat_messages, file_paths)
 
         # Get the appropriate agent
-        agent = _get_agent(agent_type, model, temp)
+        agent = _get_agent(agent_type_name, model_name, temp)
 
         # Set session_id on agent for logging
         agent.session_id = session_id
@@ -248,14 +252,14 @@ async def chat_completions(
                         stream_messages = llm_messages
 
                     # Stream tokens from LLM directly (bypass agents for streaming)
-                    for token in llm_backend.chat_stream(stream_messages, model, temp, session_id=session_id, agent_type="stream"):
+                    for token in llm_backend.chat_stream(stream_messages, model_name, temp, session_id=session_id, agent_type="stream"):
                         assistant_message += token
 
                         # Send SSE chunk
                         chunk = ChatCompletionChunk(
                             id=request_id,
                             created=created_timestamp,
-                            model=model,
+                            model=model_name,
                             choices=[
                                 ChatCompletionChunkChoice(
                                     delta=ChatCompletionChunkDelta(content=token)
@@ -268,7 +272,7 @@ async def chat_completions(
                     final_chunk = ChatCompletionChunk(
                         id=request_id,
                         created=created_timestamp,
-                        model=model,
+                        model=model_name,
                         choices=[
                             ChatCompletionChunkChoice(
                                 delta=ChatCompletionChunkDelta(),
@@ -304,7 +308,7 @@ async def chat_completions(
             response = ChatCompletionResponse(
                 id=request_id,
                 created=created_timestamp,
-                model=model,
+                model=model_name,
                 choices=[
                     ChatCompletionChoice(
                         message=ChatMessage(role="assistant", content=assistant_message)

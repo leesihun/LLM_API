@@ -31,7 +31,7 @@ LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 # ============================================================================
 # Model Parameters (Default LLM Inference Settings)
 # ============================================================================
-DEFAULT_TEMPERATURE = 0.7  # Randomness (0.0 = deterministic, 2.0 = very random)
+DEFAULT_TEMPERATURE = 1.0  # Randomness (0.0 = deterministic, 2.0 = very random)
 DEFAULT_TOP_P = 0.9  # Nucleus sampling
 DEFAULT_TOP_K = 40  # Top-k sampling
 DEFAULT_MAX_TOKENS = 2048  # Maximum tokens in response
@@ -117,19 +117,19 @@ TOOL_PARAMETERS = {
         "timeout": 360,  # 1 minute for web search (includes 2 LLM calls + Tavily API call)
     },
     "python_coder": {
-        "temperature": 0.3,  # Lower temp for more deterministic code
+        "temperature": 1.0,  # Lower temp for more deterministic code
         "max_tokens": 2048,
-        "timeout": 120,  # 2 minutes for code execution
+        "timeout": 1200,  # 2 minutes for code execution
     },
     "rag": {
-        "temperature": 0.5,
+        "temperature": 1.0,
         "max_tokens": 2048,
         "timeout": 120,  # 2 minutes for RAG retrieval
     },
 }
 
 # Default tool timeout (seconds)
-DEFAULT_TOOL_TIMEOUT = 60
+DEFAULT_TOOL_TIMEOUT = 1200
 
 # ============================================================================
 # Web Search Tool Settings
@@ -146,13 +146,13 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # Python Coder Tool Settings
 # ============================================================================
 # Execution mode: "native" or "openinterpreter"
-PYTHON_EXECUTOR_MODE: Literal["native", "openinterpreter"] = "native"
+PYTHON_EXECUTOR_MODE: Literal["native", "openinterpreter"] = "openinterpreter"
 
 # Native executor settings
-PYTHON_EXECUTOR_TIMEOUT = 30  # Execution timeout in seconds
-PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024  # 1MB max output
+PYTHON_EXECUTOR_TIMEOUT = 1200  # Execution timeout in seconds
+PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024 * 10  # 10MB max output
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
-PYTHON_CODER_TIMEOUT = 30  # Timeout for ReAct agent tool call
+PYTHON_CODER_TIMEOUT = 300  # Timeout for ReAct agent tool call
 
 # OpenInterpreter settings
 PYTHON_CODER_MAX_RETRIES = 3  # Maximum retry attempts for error correction
