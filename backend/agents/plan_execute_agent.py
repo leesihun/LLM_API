@@ -3,7 +3,7 @@ Plan-Execute Agent
 Creates a plan and executes it step-by-step using ReAct agents
 """
 import json
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 import config
 from backend.agents.base_agent import Agent
@@ -25,10 +25,28 @@ class PlanExecuteAgent(Agent):
         self.replan_on_failure = config.PLAN_REPLAN_ON_FAILURE
         self.share_context = config.PLAN_SHARE_CONTEXT
 
+    def _limit_history(self, conversation_history: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        Limit conversation history based on config
+
+        Args:
+            conversation_history: Full conversation history
+
+        Returns:
+            Limited conversation history (most recent messages)
+        """
+        if config.PLAN_MAX_HISTORY_MESSAGES <= 0:
+            # 0 or negative = no limit
+            return conversation_history
+
+        # Return last N messages
+        return conversation_history[-config.PLAN_MAX_HISTORY_MESSAGES:]
+
     def run(
         self,
         user_input: str,
-        conversation_history: List[Dict[str, str]]
+        conversation_history: List[Dict[str, str]],
+        attached_files: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         Run plan-execute agent
@@ -36,10 +54,13 @@ class PlanExecuteAgent(Agent):
         Args:
             user_input: User's message
             conversation_history: Full conversation history
+            attached_files: Optional list of file metadata
 
         Returns:
             Final answer combining all steps
         """
+        # Store attached files for passing to ReAct agents
+        self.attached_files = attached_files
         # Step 1: Create plan
         plan = self._create_plan(user_input, conversation_history)
 
@@ -50,7 +71,7 @@ class PlanExecuteAgent(Agent):
         results = self._execute_plan(plan, user_input, conversation_history)
 
         # Step 3: Synthesize final answer
-        final_answer = self._synthesize_answer(plan, results, user_input)
+        final_answer = self._synthesize_answer(plan, results, user_input, conversation_history)
 
         return final_answer
 
@@ -80,11 +101,17 @@ class PlanExecuteAgent(Agent):
             input=user_input
         )
 
-        # Build messages
-        messages = [
-            {"role": "system", "content": planning_prompt},
-            {"role": "user", "content": user_input}
-        ]
+        # Build messages with conversation history
+        messages = [{"role": "system", "content": planning_prompt}]
+
+        # Add conversation history (if enabled)
+        if config.PLAN_INCLUDE_FULL_HISTORY and conversation_history:
+            # Limit history if configured
+            limited_history = self._limit_history(conversation_history)
+            messages.extend(limited_history)
+
+        # Add current user input
+        messages.append({"role": "user", "content": user_input})
 
         # Get plan from LLM
         response = self.call_llm(messages, temperature=0.3)  # Lower temp for planning
@@ -164,13 +191,23 @@ class PlanExecuteAgent(Agent):
 
             # Handle failure
             if not step_result["success"] and self.replan_on_failure:
-                # Re-plan from this point
+                # Re-plan from this point with full context
                 remaining_goal = f"Continue from step {step_num}: {description}. Previous steps: {json.dumps(results)}"
-                new_plan = self._create_plan(remaining_goal, shared_context)
+
+                # Build replanning context: original history + step results
+                replan_context = conversation_history.copy()
+                for res in results:
+                    replan_context.append({
+                        "role": "assistant",
+                        "content": f"Step {res['step']} ({res['description']}): {res['result']}"
+                    })
+
+                # Create new plan with full context
+                new_plan = self._create_plan(remaining_goal, replan_context)
 
                 if new_plan:
-                    # Execute new plan
-                    new_results = self._execute_plan(new_plan, user_input, shared_context)
+                    # Execute new plan with original history
+                    new_results = self._execute_plan(new_plan, user_input, conversation_history)
                     results.extend(new_results)
                     break
 
@@ -302,7 +339,9 @@ Based on the previous steps and the overall goal, complete this step and provide
         react_agent.tool_calls = self.tool_calls
 
         try:
-            result = react_agent.run(step_prompt, context)
+            # Pass attached files to ReAct agent if available
+            attached_files = getattr(self, 'attached_files', None)
+            result = react_agent.run(step_prompt, context, attached_files)
             return {
                 "answer": result,
                 "success": True
@@ -338,7 +377,8 @@ Based on the previous steps and the overall goal, complete this step and provide
         self,
         plan: Dict,
         results: List[Dict],
-        user_input: str
+        user_input: str,
+        conversation_history: List[Dict[str, str]]
     ) -> str:
         """
         Synthesize final answer from all step results
@@ -347,6 +387,7 @@ Based on the previous steps and the overall goal, complete this step and provide
             plan: Original plan
             results: List of step results
             user_input: Original user input
+            conversation_history: Full conversation history
 
         Returns:
             Final synthesized answer
@@ -369,9 +410,16 @@ Step Results:
 
 Provide a clear, complete answer that addresses the user's question using the information gathered from all steps."""
 
-        messages = [
-            {"role": "user", "content": synthesis_prompt}
-        ]
+        # Build messages with optional conversation history
+        messages = []
+
+        # Add conversation history if enabled
+        if config.PLAN_HISTORY_IN_SYNTHESIS and conversation_history:
+            limited_history = self._limit_history(conversation_history)
+            messages.extend(limited_history)
+
+        # Add synthesis prompt
+        messages.append({"role": "user", "content": synthesis_prompt})
 
         final_answer = self.call_llm(messages)
 

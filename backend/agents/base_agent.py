@@ -32,7 +32,8 @@ class Agent(ABC):
     def run(
         self,
         user_input: str,
-        conversation_history: List[Dict[str, str]]
+        conversation_history: List[Dict[str, str]],
+        attached_files: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         Run the agent to process user input
@@ -40,6 +41,7 @@ class Agent(ABC):
         Args:
             user_input: The user's message
             conversation_history: Full conversation history
+            attached_files: Optional list of file metadata dicts
 
         Returns:
             Agent's response
@@ -90,6 +92,93 @@ class Agent(ABC):
             formatted.append(f"{role.upper()}: {content}")
 
         return "\n".join(formatted)
+
+    def format_attached_files(
+        self,
+        attached_files: Optional[List[Dict[str, Any]]]
+    ) -> str:
+        """
+        Format attached files metadata as a string for system prompt
+
+        Args:
+            attached_files: List of file metadata dicts
+
+        Returns:
+            Formatted files information string
+        """
+        if not attached_files or len(attached_files) == 0:
+            return ""
+
+        lines = ["\n## ATTACHED FILES"]
+        lines.append(f"The user has attached {len(attached_files)} file(s). Use the 'read_file' tool to examine their contents.\n")
+
+        for idx, file_info in enumerate(attached_files, 1):
+            if "error" in file_info:
+                lines.append(f"{idx}. {file_info['name']} - ERROR: {file_info['error']}")
+            else:
+                size_kb = file_info['size'] / 1024
+                lines.append(f"{idx}. {file_info['name']}")
+                lines.append(f"   - Type: {file_info['type']} ({file_info['category']})")
+                lines.append(f"   - Size: {size_kb:.2f} KB")
+                lines.append(f"   - Path: {file_info['path']}")
+
+                # Add rich metadata based on file type
+                self._append_rich_metadata(lines, file_info)
+
+        return "\n".join(lines)
+
+    def _append_rich_metadata(self, lines: List[str], file_info: Dict[str, Any]) -> None:
+        """
+        Append rich metadata to lines based on file type
+
+        Args:
+            lines: List to append formatted lines to
+            file_info: File metadata dictionary
+        """
+        # JSON files
+        if 'structure' in file_info:
+            if file_info['structure'] == 'object':
+                lines.append(f"   - Structure: JSON object with {file_info.get('key_count', 0)} keys")
+                lines.append(f"   - Keys: {', '.join(file_info.get('keys', [])[:10])}")
+                if 'sample' in file_info:
+                    import json
+                    sample_str = json.dumps(file_info['sample'], indent=2)
+                    lines.append(f"   - Sample: {sample_str}")
+            elif file_info['structure'] == 'array':
+                lines.append(f"   - Structure: JSON array with {file_info.get('length', 0)} items")
+                if 'first_item_type' in file_info:
+                    lines.append(f"   - Item type: {file_info['first_item_type']}")
+                if 'sample' in file_info:
+                    import json
+                    sample_str = json.dumps(file_info['sample'], indent=2)
+                    lines.append(f"   - Sample (first 2): {sample_str}")
+
+        # CSV files
+        if 'rows' in file_info and 'headers' in file_info:
+            lines.append(f"   - Rows: {file_info['rows']}")
+            lines.append(f"   - Columns: {file_info.get('columns', 0)}")
+            lines.append(f"   - Headers: {', '.join(file_info['headers'])}")
+            if 'sample_rows' in file_info and len(file_info['sample_rows']) > 0:
+                lines.append(f"   - Sample rows: {file_info['sample_rows'][0]}")
+
+        # Excel files
+        if 'sheet_count' in file_info:
+            lines.append(f"   - Sheets: {file_info['sheet_count']} ({', '.join(file_info.get('sheet_names', []))})")
+            if 'sheets' in file_info:
+                for sheet_name, sheet_info in list(file_info['sheets'].items())[:2]:  # Show first 2 sheets
+                    lines.append(f"   - Sheet '{sheet_name}': {sheet_info['rows']} rows, {sheet_info['columns']} columns")
+                    lines.append(f"     Columns: {', '.join(sheet_info['column_names'][:10])}")
+
+        # Text/Code files
+        if 'lines' in file_info:
+            lines.append(f"   - Lines: {file_info['lines']}")
+            if 'imports' in file_info:
+                lines.append(f"   - Imports: {len(file_info['imports'])} detected")
+            if 'definitions' in file_info:
+                lines.append(f"   - Definitions: {', '.join(file_info['definitions'][:5])}")
+            if 'preview' in file_info and len(file_info['preview']) > 0:
+                preview = file_info['preview'][:200]  # First 200 chars
+                lines.append(f"   - Preview: {preview}...")
 
     def call_llm(
         self,

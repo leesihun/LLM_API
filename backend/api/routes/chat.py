@@ -20,7 +20,7 @@ from backend.models.schemas import (
 )
 from backend.core.database import db, conversation_store
 from backend.core.llm_backend import llm_backend
-from backend.utils.file_handler import save_uploaded_files, read_file_content
+from backend.utils.file_handler import save_uploaded_files, extract_file_metadata
 from backend.utils.auth import get_optional_user
 from backend.agents import ChatAgent, ReActAgent, PlanExecuteAgent, AutoAgent
 from fastapi import Depends
@@ -59,32 +59,63 @@ def _get_agent(agent_type: str, model: str, temperature: float):
 def _prepare_messages_with_files(
     messages: List[ChatMessage],
     file_paths: List[str]
-) -> List[Dict[str, str]]:
+) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """
-    Prepare messages for LLM, adding file contents to context
+    Prepare messages and file metadata (without injecting full content)
 
     Args:
         messages: Chat messages
         file_paths: List of file paths to include
 
     Returns:
-        List of message dictionaries with file contents added
+        Tuple of (message_dicts, file_metadata)
     """
+    from pathlib import Path
+
     # Convert Pydantic models to dicts
     message_dicts = [{"role": msg.role, "content": msg.content} for msg in messages]
 
-    # If files are provided, add them to the last user message
+    # If files are provided, create metadata (don't inject content)
+    file_metadata = []
     if file_paths:
-        file_contents = []
         for file_path in file_paths:
-            content = read_file_content(file_path)
-            file_contents.append(f"\n\n--- File: {file_path} ---\n{content}")
+            path = Path(file_path)
+            try:
+                file_size = path.stat().st_size
+                file_type = path.suffix.lstrip('.')
 
-        # Append to last user message
-        if message_dicts and message_dicts[-1]["role"] == "user":
-            message_dicts[-1]["content"] += "\n".join(file_contents)
+                # Determine file category
+                text_extensions = ['txt', 'md', 'json', 'csv', 'py', 'js', 'html', 'xml', 'java', 'cpp', 'c', 'h', 'go', 'rs', 'ts', 'jsx', 'tsx']
+                data_extensions = ['csv', 'xlsx', 'xls', 'json']
+                code_extensions = ['py', 'js', 'java', 'cpp', 'c', 'h', 'go', 'rs', 'ts', 'jsx', 'tsx', 'html', 'css']
 
-    return message_dicts
+                category = 'binary'
+                if file_type in text_extensions:
+                    category = 'text'
+                if file_type in data_extensions:
+                    category = 'data'
+                if file_type in code_extensions:
+                    category = 'code'
+
+                # Extract rich metadata based on file type
+                rich_metadata = extract_file_metadata(file_path)
+
+                file_metadata.append({
+                    "name": path.name,
+                    "path": file_path,
+                    "size": file_size,
+                    "type": file_type,
+                    "category": category,
+                    **rich_metadata  # Merge in the rich metadata
+                })
+            except Exception as e:
+                file_metadata.append({
+                    "name": path.name,
+                    "path": file_path,
+                    "error": str(e)
+                })
+
+    return message_dicts, file_metadata
 
 
 @router.post("/chat/completions")
@@ -160,11 +191,12 @@ async def chat_completions(
 
         # Handle file uploads
         file_paths = []
+        file_metadata = []
         if files and len(files) > 0:
             file_paths = save_uploaded_files(files, username, session_id)
 
-        # Prepare messages with file contents (for conversation history)
-        llm_messages = _prepare_messages_with_files(chat_messages, file_paths)
+        # Prepare messages and file metadata (without full content injection)
+        llm_messages, file_metadata = _prepare_messages_with_files(chat_messages, file_paths)
 
         # Get the appropriate agent
         agent = _get_agent(agent_type, model, temp)
@@ -260,8 +292,8 @@ async def chat_completions(
             return EventSourceResponse(generate_stream())
 
         else:
-            # Non-streaming response - Use agent system
-            assistant_message = agent.run(user_input, conversation_history)
+            # Non-streaming response - Use agent system with file metadata
+            assistant_message = agent.run(user_input, conversation_history, file_metadata)
 
             # Save conversation
             history.append({"role": "assistant", "content": assistant_message})

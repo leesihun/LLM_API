@@ -2,7 +2,7 @@
 Auto Agent - LLM-based routing
 Automatically selects the best agent (chat, react, plan_execute) based on user input
 """
-from typing import List, Dict
+from typing import List, Dict, Optional, Any
 
 from backend.agents.base_agent import Agent
 from backend.agents.chat_agent import ChatAgent
@@ -28,7 +28,8 @@ class AutoAgent(Agent):
     def run(
         self,
         user_input: str,
-        conversation_history: List[Dict[str, str]]
+        conversation_history: List[Dict[str, str]],
+        attached_files: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         Run auto agent with LLM-based routing
@@ -36,6 +37,7 @@ class AutoAgent(Agent):
         Args:
             user_input: User's message
             conversation_history: Full conversation history
+            attached_files: Optional list of file metadata
 
         Returns:
             Response from selected agent
@@ -53,8 +55,8 @@ class AutoAgent(Agent):
         # Propagate session_id to selected agent
         agent_instance.session_id = self.session_id
 
-        # Execute the agent
-        response = agent_instance.run(user_input, conversation_history)
+        # Execute the agent with attached files
+        response = agent_instance.run(user_input, conversation_history, attached_files)
 
         return response
 

@@ -8,6 +8,7 @@ Your job is to create a detailed plan to accomplish the user's goal. Each step s
 2. Specify which tool to use (if needed, else, leave it as null)
 3. Build on previous steps
 4. Be executable by a ReAct agent
+5. Consider the conversation history and context when planning
 
 Create a plan in this JSON format:
 {{
@@ -22,6 +23,11 @@ Create a plan in this JSON format:
   ],
   "goal": "Final goal of the plan"
 }}
+
+Important:
+- You have access to the conversation history - use it to understand context
+- Reference previous messages if they provide important context
+- Don't repeat actions already discussed in the conversation
 
 Guidelines:
 - Generate baby-step plans (maximum {max_steps} steps)

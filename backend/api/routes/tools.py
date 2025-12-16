@@ -78,6 +78,14 @@ class RAGUploadRequest(BaseModel):
     collection_name: str
 
 
+class ReadFileRequest(BaseModel):
+    """Read file request"""
+    file_path: str
+    start_line: Optional[int] = 1
+    end_line: Optional[int] = -1
+    context: Optional[ToolContext] = None
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -150,6 +158,11 @@ def list_tools(current_user: Optional[dict] = Depends(get_optional_user)):
         {
             "name": "rag",
             "description": "Retrieve information from document collections",
+            "enabled": True
+        },
+        {
+            "name": "read_file",
+            "description": "Read content from attached files",
             "enabled": True
         }
     ]
@@ -257,10 +270,11 @@ async def python_coder(
     result = None
 
     try:
-        # Initialize tool with session ID
+        # Initialize tool with session ID (factory automatically selects backend)
         print(f"\n[TOOLS API] Initializing PythonCoderTool...")
+        print(f"[TOOLS API] Mode: {config.PYTHON_EXECUTOR_MODE}")
         tool = PythonCoderTool(session_id=request.session_id)
-        print(f"[TOOLS API] [OK] Tool initialized")
+        print(f"[TOOLS API] [OK] Tool initialized ({type(tool).__name__})")
 
     except Exception as e:
         # Tool initialization failed - return immediately
@@ -426,6 +440,144 @@ async def read_python_file(
             "content": "",
             "error": str(e)
         }
+
+
+@router.post("/read_file", response_model=ToolResponse)
+async def read_file(
+    request: ReadFileRequest,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Read content from an attached file
+
+    Args:
+        request: File read request with path and optional line range
+        current_user: Authenticated user (optional)
+
+    Returns:
+        File content with metadata
+    """
+    from backend.utils.file_handler import read_file_content
+
+    print("\n" + "=" * 80)
+    print("[TOOLS API] /api/tools/read_file endpoint called")
+    print("=" * 80)
+    print(f"User: {current_user['username'] if current_user else 'guest'}")
+    print(f"File path: {request.file_path}")
+    print(f"Line range: {request.start_line} to {request.end_line}")
+
+    start_time = time.time()
+
+    try:
+        # Verify file exists and is accessible
+        file_path = Path(request.file_path)
+
+        if not file_path.exists():
+            error_msg = f"File not found: {request.file_path}"
+            print(f"[TOOLS API] ERROR: {error_msg}")
+            return ToolResponse(
+                success=False,
+                answer=error_msg,
+                data={},
+                metadata={"execution_time": time.time() - start_time},
+                error=error_msg
+            )
+
+        # Security check: ensure file is in scratch or upload directory
+        try:
+            scratch_dir = Path(config.SCRATCH_DIR).resolve()
+            upload_dir = Path(config.UPLOAD_DIR).resolve()
+            file_resolved = file_path.resolve()
+
+            if not (str(file_resolved).startswith(str(scratch_dir)) or
+                    str(file_resolved).startswith(str(upload_dir))):
+                error_msg = "Access denied: File must be in scratch or upload directory"
+                print(f"[TOOLS API] SECURITY ERROR: {error_msg}")
+                print(f"  File: {file_resolved}")
+                print(f"  Scratch: {scratch_dir}")
+                print(f"  Upload: {upload_dir}")
+                return ToolResponse(
+                    success=False,
+                    answer=error_msg,
+                    data={},
+                    metadata={"execution_time": time.time() - start_time},
+                    error=error_msg
+                )
+        except Exception as e:
+            error_msg = f"Path validation error: {str(e)}"
+            print(f"[TOOLS API] ERROR: {error_msg}")
+            return ToolResponse(
+                success=False,
+                answer=error_msg,
+                data={},
+                metadata={"execution_time": time.time() - start_time},
+                error=error_msg
+            )
+
+        # Read file content
+        print(f"\n[TOOLS API] Reading file...")
+        content = read_file_content(str(file_path))
+
+        # Check if content indicates an error
+        if content.startswith("[Error reading file") or content.startswith("[Binary file"):
+            print(f"[TOOLS API] Special content: {content[:50]}...")
+            answer = content
+            lines = []
+            is_binary = content.startswith("[Binary file")
+        else:
+            lines = content.split('\n')
+            total_lines = len(lines)
+
+            # Handle line range
+            start_idx = max(0, request.start_line - 1) if request.start_line > 0 else 0
+            end_idx = request.end_line if request.end_line > 0 else total_lines
+            end_idx = min(end_idx, total_lines)
+
+            # Extract requested lines
+            if start_idx > 0 or end_idx < total_lines:
+                selected_lines = lines[start_idx:end_idx]
+                content = '\n'.join(selected_lines)
+                answer = f"File content (lines {start_idx + 1}-{end_idx} of {total_lines}):\n\n{content}"
+            else:
+                answer = f"File content ({total_lines} lines):\n\n{content}"
+
+            is_binary = False
+
+        execution_time = time.time() - start_time
+
+        print(f"[TOOLS API] [OK] File read successfully")
+        print(f"  Size: {file_path.stat().st_size} bytes")
+        print(f"  Lines: {len(lines) if not is_binary else 'N/A (binary)'}")
+        print(f"  Execution time: {execution_time:.2f}s")
+
+        return ToolResponse(
+            success=True,
+            answer=answer,
+            data={
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "content": content,
+                "total_lines": len(lines) if not is_binary else 0,
+                "size_bytes": file_path.stat().st_size,
+                "file_type": file_path.suffix.lstrip('.'),
+                "is_binary": is_binary
+            },
+            metadata={
+                "execution_time": execution_time,
+                "lines_read": len(lines) if not is_binary else 0
+            }
+        )
+
+    except Exception as e:
+        error_msg = f"Error reading file: {str(e)}"
+        print(f"[TOOLS API] ERROR: {error_msg}")
+        return ToolResponse(
+            success=False,
+            answer=error_msg,
+            data={},
+            metadata={"execution_time": time.time() - start_time},
+            error=str(e)
+        )
 
 
 @router.post("/rag/collections", response_model=ToolResponse)

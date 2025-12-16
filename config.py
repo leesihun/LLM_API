@@ -86,6 +86,9 @@ REACT_RETRY_ON_ERROR = True  # Let LLM see errors and decide next action (intell
 PLAN_MAX_STEPS = 20  # Maximum plan steps
 PLAN_REPLAN_ON_FAILURE = True  # Re-plan when a step fails
 PLAN_SHARE_CONTEXT = True  # Share context across plan execution steps
+PLAN_INCLUDE_FULL_HISTORY = True  # Include all conversation history in planning
+PLAN_MAX_HISTORY_MESSAGES = 50  # Maximum history messages to include (0 = unlimited)
+PLAN_HISTORY_IN_SYNTHESIS = True  # Include conversation history in final synthesis
 
 # ============================================================================
 # Tools Settings (for future implementation)
@@ -142,10 +145,20 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # ============================================================================
 # Python Coder Tool Settings
 # ============================================================================
+# Execution mode: "native" or "openinterpreter"
+PYTHON_EXECUTOR_MODE: Literal["native", "openinterpreter"] = "native"
+
+# Native executor settings
 PYTHON_EXECUTOR_TIMEOUT = 30  # Execution timeout in seconds
 PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024  # 1MB max output
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
 PYTHON_CODER_TIMEOUT = 30  # Timeout for ReAct agent tool call
+
+# OpenInterpreter settings
+PYTHON_CODER_MAX_RETRIES = 3  # Maximum retry attempts for error correction
+PYTHON_CODER_OPENINTERPRETER_OFFLINE = True  # Run completely offline (no external API calls)
+PYTHON_CODER_OPENINTERPRETER_AUTO_RUN = True  # Auto-execute code without confirmation
+PYTHON_CODER_OPENINTERPRETER_SAFE_MODE = False  # Safe mode (experimental)
 
 # ============================================================================
 # RAG Tool Settings

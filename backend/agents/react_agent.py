@@ -7,7 +7,7 @@ Clean 2-step architecture:
 """
 import re
 import json
-from typing import List, Dict
+from typing import List, Dict, Optional, Any
 
 import config
 from backend.agents.base_agent import Agent
@@ -28,7 +28,8 @@ class ReActAgent(Agent):
     def run(
         self,
         user_input: str,
-        conversation_history: List[Dict[str, str]]
+        conversation_history: List[Dict[str, str]],
+        attached_files: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         Run ReAct agent with strict 2-step loop
@@ -36,6 +37,7 @@ class ReActAgent(Agent):
         Args:
             user_input: User's message
             conversation_history: Full conversation history
+            attached_files: Optional list of file metadata
 
         Returns:
             Final answer
@@ -48,6 +50,9 @@ class ReActAgent(Agent):
 
         # Get tools description
         tools_desc = format_tools_for_llm()
+
+        # Store attached files for use in prompts
+        self.attached_files = attached_files
 
         # Main reasoning loop
         for iteration in range(self.max_iterations):
@@ -144,6 +149,11 @@ class ReActAgent(Agent):
             "agents/react_system.txt",
             tools=tools_desc
         )
+
+        # Add attached files information if present
+        if hasattr(self, 'attached_files') and self.attached_files:
+            files_info = self.format_attached_files(self.attached_files)
+            system_prompt += files_info
 
         # Load thought prompt
         thought_prompt = self.load_prompt(
@@ -556,5 +566,24 @@ class ReActAgent(Agent):
                 "collection_name": config.RAG_DEFAULT_COLLECTION,
                 "max_results": config.RAG_MAX_RESULTS
             }
+        elif tool_name == "read_file":
+            # Parse file path from input (may include line range)
+            # Expected formats:
+            # - "path/to/file.txt"
+            # - "path/to/file.txt lines 10-20"
+            parts = clean_input.split()
+            file_path = parts[0]
+
+            params = {"file_path": file_path}
+
+            # Check for line range
+            if len(parts) >= 3 and parts[1].lower() == "lines":
+                line_range = parts[2]
+                if "-" in line_range:
+                    start, end = line_range.split("-")
+                    params["start_line"] = int(start)
+                    params["end_line"] = int(end)
+
+            return params
         else:
             raise ValueError(f"Unknown tool: '{tool_name}'")
