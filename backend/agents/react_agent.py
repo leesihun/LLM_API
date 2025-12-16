@@ -299,9 +299,9 @@ class ReActAgent(Agent):
 
         action = action_match.group(1)
 
-        # Extract Action Input
+        # Extract Action Input - stop only at next ReAct keyword (not double newlines)
         input_match = re.search(
-            r"Action Input:\s*(.+?)(?:\n\n|\n(?=Thought:|Action:|Observation:|Final Answer:)|$)",
+            r"Action Input:\s*(.+?)(?:\n(?=Thought:|Action:|Observation:|Final Answer:)|$)",
             response,
             re.DOTALL | re.IGNORECASE
         )
@@ -488,6 +488,33 @@ class ReActAgent(Agent):
 
         return "\n".join(formatted)
 
+    def _extract_code_from_fenced_block(self, text: str) -> str:
+        """
+        Extract code from fenced code blocks (```python or ```)
+        Supports both plain text code and fenced blocks
+        Falls back to original text if extraction fails
+
+        Args:
+            text: Input text that may contain fenced code blocks
+
+        Returns:
+            Extracted code or original text
+        """
+        # Pattern for fenced code blocks: ```python or just ```
+        # Match: ```python\ncode\n``` or ```\ncode\n```
+        pattern = r"```(?:python)?\s*\n(.*?)```"
+        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+
+        if match:
+            # Extract code from fenced block
+            code = match.group(1).strip()
+            print(f"[REACT] [OK] Extracted code from fenced block ({len(code)} chars)")
+            return code
+
+        # No fenced block found - return original text (plain code)
+        print(f"[REACT] No fenced block found, treating as plain code")
+        return text
+
     def _convert_string_to_params(self, tool_name: str, string_input: str) -> Dict[str, any]:
         """
         Convert string input to tool parameters (strict)
@@ -515,8 +542,11 @@ class ReActAgent(Agent):
                 "max_results": config.WEBSEARCH_MAX_RESULTS
             }
         elif tool_name == "python_coder":
+            # Extract code from fenced code blocks if present
+            extracted_code = self._extract_code_from_fenced_block(clean_input)
+
             return {
-                "code": clean_input,
+                "code": extracted_code,
                 "session_id": self.session_id or "auto",
                 "timeout": config.PYTHON_CODER_TIMEOUT
             }
