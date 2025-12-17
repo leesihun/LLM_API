@@ -6,7 +6,7 @@ annotated-types
 anyio
 attrs
 backoff
-bcrypt
+bcrypt==4.0.1
 beautifulsoup4
 blosc2
 build
@@ -101,7 +101,7 @@ ormsgpack
 overrides
 packaging
 pandas
-passlib
+passlib==1.7.4
 patsy
 pdfminer.six
 pdfplumber

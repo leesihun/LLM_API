@@ -9,9 +9,9 @@ from typing import Literal
 # Server Settings
 # ============================================================================
 SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 1007  # Main API server (chat, auth, etc.)
+SERVER_PORT = 10007  # Main API server (chat, auth, etc.)
 TOOLS_HOST = "localhost"  # Tools server host (change if on different machine)
-TOOLS_PORT = 1006   # Tools API server (websearch, python_coder, rag) - separate to avoid deadlock
+TOOLS_PORT = 10006   # Tools API server (websearch, python_coder, rag) - separate to avoid deadlock
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
 # ============================================================================
@@ -201,8 +201,8 @@ STREAM_TIMEOUT = 3600  # Streaming timeout in seconds (1 hour)
 # CORS Settings
 # ============================================================================
 CORS_ORIGINS = [
-    "http://localhost:1007",
-    "http://127.0.0.1:1007",
+    "http://localhost:10007",
+    "http://127.0.0.1:10007",
 ]
 
 # ============================================================================
