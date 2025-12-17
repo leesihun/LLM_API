@@ -5,7 +5,7 @@
 
 const CONFIG = {
     // Backend API URL - change this if your backend is running on a different host/port
-    API_BASE_URL: 'http://localhost:1007',
+    API_BASE_URL: 'http://localhost:10007',
 
     // Request timeout in milliseconds (20 minutes for long-running LLM requests)
     REQUEST_TIMEOUT: 1200000,

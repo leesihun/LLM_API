@@ -89,8 +89,8 @@ def run_servers():
         env['PYTHONIOENCODING'] = 'utf-8'
 
         # Start main server
-        print("🚀 Starting main server (port 1007)...")
-        print("ℹ️  Note: Tools server (port 1006) should be started separately with: python tools_server.py")
+        print("🚀 Starting main server (port 10007)...")
+        print("ℹ️  Note: Tools server (port 10006) should be started separately with: python tools_server.py")
         print()
 
         # Run main server in foreground (this blocks)

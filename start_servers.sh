@@ -5,7 +5,7 @@ echo "Starting LLM API Servers..."
 echo ""
 
 # Start tools server in background
-echo "Starting Tools API on port 1006..."
+echo "Starting Tools API on port 10006..."
 python tools_server.py &
 TOOLS_PID=$!
 
@@ -13,14 +13,14 @@ TOOLS_PID=$!
 sleep 2
 
 # Start main server in background
-echo "Starting Main API on port 1007..."
+echo "Starting Main API on port 10007..."
 python server.py &
 MAIN_PID=$!
 
 echo ""
 echo "Both servers started!"
-echo "  - Tools API (PID $TOOLS_PID): http://localhost:1006"
-echo "  - Main API (PID $MAIN_PID):  http://localhost:1007"
+echo "  - Tools API (PID $TOOLS_PID): http://localhost:10006"
+echo "  - Main API (PID $MAIN_PID):  http://localhost:10007"
 echo ""
 echo "Press Ctrl+C to stop both servers..."
 
