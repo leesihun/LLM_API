@@ -2,10 +2,22 @@
 OpenInterpreter Python Code Executor
 Wraps Open Interpreter for ReAct agent integration with automatic retry on errors
 """
+import os
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+
+# Clear any proxy environment variables that might cause issues with litellm/openinterpreter
+# litellm expects proper URL formats (e.g., "http://localhost:8080" not just "localhost")
+for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                  'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy']:
+    if proxy_var in os.environ:
+        # Only remove if it's not a proper URL (doesn't start with http:// or https://)
+        value = os.environ[proxy_var]
+        if value and not value.startswith(('http://', 'https://', 'socks')):
+            print(f"[OpenInterpreter] Removing invalid proxy env var: {proxy_var}={value}")
+            del os.environ[proxy_var]
 
 import config
 from tools.python_coder.base import BasePythonExecutor
