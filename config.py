@@ -21,7 +21,7 @@ LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 
 # Ollama Settings
-OLLAMA_HOST = "http://localhost:11434"
+OLLAMA_HOST = "http://0.0.0.0:11434"
 OLLAMA_MODEL = "gpt-oss:120b"  # Default model
 
 # Llama.cpp Settings
