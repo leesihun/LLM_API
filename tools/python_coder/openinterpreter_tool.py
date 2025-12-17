@@ -69,27 +69,51 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         # Get model from TOOL_MODELS config
         model = config.TOOL_MODELS.get("python_coder", config.OLLAMA_MODEL)
 
-        # Configure LLM backend
-        self.interpreter.llm.model = f"ollama/{model}"
-        self.interpreter.llm.api_base = config.OLLAMA_HOST
+        # Configure LLM backend with error handling
+        try:
+            # Try setting model and API base - different OI versions have different APIs
+            self.interpreter.llm.model = f"ollama/{model}"
+            self.interpreter.llm.api_base = config.OLLAMA_HOST
+        except AttributeError as e:
+            print(f"[OpenInterpreter] WARNING: Failed to set llm.api_base: {e}")
+            # Fallback: Try alternative configuration methods
+            try:
+                # Some versions use custom_llm_provider
+                self.interpreter.llm.custom_llm_provider = "ollama"
+                self.interpreter.llm.model = model
+                # Try setting api_base on the llm instance itself
+                if hasattr(self.interpreter.llm, 'api_base'):
+                    self.interpreter.llm.api_base = config.OLLAMA_HOST
+            except Exception as e2:
+                print(f"[OpenInterpreter] WARNING: Fallback configuration also failed: {e2}")
+                print(f"[OpenInterpreter] Continuing with default configuration")
 
         # Configure execution settings
-        self.interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
-        self.interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
+        try:
+            self.interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
+            self.interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
+        except AttributeError:
+            print(f"[OpenInterpreter] WARNING: Could not set auto_run or offline mode")
 
         # Set safe mode if enabled
-        if config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE:
-            self.interpreter.safe_mode = "ask"  # or "auto" depending on OI version
+        try:
+            if config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE:
+                self.interpreter.safe_mode = "ask"  # or "auto" depending on OI version
+        except AttributeError:
+            print(f"[OpenInterpreter] WARNING: Could not set safe_mode")
 
         # Configure working directory
-        self.interpreter.system_message = f"You are a Python code execution assistant. Working directory: {self.workspace}"
+        try:
+            self.interpreter.system_message = f"You are a Python code execution assistant. Working directory: {self.workspace}"
+        except AttributeError:
+            print(f"[OpenInterpreter] WARNING: Could not set system_message")
 
         print(f"[OpenInterpreter] Configured:")
         print(f"  Model: {model}")
         print(f"  API Base: {config.OLLAMA_HOST}")
         print(f"  Workspace: {self.workspace}")
-        print(f"  Auto-run: {self.interpreter.auto_run}")
-        print(f"  Offline: {self.interpreter.offline}")
+        print(f"  Auto-run: {getattr(self.interpreter, 'auto_run', 'N/A')}")
+        print(f"  Offline: {getattr(self.interpreter, 'offline', 'N/A')}")
 
     def _load_system_prompt(self) -> str:
         """Load system prompt from /prompts directory"""
