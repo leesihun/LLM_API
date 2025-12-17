@@ -81,51 +81,45 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         # Get model from TOOL_MODELS config
         model = config.TOOL_MODELS.get("python_coder", config.OLLAMA_MODEL)
 
-        # Configure LLM backend with error handling
-        try:
-            # Try setting model and API base - different OI versions have different APIs
-            self.interpreter.llm.model = f"ollama/{model}"
-            self.interpreter.llm.api_base = config.OLLAMA_HOST
-        except AttributeError as e:
-            print(f"[OpenInterpreter] WARNING: Failed to set llm.api_base: {e}")
-            # Fallback: Try alternative configuration methods
-            try:
-                # Some versions use custom_llm_provider
-                self.interpreter.llm.custom_llm_provider = "ollama"
-                self.interpreter.llm.model = model
-                # Try setting api_base on the llm instance itself
-                if hasattr(self.interpreter.llm, 'api_base'):
-                    self.interpreter.llm.api_base = config.OLLAMA_HOST
-            except Exception as e2:
-                print(f"[OpenInterpreter] WARNING: Fallback configuration also failed: {e2}")
-                print(f"[OpenInterpreter] Continuing with default configuration")
+        # Configure LLM backend for Open Interpreter 0.4.x
+        # Use litellm format for Ollama
+        self.interpreter.llm.model = f"ollama/{model}"
+        self.interpreter.llm.api_base = config.OLLAMA_HOST
+
+        # CRITICAL: Set context window (max_tokens) to prevent errors
+        self.interpreter.llm.context_window = config.DEFAULT_MAX_TOKENS
+        self.interpreter.llm.max_tokens = config.DEFAULT_MAX_TOKENS
+
+        # CRITICAL: Disable streaming to avoid httpx.ResponseNotRead error
+        self.interpreter.llm.supports_streaming = False
+
+        # Set temperature
+        self.interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.3)
 
         # Configure execution settings
-        try:
-            self.interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
-            self.interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
-        except AttributeError:
-            print(f"[OpenInterpreter] WARNING: Could not set auto_run or offline mode")
+        self.interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
+        self.interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
+
+        # Disable vision and other features we don't need
+        self.interpreter.llm.supports_vision = False
+        self.interpreter.llm.supports_functions = False
 
         # Set safe mode if enabled
-        try:
-            if config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE:
-                self.interpreter.safe_mode = "ask"  # or "auto" depending on OI version
-        except AttributeError:
-            print(f"[OpenInterpreter] WARNING: Could not set safe_mode")
+        if config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE:
+            self.interpreter.safe_mode = "ask"
 
         # Configure working directory
-        try:
-            self.interpreter.system_message = f"You are a Python code execution assistant. Working directory: {self.workspace}"
-        except AttributeError:
-            print(f"[OpenInterpreter] WARNING: Could not set system_message")
+        self.interpreter.system_message = f"You are a Python code execution assistant. Working directory: {self.workspace}"
 
         print(f"[OpenInterpreter] Configured:")
-        print(f"  Model: {model}")
+        print(f"  Model: ollama/{model}")
         print(f"  API Base: {config.OLLAMA_HOST}")
+        print(f"  Context Window: {config.DEFAULT_MAX_TOKENS}")
+        print(f"  Max Tokens: {config.DEFAULT_MAX_TOKENS}")
+        print(f"  Streaming: Disabled")
         print(f"  Workspace: {self.workspace}")
-        print(f"  Auto-run: {getattr(self.interpreter, 'auto_run', 'N/A')}")
-        print(f"  Offline: {getattr(self.interpreter, 'offline', 'N/A')}")
+        print(f"  Auto-run: {self.interpreter.auto_run}")
+        print(f"  Offline: {self.interpreter.offline}")
 
     def _load_system_prompt(self) -> str:
         """Load system prompt from /prompts directory"""
@@ -209,11 +203,31 @@ class OpenInterpreterExecutor(BasePythonExecutor):
                 enhanced_instruction = self._build_instruction(code, error_history, context)
 
                 # Execute via Open Interpreter
-                print(f"[OPENINTERPRETER] Calling interpreter.chat()...")
-                response = self.interpreter.chat(enhanced_instruction)
+                # BYPASS interpreter.chat() and use Ollama directly
+                # This avoids the httpx.ResponseNotRead error
+                print(f"[OPENINTERPRETER] Calling Ollama API directly...")
+
+                # Use Ollama Python client directly
+                import ollama
+                model = config.TOOL_MODELS.get("python_coder", config.OLLAMA_MODEL)
+
+                try:
+                    # Call Ollama with non-streaming
+                    ollama_response = ollama.generate(
+                        model=model,
+                        prompt=enhanced_instruction,
+                        stream=False
+                    )
+
+                    response_text = ollama_response.get('response', '')
+                    print(f"[OPENINTERPRETER] Got response from Ollama ({len(response_text)} chars)")
+
+                except Exception as e:
+                    print(f"[OPENINTERPRETER] Ollama call failed: {e}")
+                    response_text = f"Error calling Ollama: {e}"
 
                 # Parse response
-                result = self._parse_response(response, attempt, start_time)
+                result = self._parse_response(response_text, attempt, start_time)
 
                 # Check if execution was successful
                 if result["success"]:
