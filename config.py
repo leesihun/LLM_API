@@ -21,8 +21,15 @@ LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 
 # Ollama Settings
+# IMPORTANT FOR LINUX: If running on Linux and getting "Access denied" errors,
+# you need to configure Ollama to accept network connections:
+#   1. Set environment variable: export OLLAMA_HOST=0.0.0.0:11434
+#   2. Then start Ollama: ollama serve
+#   3. Or run: OLLAMA_HOST=0.0.0.0:11434 ollama serve
+# For same-machine deployments, use http://127.0.0.1:11434
+# For different machines, update to http://<ollama-server-ip>:11434
 OLLAMA_HOST = "http://127.0.0.1:11434"
-OLLAMA_MODEL = "gpt-oss:20b"  # Default model
+OLLAMA_MODEL = "gpt-oss:120b"  # Default model
 
 # Llama.cpp Settings
 LLAMACPP_HOST = "http://localhost:8080"

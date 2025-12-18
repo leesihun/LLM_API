@@ -209,11 +209,18 @@ class OpenInterpreterExecutor(BasePythonExecutor):
 
                 # Use Ollama Python client directly
                 import ollama
+                from ollama import Client
                 model = config.TOOL_MODELS.get("python_coder", config.OLLAMA_MODEL)
 
                 try:
+                    # Create Ollama client with explicit host
+                    # This is critical for Linux systems where Ollama may bind to specific interfaces
+                    client = Client(host=config.OLLAMA_HOST)
+
+                    print(f"[OPENINTERPRETER] Connecting to Ollama at {config.OLLAMA_HOST}")
+
                     # Call Ollama with non-streaming
-                    ollama_response = ollama.generate(
+                    ollama_response = client.generate(
                         model=model,
                         prompt=enhanced_instruction,
                         stream=False
@@ -223,8 +230,18 @@ class OpenInterpreterExecutor(BasePythonExecutor):
                     print(f"[OPENINTERPRETER] Got response from Ollama ({len(response_text)} chars)")
 
                 except Exception as e:
-                    print(f"[OPENINTERPRETER] Ollama call failed: {e}")
-                    response_text = f"Error calling Ollama: {e}"
+                    error_msg = str(e)
+                    print(f"[OPENINTERPRETER] Ollama call failed: {error_msg}")
+
+                    # Provide helpful error messages
+                    if "Access denied" in error_msg or "Connection refused" in error_msg:
+                        print(f"[OPENINTERPRETER] ERROR: Cannot connect to Ollama at {config.OLLAMA_HOST}")
+                        print(f"[OPENINTERPRETER] On Linux, make sure Ollama is configured to accept network connections:")
+                        print(f"[OPENINTERPRETER]   1. Set OLLAMA_HOST=0.0.0.0 environment variable")
+                        print(f"[OPENINTERPRETER]   2. Or start Ollama with: OLLAMA_HOST=0.0.0.0 ollama serve")
+                        print(f"[OPENINTERPRETER]   3. Or update config.OLLAMA_HOST to match your Ollama server")
+
+                    response_text = f"Error calling Ollama: {error_msg}"
 
                 # Parse response
                 result = self._parse_response(response_text, attempt, start_time)
