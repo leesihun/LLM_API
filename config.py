@@ -104,7 +104,7 @@ AVAILABLE_TOOLS = [
 # Different tools can use different models optimized for their tasks
 TOOL_MODELS = {
     "websearch": "gpt-oss:20b",  # Web search summarization
-    "python_coder": "gemma3:1b",  # Code generation - using fast small model
+    "python_coder": "gpt-oss:120b",  # Code generation - using fast small model
     "rag": "gpt-oss:20b",  # Document retrieval
 }
 
