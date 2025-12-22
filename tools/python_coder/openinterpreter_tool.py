@@ -8,16 +8,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-# Clear any proxy environment variables that might cause issues with litellm/openinterpreter
-# litellm expects proper URL formats (e.g., "http://localhost:8080" not just "localhost")
+# Clear ALL proxy environment variables to avoid Squid/proxy interference with Ollama
+# The Ollama Python client should connect directly, not through proxies
+# This is especially important for localhost/127.0.0.1 connections
 for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
                   'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy']:
     if proxy_var in os.environ:
-        # Only remove if it's not a proper URL (doesn't start with http:// or https://)
         value = os.environ[proxy_var]
-        if value and not value.startswith(('http://', 'https://', 'socks')):
-            print(f"[OpenInterpreter] Removing invalid proxy env var: {proxy_var}={value}")
-            del os.environ[proxy_var]
+        print(f"[OpenInterpreter] Removing proxy env var: {proxy_var}={value}")
+        del os.environ[proxy_var]
 
 import config
 from tools.python_coder.base import BasePythonExecutor
@@ -215,9 +214,15 @@ class OpenInterpreterExecutor(BasePythonExecutor):
                 try:
                     # Create Ollama client with explicit host
                     # This is critical for Linux systems where Ollama may bind to specific interfaces
+                    # IMPORTANT: Clear proxy variables again before creating client to avoid Squid interference
+                    import os
+                    for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                                      'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy']:
+                        os.environ.pop(proxy_var, None)
+
                     client = Client(host=config.OLLAMA_HOST)
 
-                    print(f"[OPENINTERPRETER] Connecting to Ollama at {config.OLLAMA_HOST}")
+                    print(f"[OPENINTERPRETER] Connecting to Ollama at {config.OLLAMA_HOST} (proxies disabled)")
 
                     # Call Ollama with non-streaming
                     ollama_response = client.generate(
