@@ -29,7 +29,7 @@ LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 # For same-machine deployments, use http://127.0.0.1:11434
 # For different machines, update to http://<ollama-server-ip>:11434
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "gpt-oss:120b"  # Default model
+OLLAMA_MODEL = "gpt-oss120b"  # Default model
 
 # Llama.cpp Settings
 LLAMACPP_HOST = "http://localhost:8080"
@@ -110,9 +110,9 @@ AVAILABLE_TOOLS = [
 # Tool-specific Model Configuration
 # Different tools can use different models optimized for their tasks
 TOOL_MODELS = {
-    "websearch": "gpt-oss:120b",  # Web search summarization
-    "python_coder": "gpt-oss:120b",  # Code generation - using fast small model
-    "rag": "gpt-oss:120b",  # Document retrieval
+    "websearch": "gpt-oss120b",  # Web search summarization
+    "python_coder": "gpt-oss120b",  # Code generation - using fast small model
+    "rag": "gpt-oss120b",  # Document retrieval
 }
 
 # Tool-specific Model Parameters
