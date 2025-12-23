@@ -76,7 +76,7 @@ class OpenInterpreterExecutor(BasePythonExecutor):
 
         # Configure interpreter
         interpreter.llm.model = f"ollama/{config.OLLAMA_MODEL}"
-        interpreter.llm.api_base = config.OLLAMA_HOST
+        interpreter.llm.api_base = f"{config.OLLAMA_HOST}/v1"
         interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.2)
         interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
         interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
