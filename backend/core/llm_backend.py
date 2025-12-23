@@ -40,6 +40,7 @@ class OllamaBackend(LLMBackend):
     def __init__(self, host: str = None):
         self.host = (host or config.OLLAMA_HOST).rstrip("/")
         self._ssl_options = self._get_ssl_options()
+        self._model_preloaded = False
 
     def _get_ssl_options(self):
         """Get SSL verification options with fallback strategy."""
@@ -145,6 +146,52 @@ class OllamaBackend(LLMBackend):
         except Exception:
             return False
 
+    def preload_model(self, model: str = None, keep_alive: str = "-1") -> bool:
+        """
+        Preload a model into GPU memory and keep it loaded.
+
+        Args:
+            model: Model name to preload (defaults to config.OLLAMA_MODEL)
+            keep_alive: How long to keep model in memory.
+                       "-1" = indefinitely (default)
+                       "0" = unload immediately
+                       "5m" = keep for 5 minutes, etc.
+
+        Returns:
+            True if preload successful, False otherwise
+        """
+        model = model or config.OLLAMA_MODEL
+
+        try:
+            print(f"[OllamaBackend] Preloading model '{model}' to GPU...")
+
+            # Send a minimal chat request with keep_alive to load and keep the model
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "Hello"}],
+                "stream": False,
+                "keep_alive": keep_alive
+            }
+
+            response = self._make_request(
+                "POST",
+                f"{self.host}/api/chat",
+                json=payload,
+                timeout=60.0  # Give it time to load large models
+            )
+
+            if response.status_code == 200:
+                self._model_preloaded = True
+                print(f"[OllamaBackend] Model '{model}' preloaded successfully and will stay in memory")
+                return True
+            else:
+                print(f"[OllamaBackend] Failed to preload model '{model}': {response.status_code}")
+                return False
+
+        except Exception as e:
+            print(f"[OllamaBackend] Error preloading model '{model}': {e}")
+            return False
+
     def list_models(self) -> List[str]:
         """List available Ollama models"""
         try:
@@ -161,6 +208,7 @@ class OllamaBackend(LLMBackend):
             "model": model,
             "messages": messages,
             "stream": False,
+            "keep_alive": "-1",  # Keep model loaded indefinitely
             "options": {
                 "temperature": temperature
             }
@@ -182,6 +230,7 @@ class OllamaBackend(LLMBackend):
             "model": model,
             "messages": messages,
             "stream": True,
+            "keep_alive": "-1",  # Keep model loaded indefinitely
             "options": {
                 "temperature": temperature
             }

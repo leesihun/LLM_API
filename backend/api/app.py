@@ -32,6 +32,56 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Run on server startup"""
+    if config.PRELOAD_MODEL_ON_STARTUP:
+        print("\n" + "=" * 70)
+        print("MODEL PRELOADING")
+        print("=" * 70)
+
+        from backend.core.llm_backend import llm_backend
+
+        # Check if backend is available
+        if not llm_backend.is_available():
+            print("[Startup] LLM backend not available - skipping model preload")
+            print("=" * 70 + "\n")
+            return
+
+        # Get the actual backend instance (unwrap the interceptor)
+        backend = llm_backend.backend
+
+        # Check if it's an Ollama backend (or AutoLLMBackend with Ollama active)
+        from backend.core.llm_backend import OllamaBackend, AutoLLMBackend
+
+        ollama_backend = None
+        if isinstance(backend, OllamaBackend):
+            ollama_backend = backend
+        elif isinstance(backend, AutoLLMBackend):
+            # For AutoLLMBackend, get the active backend
+            active = backend._get_backend()
+            if isinstance(active, OllamaBackend):
+                ollama_backend = active
+
+        if ollama_backend:
+            # Preload the default model
+            success = ollama_backend.preload_model(
+                model=config.OLLAMA_MODEL,
+                keep_alive=config.PRELOAD_KEEP_ALIVE
+            )
+
+            if success:
+                print(f"[Startup] Model '{config.OLLAMA_MODEL}' is now loaded in GPU memory")
+                print(f"[Startup] Keep-alive setting: {config.PRELOAD_KEEP_ALIVE}")
+            else:
+                print(f"[Startup] Failed to preload model '{config.OLLAMA_MODEL}'")
+        else:
+            print(f"[Startup] Model preloading only supported for Ollama backend")
+            print(f"[Startup] Current backend: {backend.__class__.__name__}")
+
+        print("=" * 70 + "\n")
+
+
 # Health check endpoint
 @app.get("/")
 def root():

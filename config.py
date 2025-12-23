@@ -10,7 +10,7 @@ from typing import Literal
 # ============================================================================
 SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 10007  # Main API server (chat, auth, etc.)
-TOOLS_HOST = "localhost"  # Tools server host (change if on different machine)
+TOOLS_HOST = "localhost://"  # Tools server host (change if on different machine)
 TOOLS_PORT = 10006   # Tools API server (websearch, python_coder, rag) - separate to avoid deadlock
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
@@ -30,6 +30,10 @@ LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 # For different machines, update to http://<ollama-server-ip>:11434
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = "GLM46"  # Default model
+
+# Model Preloading Settings
+PRELOAD_MODEL_ON_STARTUP = True  # Preload default model to GPU on server startup
+PRELOAD_KEEP_ALIVE = "-1"  # Keep model in memory: "-1" = indefinitely, "5m" = 5 minutes, "0" = unload
 
 # Llama.cpp Settings
 LLAMACPP_HOST = "http://localhost:8080"
