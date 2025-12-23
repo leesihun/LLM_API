@@ -85,6 +85,9 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         self.interpreter.llm.model = f"ollama/{model}"
         self.interpreter.llm.api_base = config.OLLAMA_HOST
 
+        # CRITICAL: Set dummy API key to prevent litellm errors with Ollama
+        self.interpreter.llm.api_key = "dummy"
+
         # CRITICAL: Set context window (max_tokens) to prevent errors
         self.interpreter.llm.context_window = config.DEFAULT_MAX_TOKENS
         self.interpreter.llm.max_tokens = config.DEFAULT_MAX_TOKENS
@@ -113,6 +116,7 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         print(f"[OpenInterpreter] Configured:")
         print(f"  Model: ollama/{model}")
         print(f"  API Base: {config.OLLAMA_HOST}")
+        print(f"  API Key: dummy (for Ollama compatibility)")
         print(f"  Context Window: {config.DEFAULT_MAX_TOKENS}")
         print(f"  Max Tokens: {config.DEFAULT_MAX_TOKENS}")
         print(f"  Streaming: Disabled")
@@ -201,42 +205,26 @@ class OpenInterpreterExecutor(BasePythonExecutor):
                 # Build enhanced instruction with error context
                 enhanced_instruction = self._build_instruction(code, error_history, context)
 
-                # Execute via Open Interpreter
-                # BYPASS interpreter.chat() and use Ollama directly
-                # This avoids the httpx.ResponseNotRead error
-                print(f"[OPENINTERPRETER] Calling Ollama API directly...")
-
-                # Use Ollama Python client directly
-                import ollama
-                from ollama import Client
-                model = config.TOOL_MODELS.get("python_coder", config.OLLAMA_MODEL)
+                # Execute via Open Interpreter using proper chat() method
+                print(f"[OPENINTERPRETER] Calling interpreter.chat()...")
+                log_to_prompts_file(f"Instruction:\n{enhanced_instruction[:500]}...")
 
                 try:
-                    # Create Ollama client with explicit host
-                    # This is critical for Linux systems where Ollama may bind to specific interfaces
-                    # IMPORTANT: Clear proxy variables again before creating client to avoid Squid interference
-                    import os
-                    for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
-                                      'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy']:
-                        os.environ.pop(proxy_var, None)
-
-                    client = Client(host=config.OLLAMA_HOST)
-
-                    print(f"[OPENINTERPRETER] Connecting to Ollama at {config.OLLAMA_HOST} (proxies disabled)")
-
-                    # Call Ollama with non-streaming
-                    ollama_response = client.generate(
-                        model=model,
-                        prompt=enhanced_instruction,
-                        stream=False
+                    # Use interpreter.chat() with non-streaming mode
+                    response_chunks = self.interpreter.chat(
+                        message=enhanced_instruction,
+                        display=False,
+                        stream=False,
+                        blocking=True
                     )
 
-                    response_text = ollama_response.get('response', '')
-                    print(f"[OPENINTERPRETER] Got response from Ollama ({len(response_text)} chars)")
+                    print(f"[OPENINTERPRETER] Got response from interpreter ({len(response_chunks)} chunks)")
+                    log_to_prompts_file(f"Response chunks: {len(response_chunks)}")
 
                 except Exception as e:
                     error_msg = str(e)
-                    print(f"[OPENINTERPRETER] Ollama call failed: {error_msg}")
+                    print(f"[OPENINTERPRETER] interpreter.chat() failed: {error_msg}")
+                    log_to_prompts_file(f"Error: {error_msg}")
 
                     # Provide helpful error messages
                     if "Access denied" in error_msg or "Connection refused" in error_msg:
@@ -246,10 +234,10 @@ class OpenInterpreterExecutor(BasePythonExecutor):
                         print(f"[OPENINTERPRETER]   2. Or start Ollama with: OLLAMA_HOST=0.0.0.0 ollama serve")
                         print(f"[OPENINTERPRETER]   3. Or update config.OLLAMA_HOST to match your Ollama server")
 
-                    response_text = f"Error calling Ollama: {error_msg}"
+                    response_chunks = []
 
-                # Parse response
-                result = self._parse_response(response_text, attempt, start_time)
+                # Parse response chunks into standardized format
+                result = self._parse_interpreter_response(response_chunks, attempt, start_time)
 
                 # Check if execution was successful
                 if result["success"]:
@@ -365,17 +353,17 @@ class OpenInterpreterExecutor(BasePythonExecutor):
 
         return "\n".join(parts)
 
-    def _parse_response(
+    def _parse_interpreter_response(
         self,
-        response: Any,
+        response_chunks: List[Dict],
         attempt: int,
         start_time: float
     ) -> Dict[str, Any]:
         """
-        Parse Open Interpreter response into standardized format
+        Parse Open Interpreter response chunks into standardized format
 
         Args:
-            response: Response from interpreter.chat()
+            response_chunks: List of message chunks from interpreter.chat()
             attempt: Current attempt number
             start_time: Execution start time
 
@@ -384,34 +372,78 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         """
         execution_time = time.time() - start_time
 
-        # Open Interpreter returns string response
-        response_str = str(response) if response else ""
+        # Parse chunks to extract stdout, stderr, and code
+        stdout_parts = []
+        stderr_parts = []
+        code_parts = []
+        message_parts = []
 
-        # Simple heuristic: check for common error indicators
-        # This is a simplified check - Open Interpreter's response format may vary
-        is_error = any(keyword in response_str.lower() for keyword in [
-            "error", "exception", "traceback", "failed", "syntax error"
-        ])
+        log_to_prompts_file(f"\nPARSING {len(response_chunks)} CHUNKS:")
 
-        # Check for success indicators
-        is_success = not is_error and len(response_str) > 0
+        for i, chunk in enumerate(response_chunks):
+            chunk_type = chunk.get("type", "")
+            chunk_format = chunk.get("format", "")
+            chunk_role = chunk.get("role", "")
+            content = chunk.get("content", "")
+
+            log_to_prompts_file(f"  Chunk {i+1}: role={chunk_role}, type={chunk_type}, format={chunk_format}")
+            log_to_prompts_file(f"    Content: {str(content)[:100]}...")
+
+            # Extract code that was executed
+            if chunk_type == "code":
+                code_parts.append(content)
+
+            # Extract stdout output
+            elif chunk_type == "console" and chunk_format == "output":
+                stdout_parts.append(content)
+
+            # Extract stderr/errors
+            elif chunk_type == "console" and chunk_format == "error":
+                stderr_parts.append(content)
+
+            # Extract assistant messages
+            elif chunk_type == "message" and chunk_role == "assistant":
+                message_parts.append(content)
+
+        # Combine outputs
+        stdout = "\n".join(stdout_parts)
+        stderr = "\n".join(stderr_parts)
+        code_executed = "\n".join(code_parts)
+        messages = "\n".join(message_parts)
+
+        # Determine success
+        # Success if we have output and no errors
+        has_output = len(stdout) > 0 or len(messages) > 0
+        has_error = len(stderr) > 0
+        is_success = has_output and not has_error
 
         # Build result
         result = {
             "success": is_success,
-            "stdout": response_str if is_success else "",
-            "stderr": response_str if is_error else "",
+            "stdout": stdout if stdout else messages,  # Use messages if no stdout
+            "stderr": stderr,
             "returncode": 0 if is_success else 1,
             "execution_time": execution_time,
             "files": self._get_workspace_files(),
             "workspace": str(self.workspace),
-            "error": response_str if is_error else None
+            "error": stderr if has_error else None
         }
 
-        # Log response
-        log_to_prompts_file(f"\nRESPONSE:")
-        for line in response_str.split('\n'):
-            log_to_prompts_file(f"  {line}")
+        # Log parsed result
+        log_to_prompts_file(f"\nPARSED RESULT:")
+        log_to_prompts_file(f"  Success: {is_success}")
+        log_to_prompts_file(f"  Code executed: {len(code_executed)} chars")
+        log_to_prompts_file(f"  Stdout: {len(stdout)} chars")
+        log_to_prompts_file(f"  Stderr: {len(stderr)} chars")
+        log_to_prompts_file(f"  Messages: {len(messages)} chars")
+        if stdout:
+            log_to_prompts_file(f"\nSTDOUT:")
+            for line in stdout.split('\n'):
+                log_to_prompts_file(f"  {line}")
+        if stderr:
+            log_to_prompts_file(f"\nSTDERR:")
+            for line in stderr.split('\n'):
+                log_to_prompts_file(f"  {line}")
 
         return result
 
