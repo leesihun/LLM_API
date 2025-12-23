@@ -1,64 +1,61 @@
-#!/usr/bin/env python3
 """
-Test script for OpenInterpreter tool with simple division
+Quick test for OpenInterpreter executor
 """
-import sys
-sys.path.insert(0, '.')
+import config
 
-from tools.python_coder.openinterpreter_tool import OpenInterpreterExecutor
+# Temporarily set mode to openinterpreter
+original_mode = config.PYTHON_EXECUTOR_MODE
+config.PYTHON_EXECUTOR_MODE = "openinterpreter"
 
-def test_simple_division():
-    """Test simple division: 11.951 / 3.751"""
+try:
+    from tools.python_coder import PythonCoderTool
+
     print("=" * 80)
-    print("Testing OpenInterpreter with simple division")
+    print("Testing OpenInterpreter Executor")
     print("=" * 80)
 
-    # Create executor
-    session_id = "test_session_division"
-    executor = OpenInterpreterExecutor(session_id)
+    # Create executor instance
+    print("\n1. Creating executor...")
+    executor = PythonCoderTool(session_id="test_session")
+    print(f"   Created: {type(executor).__name__}")
 
-    # Simple code to execute
-    code = "print(11.951 / 3.751)"
+    # Test execution with natural language
+    print("\n2. Testing execution with natural language instruction...")
+    instruction = "Calculate the factorial of 5 and print the result"
 
-    print(f"\nCode to execute:")
-    print(f"  {code}")
-    print()
+    result = executor.execute(
+        code=instruction,  # Natural language instruction
+        timeout=60
+    )
 
-    # Execute
-    result = executor.execute(code)
-
-    # Display results
-    print("\n" + "=" * 80)
-    print("EXECUTION RESULT")
-    print("=" * 80)
-    print(f"Success: {result['success']}")
-    print(f"Return Code: {result['returncode']}")
-    print(f"Execution Time: {result['execution_time']:.2f}s")
-    print()
+    print("\n3. Results:")
+    print(f"   Success: {result['success']}")
+    print(f"   Return code: {result['returncode']}")
+    print(f"   Execution time: {result['execution_time']:.2f}s")
 
     if result['stdout']:
-        print("STDOUT:")
-        print(result['stdout'])
-        print()
+        print(f"\n   STDOUT:")
+        print(f"   {result['stdout']}")
 
     if result['stderr']:
-        print("STDERR:")
-        print(result['stderr'])
-        print()
+        print(f"\n   STDERR:")
+        print(f"   {result['stderr']}")
 
-    if result['error']:
-        print("ERROR:")
-        print(result['error'])
-        print()
+    if result['files']:
+        print(f"\n   Files created: {list(result['files'].keys())}")
 
-    print(f"Workspace: {result['workspace']}")
-    print(f"Files created: {len(result['files'])}")
+    print("\n" + "=" * 80)
+    print("Test completed!")
+    print("=" * 80)
 
-    # Cleanup
-    executor.clear_workspace()
+except ImportError as e:
+    print(f"\nImportError: {e}")
+    print("\nNote: Open Interpreter may not be installed.")
+    print("Install with: pip install open-interpreter")
 
-    return result['success']
+except Exception as e:
+    print(f"\nError: {type(e).__name__}: {e}")
 
-if __name__ == "__main__":
-    success = test_simple_division()
-    sys.exit(0 if success else 1)
+finally:
+    # Restore original mode
+    config.PYTHON_EXECUTOR_MODE = original_mode

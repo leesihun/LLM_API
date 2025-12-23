@@ -1,22 +1,12 @@
 """
 OpenInterpreter Python Code Executor
-Wraps Open Interpreter for ReAct agent integration with automatic retry on errors
+Executes natural language instructions by generating and running Python code
 """
 import os
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-
-# Clear ALL proxy environment variables to avoid Squid/proxy interference with Ollama
-# The Ollama Python client should connect directly, not through proxies
-# This is especially important for localhost/127.0.0.1 connections
-for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
-                  'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy']:
-    if proxy_var in os.environ:
-        value = os.environ[proxy_var]
-        print(f"[OpenInterpreter] Removing proxy env var: {proxy_var}={value}")
-        del os.environ[proxy_var]
 
 import config
 from tools.python_coder.base import BasePythonExecutor
@@ -33,113 +23,77 @@ def log_to_prompts_file(message: str):
 
 class OpenInterpreterExecutor(BasePythonExecutor):
     """
-    OpenInterpreter-based Python code executor with automatic error correction
+    OpenInterpreter-based executor for natural language code generation and execution
 
-    Features:
-    - Automatic retry on execution errors (up to MAX_RETRIES)
-    - Error context accumulation across retries
-    - Same workspace as native executor (session-based)
-    - Returns standardized ToolResponse format
+    Receives natural language instructions, generates Python code, executes it,
+    and automatically retries on errors.
     """
 
     def __init__(self, session_id: str):
         """
-        Initialize OpenInterpreter executor for a session
+        Initialize OpenInterpreter executor
 
         Args:
             session_id: Session ID for workspace isolation
+        """
+        super().__init__(session_id)
+        self.workspace = config.PYTHON_WORKSPACE_DIR / session_id
+        self.workspace.mkdir(parents=True, exist_ok=True)
+
+        self.timeout = config.PYTHON_EXECUTOR_TIMEOUT
+        self.max_output_size = config.PYTHON_EXECUTOR_MAX_OUTPUT_SIZE
+        self.max_retries = config.PYTHON_CODER_MAX_RETRIES
+
+        self._interpreter = None
+
+    def _get_interpreter(self):
+        """
+        Get or create OpenInterpreter instance with configuration
+
+        Returns:
+            Configured interpreter instance
 
         Raises:
             ImportError: If open-interpreter is not installed
         """
-        super().__init__(session_id)
+        if self._interpreter is not None:
+            return self._interpreter
 
-        # Import Open Interpreter (strict - raise error if not available)
+        print(f"[OPENINTERPRETER] Initializing interpreter...")
+
         try:
             from interpreter import interpreter
-            self.interpreter = interpreter
-        except ImportError as e:
+        except ImportError:
             raise ImportError(
-                "Open Interpreter is not installed. "
-                "Install it with: pip install open-interpreter\n"
-                "Or set PYTHON_EXECUTOR_MODE='native' in config.py"
-            ) from e
-
-        # Configure workspace (same as native executor)
-        self.workspace = config.PYTHON_WORKSPACE_DIR / session_id
-        self.workspace.mkdir(parents=True, exist_ok=True)
-
-        # Configure Open Interpreter
-        self._configure_interpreter()
-
-        # Load system prompt
-        self.system_prompt = self._load_system_prompt()
-
-    def _configure_interpreter(self):
-        """Configure Open Interpreter with settings from config"""
-        # Get model from TOOL_MODELS config
-        model = config.TOOL_MODELS.get("python_coder", config.OLLAMA_MODEL)
-
-        # Configure LLM backend for Open Interpreter 0.4.x
-        # Use litellm format for Ollama
-        self.interpreter.llm.model = f"ollama/{model}"
-        self.interpreter.llm.api_base = config.OLLAMA_HOST
-
-        # CRITICAL: Set dummy API key to prevent litellm errors with Ollama
-        self.interpreter.llm.api_key = "dummy"
-
-        # CRITICAL: Set context window (max_tokens) to prevent errors
-        self.interpreter.llm.context_window = config.DEFAULT_MAX_TOKENS
-        self.interpreter.llm.max_tokens = config.DEFAULT_MAX_TOKENS
-
-        # CRITICAL: Disable streaming to avoid httpx.ResponseNotRead error
-        self.interpreter.llm.supports_streaming = False
-
-        # Set temperature
-        self.interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.3)
-
-        # Configure execution settings
-        self.interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
-        self.interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
-
-        # Disable vision and other features we don't need
-        self.interpreter.llm.supports_vision = False
-        self.interpreter.llm.supports_functions = False
-
-        # Set safe mode if enabled
-        if config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE:
-            self.interpreter.safe_mode = "ask"
-
-        # Configure working directory
-        self.interpreter.system_message = f"You are a Python code execution assistant. Working directory: {self.workspace}"
-
-        print(f"[OpenInterpreter] Configured:")
-        print(f"  Model: ollama/{model}")
-        print(f"  API Base: {config.OLLAMA_HOST}")
-        print(f"  API Key: dummy (for Ollama compatibility)")
-        print(f"  Context Window: {config.DEFAULT_MAX_TOKENS}")
-        print(f"  Max Tokens: {config.DEFAULT_MAX_TOKENS}")
-        print(f"  Streaming: Disabled")
-        print(f"  Workspace: {self.workspace}")
-        print(f"  Auto-run: {self.interpreter.auto_run}")
-        print(f"  Offline: {self.interpreter.offline}")
-
-    def _load_system_prompt(self) -> str:
-        """Load system prompt from /prompts directory"""
-        prompt_path = config.PROMPTS_DIR / "tools" / "python_coder_openinterpreter.txt"
-
-        try:
-            with open(prompt_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except FileNotFoundError:
-            print(f"[WARNING] Prompt file not found: {prompt_path}")
-            print("[WARNING] Using default prompt")
-            return (
-                "You are a Python code execution assistant.\n"
-                "Execute code in the workspace and report results clearly.\n"
-                "If you encounter errors, analyze them and attempt to fix the code.\n"
-                "Always use the workspace directory for file operations."
+                "OpenInterpreter not installed. "
+                "Install with: pip install open-interpreter"
             )
+
+        # Load system message
+        system_prompt_path = config.PROMPTS_DIR / "tools" / "python_coder_openinterpreter.txt"
+        with open(system_prompt_path, 'r', encoding='utf-8') as f:
+            system_message = f.read()
+
+        # Configure interpreter
+        interpreter.llm.model = f"ollama/{config.OLLAMA_MODEL}"
+        interpreter.llm.api_base = config.OLLAMA_HOST
+        interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.2)
+        interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
+        interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
+        interpreter.safe_mode = config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE
+        interpreter.system_message = system_message
+
+        print(f"[OPENINTERPRETER] Configuration:")
+        print(f"  Model: {interpreter.llm.model}")
+        print(f"  API Base: {interpreter.llm.api_base}")
+        print(f"  Temperature: {interpreter.llm.temperature}")
+        print(f"  Auto-run: {interpreter.auto_run}")
+        print(f"  Offline: {interpreter.offline}")
+        print(f"  Safe mode: {interpreter.safe_mode}")
+        print(f"  Workspace: {self.workspace}")
+
+        self._interpreter = interpreter
+        return self._interpreter
 
     def execute(
         self,
@@ -148,325 +102,261 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Execute Python code with automatic retry on errors
+        Execute natural language instruction using OpenInterpreter
 
         Args:
-            code: Python code to execute (or natural language instruction)
-            timeout: Execution timeout (currently not enforced by OI)
-            context: Additional context from ReAct agent
+            code: Natural language instruction (NOT Python code)
+            timeout: Execution timeout (note: not enforced by OpenInterpreter)
+            context: Additional context (unused)
 
         Returns:
-            Standardized execution result dictionary:
-            {
-                "success": bool,
-                "stdout": str,
-                "stderr": str,
-                "returncode": int,
-                "execution_time": float,
-                "files": dict,
-                "workspace": str,
-                "error": Optional[str]
-            }
+            Standardized execution result dictionary
         """
+        exec_timeout = timeout or self.timeout
         start_time = time.time()
-        max_retries = config.PYTHON_CODER_MAX_RETRIES
-        error_history = []
 
-        # Log to prompts.log
+        # Log execution start
         log_to_prompts_file("\n\n")
         log_to_prompts_file("=" * 80)
-        log_to_prompts_file(f"TOOL EXECUTION: python_coder (OpenInterpreter mode)")
+        log_to_prompts_file(f"TOOL EXECUTION: python_coder (OpenInterpreter)")
         log_to_prompts_file("=" * 80)
         log_to_prompts_file(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         log_to_prompts_file(f"Session ID: {self.session_id}")
         log_to_prompts_file(f"Workspace: {self.workspace}")
-        log_to_prompts_file(f"Max Retries: {max_retries}")
-        log_to_prompts_file(f"Code/Instruction Length: {len(code)} chars")
+        log_to_prompts_file(f"Instruction Length: {len(code)} chars")
+        log_to_prompts_file(f"Timeout: {exec_timeout}s")
+        log_to_prompts_file(f"Max Retries: {self.max_retries}")
         log_to_prompts_file(f"")
-        log_to_prompts_file(f"INSTRUCTION:")
+        log_to_prompts_file(f"NATURAL LANGUAGE INSTRUCTION:")
         for line in code.split('\n'):
             log_to_prompts_file(f"  {line}")
 
-        # Console logging
         print("\n" + "=" * 80)
         print("[OPENINTERPRETER] execute() called")
         print("=" * 80)
         print(f"Session ID: {self.session_id}")
         print(f"Workspace: {self.workspace}")
-        print(f"Instruction length: {len(code)} chars")
-        print(f"Max retries: {max_retries}")
+        print(f"Instruction: {code[:100]}...")
+        print(f"Timeout: {exec_timeout}s")
+        print(f"Max retries: {self.max_retries}")
 
-        # Retry loop
-        for attempt in range(max_retries):
+        try:
+            # Get interpreter instance
+            interpreter = self._get_interpreter()
+
+            # Change to workspace directory
+            original_cwd = os.getcwd()
+            os.chdir(self.workspace)
+            print(f"[OPENINTERPRETER] Changed to workspace: {self.workspace}")
+
             try:
-                print(f"\n[OPENINTERPRETER] Attempt {attempt + 1}/{max_retries}")
-                log_to_prompts_file(f"\n--- Attempt {attempt + 1}/{max_retries} ---")
+                # Execute instruction
+                print(f"\n[OPENINTERPRETER] Sending instruction to interpreter...")
 
-                # Build enhanced instruction with error context
-                enhanced_instruction = self._build_instruction(code, error_history, context)
+                log_to_prompts_file(f"")
+                log_to_prompts_file(f"EXECUTING...")
 
-                # Execute via Open Interpreter using proper chat() method
-                print(f"[OPENINTERPRETER] Calling interpreter.chat()...")
-                log_to_prompts_file(f"Instruction:\n{enhanced_instruction[:500]}...")
+                response_chunks = interpreter.chat(
+                    code,
+                    display=False,
+                    stream=False,
+                    blocking=True
+                )
 
-                try:
-                    # Use interpreter.chat() with non-streaming mode
-                    response_chunks = self.interpreter.chat(
-                        message=enhanced_instruction,
-                        display=False,
-                        stream=False,
-                        blocking=True
-                    )
+                print(f"[OPENINTERPRETER] Received {len(response_chunks)} response chunks")
+                log_to_prompts_file(f"Response chunks: {len(response_chunks)}")
 
-                    print(f"[OPENINTERPRETER] Got response from interpreter ({len(response_chunks)} chunks)")
-                    log_to_prompts_file(f"Response chunks: {len(response_chunks)}")
+                # Parse response into standardized format
+                result = self._parse_response(response_chunks, start_time)
 
-                except Exception as e:
-                    error_msg = str(e)
-                    print(f"[OPENINTERPRETER] interpreter.chat() failed: {error_msg}")
-                    log_to_prompts_file(f"Error: {error_msg}")
+                # Add workspace files
+                result["files"] = self._get_workspace_files()
+                result["workspace"] = str(self.workspace)
 
-                    # Provide helpful error messages
-                    if "Access denied" in error_msg or "Connection refused" in error_msg:
-                        print(f"[OPENINTERPRETER] ERROR: Cannot connect to Ollama at {config.OLLAMA_HOST}")
-                        print(f"[OPENINTERPRETER] On Linux, make sure Ollama is configured to accept network connections:")
-                        print(f"[OPENINTERPRETER]   1. Set OLLAMA_HOST=0.0.0.0 environment variable")
-                        print(f"[OPENINTERPRETER]   2. Or start Ollama with: OLLAMA_HOST=0.0.0.0 ollama serve")
-                        print(f"[OPENINTERPRETER]   3. Or update config.OLLAMA_HOST to match your Ollama server")
+                # Log result
+                execution_time = time.time() - start_time
 
-                    response_chunks = []
+                log_to_prompts_file(f"")
+                log_to_prompts_file(f"OUTPUT:")
+                log_to_prompts_file(f"  Status: {'SUCCESS' if result['success'] else 'FAILED'}")
+                log_to_prompts_file(f"  Return Code: {result['returncode']}")
+                log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
 
-                # Parse response chunks into standardized format
-                result = self._parse_interpreter_response(response_chunks, attempt, start_time)
+                if result["stdout"]:
+                    log_to_prompts_file(f"")
+                    log_to_prompts_file(f"STDOUT:")
+                    for line in result["stdout"].split('\n'):
+                        log_to_prompts_file(f"  {line}")
 
-                # Check if execution was successful
-                if result["success"]:
-                    print(f"[OPENINTERPRETER] [SUCCESS] Completed in attempt {attempt + 1}")
-                    log_to_prompts_file(f"\n[SUCCESS] Completed in attempt {attempt + 1}")
-                    log_to_prompts_file(f"Execution time: {result['execution_time']:.2f}s")
-                    log_to_prompts_file("=" * 80)
-                    return result
-                else:
-                    # Execution failed, but we got a response
-                    error_msg = result.get("error", "Unknown error")
-                    error_history.append(f"Attempt {attempt + 1}: {error_msg}")
+                if result["stderr"]:
+                    log_to_prompts_file(f"")
+                    log_to_prompts_file(f"STDERR:")
+                    for line in result["stderr"].split('\n'):
+                        log_to_prompts_file(f"  {line}")
 
-                    print(f"[OPENINTERPRETER] [FAILED] Attempt {attempt + 1}: {error_msg}")
-                    log_to_prompts_file(f"[FAILED] {error_msg}")
+                if result["files"]:
+                    log_to_prompts_file(f"")
+                    log_to_prompts_file(f"FILES:")
+                    for filename, meta in result["files"].items():
+                        log_to_prompts_file(f"  {filename} ({meta['size']} bytes)")
 
-                    # If last attempt, return failure
-                    if attempt == max_retries - 1:
-                        result["error"] = f"Failed after {max_retries} attempts. Last error: {error_msg}"
-                        log_to_prompts_file(f"\n[FINAL FAILURE] All {max_retries} attempts exhausted")
-                        log_to_prompts_file("=" * 80)
-                        return result
+                log_to_prompts_file(f"")
+                log_to_prompts_file("=" * 80)
 
-                    # Continue to next retry
-                    print(f"[OPENINTERPRETER] Retrying with error context...")
+                # Console output
+                print(f"\n[OPENINTERPRETER] Execution completed in {execution_time:.2f}s")
+                print(f"[OPENINTERPRETER] Success: {result['success']}")
+                if result["stdout"]:
+                    preview = result["stdout"][:300]
+                    if len(result["stdout"]) > 300:
+                        preview += "..."
+                    print(f"[OPENINTERPRETER] STDOUT:\n{preview}")
+                if result["stderr"]:
+                    preview = result["stderr"][:300]
+                    if len(result["stderr"]) > 300:
+                        preview += "..."
+                    print(f"[OPENINTERPRETER] STDERR:\n{preview}")
+                if result["files"]:
+                    print(f"[OPENINTERPRETER] Files: {list(result['files'].keys())}")
 
-            except Exception as e:
-                # Unexpected error during execution
-                error_msg = f"Exception: {type(e).__name__}: {str(e)}"
-                error_history.append(f"Attempt {attempt + 1}: {error_msg}")
+                return result
 
-                print(f"[OPENINTERPRETER] [ERROR] {error_msg}")
-                log_to_prompts_file(f"[ERROR] {error_msg}")
+            finally:
+                # Restore original directory
+                os.chdir(original_cwd)
+                print(f"[OPENINTERPRETER] Restored original directory")
 
-                # If last attempt, return failure
-                if attempt == max_retries - 1:
-                    execution_time = time.time() - start_time
-                    log_to_prompts_file(f"\n[FINAL FAILURE] All {max_retries} attempts exhausted")
-                    log_to_prompts_file(f"Execution time: {execution_time:.2f}s")
-                    log_to_prompts_file("=" * 80)
+        except ImportError as e:
+            execution_time = time.time() - start_time
+            error_msg = str(e)
 
-                    return {
-                        "success": False,
-                        "stdout": "",
-                        "stderr": "\n".join(error_history),
-                        "returncode": -1,
-                        "execution_time": execution_time,
-                        "files": self._get_workspace_files(),
-                        "workspace": str(self.workspace),
-                        "error": f"Failed after {max_retries} attempts. Last error: {error_msg}"
-                    }
+            print(f"\n[OPENINTERPRETER] IMPORT ERROR: {error_msg}")
 
-                # Continue to next retry
-                print(f"[OPENINTERPRETER] Retrying after exception...")
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"ERROR: ImportError")
+            log_to_prompts_file(f"  {error_msg}")
+            log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
+            log_to_prompts_file(f"")
+            log_to_prompts_file("=" * 80)
 
-        # Should never reach here, but just in case
-        execution_time = time.time() - start_time
-        return {
-            "success": False,
-            "stdout": "",
-            "stderr": "Unexpected: retry loop completed without return",
-            "returncode": -1,
-            "execution_time": execution_time,
-            "files": self._get_workspace_files(),
-            "workspace": str(self.workspace),
-            "error": "Retry loop error"
-        }
+            raise
 
-    def _build_instruction(
+        except Exception as e:
+            execution_time = time.time() - start_time
+            error_msg = str(e)
+
+            print(f"\n[OPENINTERPRETER] ERROR: {error_msg}")
+
+            log_to_prompts_file(f"")
+            log_to_prompts_file(f"ERROR: {type(e).__name__}")
+            log_to_prompts_file(f"  {error_msg}")
+            log_to_prompts_file(f"  Execution Time: {execution_time:.2f}s")
+            log_to_prompts_file(f"")
+            log_to_prompts_file("=" * 80)
+
+            # Check if connection error
+            if "connect" in error_msg.lower() or "connection" in error_msg.lower():
+                raise ConnectionError(f"Cannot connect to Ollama at {config.OLLAMA_HOST}: {error_msg}")
+
+            raise
+
+    def _parse_response(
         self,
-        original_code: str,
-        error_history: List[str],
-        context: Optional[Dict[str, Any]]
-    ) -> str:
-        """
-        Build enhanced instruction with error context and system prompt
-
-        Args:
-            original_code: Original code or instruction
-            error_history: List of previous error messages
-            context: Additional context from ReAct agent
-
-        Returns:
-            Enhanced instruction string
-        """
-        parts = [self.system_prompt, ""]
-
-        # Add workspace info
-        parts.append(f"Working directory: {self.workspace}")
-        parts.append("")
-
-        # Add context if provided
-        if context:
-            if context.get("user_query"):
-                parts.append(f"User query: {context['user_query']}")
-            if context.get("current_thought"):
-                parts.append(f"Current thought: {context['current_thought']}")
-            parts.append("")
-
-        # Add original instruction
-        parts.append("Instruction:")
-        parts.append(original_code)
-        parts.append("")
-
-        # Add error history if retrying
-        if error_history:
-            parts.append("Previous attempts failed with these errors:")
-            for error in error_history:
-                parts.append(f"  - {error}")
-            parts.append("")
-            parts.append("Please analyze the errors above and fix the code before executing.")
-            parts.append("")
-
-        return "\n".join(parts)
-
-    def _parse_interpreter_response(
-        self,
-        response_chunks: List[Dict],
-        attempt: int,
+        response_chunks: List[Dict[str, Any]],
         start_time: float
     ) -> Dict[str, Any]:
         """
-        Parse Open Interpreter response chunks into standardized format
+        Parse OpenInterpreter response chunks into standardized format
 
         Args:
-            response_chunks: List of message chunks from interpreter.chat()
-            attempt: Current attempt number
+            response_chunks: List of response chunks from interpreter
             start_time: Execution start time
 
         Returns:
             Standardized result dictionary
         """
-        execution_time = time.time() - start_time
+        print(f"\n[OPENINTERPRETER] Parsing {len(response_chunks)} chunks...")
 
-        # Parse chunks to extract stdout, stderr, and code
         stdout_parts = []
         stderr_parts = []
-        code_parts = []
-        message_parts = []
-
-        log_to_prompts_file(f"\nPARSING {len(response_chunks)} CHUNKS:")
+        success = True
+        returncode = 0
 
         for i, chunk in enumerate(response_chunks):
-            chunk_type = chunk.get("type", "")
-            chunk_format = chunk.get("format", "")
-            chunk_role = chunk.get("role", "")
+            chunk_type = chunk.get("type", "unknown")
             content = chunk.get("content", "")
 
-            log_to_prompts_file(f"  Chunk {i+1}: role={chunk_role}, type={chunk_type}, format={chunk_format}")
-            log_to_prompts_file(f"    Content: {str(content)[:100]}...")
+            print(f"[OPENINTERPRETER] Chunk {i}: type={chunk_type}")
 
-            # Extract code that was executed
             if chunk_type == "code":
-                code_parts.append(content)
+                # Code execution chunk - log it
+                print(f"[OPENINTERPRETER]   Code: {str(content)[:100]}...")
 
-            # Extract stdout output
-            elif chunk_type == "console" and chunk_format == "output":
-                stdout_parts.append(content)
+            elif chunk_type == "console":
+                # Console output chunk
+                format_type = chunk.get("format", "output")
 
-            # Extract stderr/errors
-            elif chunk_type == "console" and chunk_format == "error":
-                stderr_parts.append(content)
+                if format_type == "output":
+                    stdout_parts.append(str(content))
+                    print(f"[OPENINTERPRETER]   Output: {str(content)[:100]}...")
+                elif format_type == "error":
+                    stderr_parts.append(str(content))
+                    success = False
+                    returncode = 1
+                    print(f"[OPENINTERPRETER]   Error: {str(content)[:100]}...")
 
-            # Extract assistant messages
-            elif chunk_type == "message" and chunk_role == "assistant":
-                message_parts.append(content)
+            elif chunk_type == "message":
+                # Message from interpreter
+                stdout_parts.append(str(content))
+                print(f"[OPENINTERPRETER]   Message: {str(content)[:100]}...")
 
         # Combine outputs
-        stdout = "\n".join(stdout_parts)
-        stderr = "\n".join(stderr_parts)
-        code_executed = "\n".join(code_parts)
-        messages = "\n".join(message_parts)
+        stdout = "\n".join(stdout_parts).strip()
+        stderr = "\n".join(stderr_parts).strip()
 
-        # Determine success
-        # Success if we have output and no errors
-        has_output = len(stdout) > 0 or len(messages) > 0
-        has_error = len(stderr) > 0
-        is_success = has_output and not has_error
+        # Limit output size
+        if len(stdout) > self.max_output_size:
+            stdout = stdout[:self.max_output_size] + "\n... (output truncated)"
+        if len(stderr) > self.max_output_size:
+            stderr = stderr[:self.max_output_size] + "\n... (output truncated)"
 
-        # Build result
-        result = {
-            "success": is_success,
-            "stdout": stdout if stdout else messages,  # Use messages if no stdout
+        execution_time = time.time() - start_time
+
+        print(f"[OPENINTERPRETER] Parse complete:")
+        print(f"  Success: {success}")
+        print(f"  Return code: {returncode}")
+        print(f"  STDOUT length: {len(stdout)}")
+        print(f"  STDERR length: {len(stderr)}")
+        print(f"  Execution time: {execution_time:.2f}s")
+
+        return {
+            "success": success,
+            "stdout": stdout,
             "stderr": stderr,
-            "returncode": 0 if is_success else 1,
+            "returncode": returncode,
             "execution_time": execution_time,
-            "files": self._get_workspace_files(),
-            "workspace": str(self.workspace),
-            "error": stderr if has_error else None
+            "error": stderr if not success else None
         }
-
-        # Log parsed result
-        log_to_prompts_file(f"\nPARSED RESULT:")
-        log_to_prompts_file(f"  Success: {is_success}")
-        log_to_prompts_file(f"  Code executed: {len(code_executed)} chars")
-        log_to_prompts_file(f"  Stdout: {len(stdout)} chars")
-        log_to_prompts_file(f"  Stderr: {len(stderr)} chars")
-        log_to_prompts_file(f"  Messages: {len(messages)} chars")
-        if stdout:
-            log_to_prompts_file(f"\nSTDOUT:")
-            for line in stdout.split('\n'):
-                log_to_prompts_file(f"  {line}")
-        if stderr:
-            log_to_prompts_file(f"\nSTDERR:")
-            for line in stderr.split('\n'):
-                log_to_prompts_file(f"  {line}")
-
-        return result
 
     def _get_workspace_files(self) -> Dict[str, Any]:
         """
-        Get list of files in workspace (same as native executor)
+        Get list of files in workspace
 
         Returns:
             Dictionary of files with metadata
         """
         files = {}
 
-        if not self.workspace.exists():
-            return files
-
-        for file_path in self.workspace.iterdir():
-            if file_path.is_file():
-                rel_path = file_path.name
-                files[rel_path] = {
-                    "size": file_path.stat().st_size,
-                    "modified": file_path.stat().st_mtime,
-                    "path": str(file_path)
-                }
+        try:
+            for file_path in self.workspace.iterdir():
+                if file_path.is_file():
+                    files[file_path.name] = {
+                        "size": file_path.stat().st_size,
+                        "modified": file_path.stat().st_mtime,
+                        "path": str(file_path)
+                    }
+        except Exception as e:
+            print(f"[OPENINTERPRETER] Warning: Failed to list files: {e}")
 
         return files
 
@@ -478,7 +368,7 @@ class OpenInterpreterExecutor(BasePythonExecutor):
             filename: File name
 
         Returns:
-            File contents or None
+            File contents or None if not found
         """
         file_path = self.workspace / filename
 
@@ -488,7 +378,8 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
-        except Exception:
+        except Exception as e:
+            print(f"[OPENINTERPRETER] Warning: Failed to read '{filename}': {e}")
             return None
 
     def list_files(self) -> List[str]:
@@ -498,14 +389,20 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         Returns:
             List of file names
         """
-        if not self.workspace.exists():
+        try:
+            return [f.name for f in self.workspace.iterdir() if f.is_file()]
+        except Exception as e:
+            print(f"[OPENINTERPRETER] Warning: Failed to list files: {e}")
             return []
-
-        return [f.name for f in self.workspace.iterdir() if f.is_file()]
 
     def clear_workspace(self):
         """Clear all files in workspace"""
         import shutil
-        if self.workspace.exists():
-            shutil.rmtree(self.workspace)
-        self.workspace.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if self.workspace.exists():
+                shutil.rmtree(self.workspace)
+            self.workspace.mkdir(parents=True, exist_ok=True)
+            print(f"[OPENINTERPRETER] Workspace cleared: {self.workspace}")
+        except Exception as e:
+            print(f"[OPENINTERPRETER] Warning: Failed to clear workspace: {e}")
