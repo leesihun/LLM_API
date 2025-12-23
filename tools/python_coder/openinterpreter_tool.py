@@ -74,9 +74,13 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         with open(system_prompt_path, 'r', encoding='utf-8') as f:
             system_message = f.read()
 
-        # Configure interpreter
+        # Configure interpreter for Ollama
+        # OpenInterpreter uses litellm which requires specific Ollama configuration
+        # We need to set environment variable for Ollama host
+        os.environ["OLLAMA_API_BASE"] = config.OLLAMA_HOST
+
         interpreter.llm.model = f"ollama/{config.OLLAMA_MODEL}"
-        interpreter.llm.api_base = f"{config.OLLAMA_HOST}/v1"
+        interpreter.llm.api_base = None  # Use environment variable instead
         interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.2)
         interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
         interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
