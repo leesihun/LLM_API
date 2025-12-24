@@ -8,6 +8,18 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+# CRITICAL: Clear proxy environment variables BEFORE importing litellm/interpreter
+# litellm expects proper URL formats (e.g., "http://localhost:8080" not just "localhost")
+# Some systems (especially with Squid proxy) have invalid proxy vars that cause errors
+for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                  'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy']:
+    if proxy_var in os.environ:
+        value = os.environ[proxy_var]
+        # Remove if it's not a proper URL or if it contains just "localhost"
+        if value and (not value.startswith(('http://', 'https://', 'socks')) or value == 'localhost'):
+            print(f"[OPENINTERPRETER] Removing invalid proxy env var: {proxy_var}={value}")
+            del os.environ[proxy_var]
+
 import config
 from tools.python_coder.base import BasePythonExecutor
 
