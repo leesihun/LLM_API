@@ -75,12 +75,13 @@ class OpenInterpreterExecutor(BasePythonExecutor):
             system_message = f.read()
 
         # Configure interpreter for Ollama
-        # Enable litellm verbose mode for debugging
-        import litellm
-        litellm.set_verbose = True
-
+        # Work around litellm/httpx proxy parsing issue by ensuring proper URL format
+        # and setting via interpreter's api_base property directly
         interpreter.llm.model = f"ollama/{config.OLLAMA_MODEL}"
         interpreter.llm.api_base = config.OLLAMA_HOST
+
+        # Also set as env var as fallback
+        os.environ["OLLAMA_API_BASE"] = config.OLLAMA_HOST
         interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.2)
         interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
         interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
@@ -89,7 +90,7 @@ class OpenInterpreterExecutor(BasePythonExecutor):
 
         print(f"[OPENINTERPRETER] Configuration:")
         print(f"  Model: {interpreter.llm.model}")
-        print(f"  API Base: {interpreter.llm.api_base}")
+        print(f"  OLLAMA_API_BASE (env): {os.environ.get('OLLAMA_API_BASE')}")
         print(f"  Temperature: {interpreter.llm.temperature}")
         print(f"  Auto-run: {interpreter.auto_run}")
         print(f"  Offline: {interpreter.offline}")
