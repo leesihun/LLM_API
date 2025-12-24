@@ -10,7 +10,7 @@ from typing import Literal
 # ============================================================================
 SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 10007  # Main API server (chat, auth, etc.)
-TOOLS_HOST = "0.0.0.0"  # Tools server host (change if on different machine)
+TOOLS_HOST = "127.0.0.1"  # Tools server host (change if on different machine)
 TOOLS_PORT = 10006   # Tools API server (websearch, python_coder, rag) - separate to avoid deadlock
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
