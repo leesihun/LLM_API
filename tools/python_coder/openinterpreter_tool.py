@@ -87,18 +87,22 @@ class OpenInterpreterExecutor(BasePythonExecutor):
             system_message = f.read()
 
         # Configure interpreter for Ollama
-        # Work around litellm/httpx proxy parsing issue by ensuring proper URL format
-        # and setting via interpreter's api_base property directly
         interpreter.llm.model = f"ollama/{config.OLLAMA_MODEL}"
         interpreter.llm.api_base = config.OLLAMA_HOST
-
-        # Also set as env var as fallback
-        os.environ["OLLAMA_API_BASE"] = config.OLLAMA_HOST
         interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.2)
+
+        # CRITICAL: Disable streaming to avoid httpx.ResponseNotRead error
+        interpreter.llm.supports_streaming = False
+
+        # Configure execution settings
         interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
         interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
         interpreter.safe_mode = config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE
         interpreter.system_message = system_message
+
+        # Set context window to prevent token limit errors
+        interpreter.llm.context_window = config.DEFAULT_MAX_TOKENS
+        interpreter.llm.max_tokens = config.DEFAULT_MAX_TOKENS
 
         print(f"[OPENINTERPRETER] Configuration:")
         print(f"  Model: {interpreter.llm.model}")
