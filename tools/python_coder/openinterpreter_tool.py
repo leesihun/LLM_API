@@ -27,7 +27,7 @@ from tools.python_coder.base import BasePythonExecutor
 def log_to_prompts_file(message: str):
     """Write message to prompts.log"""
     try:
-        with open(config.PROMPTS_LOG_PATH, 'a', encoding='utf-8') as f:
+        with open('../../../'+config.PROMPTS_LOG_PATH, 'a', encoding='utf-8') as f:
             f.write(message + '\n')
     except Exception as e:
         print(f"[WARNING] Failed to write to prompts.log: {e}")

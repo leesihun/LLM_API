@@ -14,7 +14,7 @@ Important:
 Raw python code for python_coder
 search query for react and websearch
 
-
+Try not to think too much
 
 Answer in this EXACT format:
 
