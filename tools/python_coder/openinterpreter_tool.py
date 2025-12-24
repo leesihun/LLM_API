@@ -81,11 +81,6 @@ class OpenInterpreterExecutor(BasePythonExecutor):
                 "Install with: pip install open-interpreter"
             )
 
-        # Load system message
-        system_prompt_path = config.PROMPTS_DIR / "tools" / "python_coder_openinterpreter.txt"
-        with open(system_prompt_path, 'r', encoding='utf-8') as f:
-            system_message = f.read()
-
         # Configure interpreter for Ollama
         interpreter.llm.model = f"ollama/{config.OLLAMA_MODEL}"
         interpreter.llm.api_base = config.OLLAMA_HOST
@@ -98,7 +93,8 @@ class OpenInterpreterExecutor(BasePythonExecutor):
         interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
         interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
         interpreter.safe_mode = config.PYTHON_CODER_OPENINTERPRETER_SAFE_MODE
-        interpreter.system_message = system_message
+
+        # Don't override system_message - use OpenInterpreter's default (it's well-designed)
 
         # Set context window to prevent token limit errors
         interpreter.llm.context_window = config.DEFAULT_MAX_TOKENS

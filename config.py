@@ -131,7 +131,7 @@ TOOL_PARAMETERS = {
     },
     "python_coder": {
         "temperature": 1.0,  # Lower temp for more deterministic code
-        "max_tokens": 2048,
+        "max_tokens": 16384,
         "timeout": 1200,  # 2 minutes for code execution
     },
     "rag": {
