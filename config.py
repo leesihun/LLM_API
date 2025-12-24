@@ -29,7 +29,7 @@ LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 # For same-machine deployments, use http://127.0.0.1:11434
 # For different machines, update to http://<ollama-server-ip>:11434
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "gemma3:1b"  # Default model
+OLLAMA_MODEL = "GLM46"  # Default model
 
 # Model Preloading Settings
 PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server startup
@@ -45,7 +45,7 @@ LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 DEFAULT_TEMPERATURE = 1.0  # Randomness (0.0 = deterministic, 2.0 = very random)
 DEFAULT_TOP_P = 0.9  # Nucleus sampling
 DEFAULT_TOP_K = 40  # Top-k sampling
-DEFAULT_MAX_TOKENS = 2048  # Maximum tokens in response
+DEFAULT_MAX_TOKENS = 16384  # Maximum tokens in response
 
 # ============================================================================
 # Database Settings
@@ -126,7 +126,7 @@ TOOL_MODELS = {
 TOOL_PARAMETERS = {
     "websearch": {
         "temperature": 0.7,
-        "max_tokens": 2048,
+        "max_tokens": 16384,
         "timeout": 360,  # 1 minute for web search (includes 2 LLM calls + Tavily API call)
     },
     "python_coder": {
@@ -136,12 +136,12 @@ TOOL_PARAMETERS = {
     },
     "rag": {
         "temperature": 1.0,
-        "max_tokens": 2048,
+        "max_tokens": 16384,
         "timeout": 120,  # 2 minutes for RAG retrieval
     },
     "ppt_maker": {
         "temperature": 0.7,
-        "max_tokens": 4096,
+        "max_tokens": 16384,
         "timeout": 120,  # 2 minutes for generation + export
     },
 }
