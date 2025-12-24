@@ -11,6 +11,7 @@ Guidelines:
 - Use **chat** for: simple questions, casual conversation
 - Use **react** for: single-step tool usage, web searches, code execution, data analysis, fact-checking
 - Use **plan_execute** for: complex multi-step tasks, research projects, tasks requiring multiple tools, systematic problem solving
+- Don't think
 
 User request: {query}
 

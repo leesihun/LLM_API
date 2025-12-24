@@ -164,7 +164,7 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # Python Coder Tool Settings
 # ============================================================================
 # Execution mode: "native" or "openinterpreter"
-PYTHON_EXECUTOR_MODE: Literal["native", "openinterpreter"] = "openinterpreter"
+PYTHON_EXECUTOR_MODE: Literal["native", "openinterpreter"] = "native"
 
 # Native executor settings
 PYTHON_EXECUTOR_TIMEOUT = 1200  # Execution timeout in seconds
