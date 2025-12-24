@@ -133,6 +133,48 @@ TOOL_SCHEMAS = {
             "data": "Dictionary with file_path, content, lines, size, and encoding",
             "metadata": "Execution metadata including file information"
         }
+    },
+
+    "ppt_maker": {
+        "name": "ppt_maker",
+        "description": "Create professional presentations from natural language descriptions. Generates PDF and PPTX files with customizable themes and layouts. Use this when user asks to create slides, presentations, or decks.",
+        "endpoint": "/api/tools/ppt_maker",
+        "method": "POST",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "instruction": {
+                    "type": "string",
+                    "description": "Natural language description of the presentation to create (e.g., 'Create a 5-slide presentation about machine learning basics')"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID for workspace isolation (required)"
+                },
+                "theme": {
+                    "type": "string",
+                    "description": "Marp theme to use: 'default', 'gaia', or 'uncover' (optional, default: gaia)",
+                    "default": "gaia"
+                },
+                "footer": {
+                    "type": "string",
+                    "description": "Footer text for all slides (optional)",
+                    "default": ""
+                },
+                "header": {
+                    "type": "string",
+                    "description": "Header text for all slides (optional)",
+                    "default": ""
+                }
+            },
+            "required": ["instruction", "session_id"]
+        },
+        "returns": {
+            "success": "Boolean indicating if presentation was created successfully",
+            "answer": "Human-readable summary of presentation creation",
+            "data": "Dictionary with markdown, pdf_path, pptx_path, num_slides, files",
+            "metadata": "Execution metadata including timing and theme"
+        }
     }
 }
 
@@ -183,7 +225,7 @@ def format_tools_for_llm() -> str:
         Formatted string describing all available tools
     """
     tools = []
-    tools.append('websearch, python_coder, rag, read_file')
+    tools.append('websearch, python_coder, rag, read_file, ppt_maker')
 
     return "\n\n".join(tools)
 

@@ -29,11 +29,11 @@ LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 # For same-machine deployments, use http://127.0.0.1:11434
 # For different machines, update to http://<ollama-server-ip>:11434
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "GLM46"  # Default model
+OLLAMA_MODEL = "gemma3:1b"  # Default model
 
 # Model Preloading Settings
-PRELOAD_MODEL_ON_STARTUP = True  # Preload default model to GPU on server startup
-PRELOAD_KEEP_ALIVE = "-1"  # Keep model in memory: "-1" = indefinitely, "5m" = 5 minutes, "0" = unload
+PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server startup
+PRELOAD_KEEP_ALIVE = -1  # Keep model in memory: -1 = indefinitely, "5m" = 5 minutes, 0 = unload immediately
 
 # Llama.cpp Settings
 LLAMACPP_HOST = "http://localhost:8080"
@@ -109,6 +109,7 @@ AVAILABLE_TOOLS = [
     "websearch",
     "python_coder",
     "rag",
+    "ppt_maker",
 ]
 
 # Tool-specific Model Configuration
@@ -117,6 +118,7 @@ TOOL_MODELS = {
     "websearch": "GLM46",  # Web search summarization
     "python_coder": "GLM46",  # Code generation - using fast small model
     "rag": "GLM46",  # Document retrieval
+    "ppt_maker": "GLM46",  # Presentation markdown generation
 }
 
 # Tool-specific Model Parameters
@@ -136,6 +138,11 @@ TOOL_PARAMETERS = {
         "temperature": 1.0,
         "max_tokens": 2048,
         "timeout": 120,  # 2 minutes for RAG retrieval
+    },
+    "ppt_maker": {
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "timeout": 120,  # 2 minutes for generation + export
     },
 }
 
@@ -195,6 +202,38 @@ RAG_DEFAULT_COLLECTION = "default"  # Default collection name
 
 # Supported document formats
 RAG_SUPPORTED_FORMATS = [".txt", ".pdf", ".docx", ".md", ".json", ".csv"]
+
+# ============================================================================
+# PPT Maker Tool Settings
+# ============================================================================
+# Marp CLI path (use npx if not globally installed)
+PPT_MAKER_MARP_CLI = "npx -y @marp-team/marp-cli"  # -y for auto-install
+
+# Marp Theme Settings
+PPT_MAKER_DEFAULT_THEME = "gaia"  # "default", "gaia", "uncover"
+PPT_MAKER_THEMES = ["default", "gaia", "uncover"]  # Available themes
+
+# Presentation Settings
+PPT_MAKER_PAGINATE = True  # Show page numbers
+PPT_MAKER_DEFAULT_FOOTER = ""  # Default footer text (empty = no footer)
+PPT_MAKER_DEFAULT_HEADER = ""  # Default header text (empty = no header)
+
+# Export Settings
+PPT_MAKER_EXPORT_PDF = True  # Export to PDF
+PPT_MAKER_EXPORT_PPTX = True  # Export to PPTX
+PPT_MAKER_ALLOW_LOCAL_FILES = True  # Allow local file embedding
+
+# Limits
+PPT_MAKER_MAX_SLIDES = 100  # Maximum slides per presentation
+PPT_MAKER_TIMEOUT = 120  # Marp CLI execution timeout (seconds)
+
+# Workspace (uses session scratch directory)
+PPT_MAKER_WORKSPACE_DIR = SCRATCH_DIR  # Same as python_coder
+
+# LLM Settings for markdown generation
+PPT_MAKER_MODEL = "GLM46"  # Model for generating markdown
+PPT_MAKER_TEMPERATURE = 0.7  # Temperature for generation
+PPT_MAKER_MAX_TOKENS = 4096  # Max tokens for markdown generation
 
 # ============================================================================
 # Session Settings

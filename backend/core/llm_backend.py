@@ -146,16 +146,17 @@ class OllamaBackend(LLMBackend):
         except Exception:
             return False
 
-    def preload_model(self, model: str = None, keep_alive: str = "-1") -> bool:
+    def preload_model(self, model: str = None, keep_alive = -1) -> bool:
         """
         Preload a model into GPU memory and keep it loaded.
 
         Args:
             model: Model name to preload (defaults to config.OLLAMA_MODEL)
             keep_alive: How long to keep model in memory.
-                       "-1" = indefinitely (default)
-                       "0" = unload immediately
-                       "5m" = keep for 5 minutes, etc.
+                       -1 = indefinitely (default)
+                       0 = unload immediately
+                       "5m" = keep for 5 minutes
+                       300 = keep for 300 seconds
 
         Returns:
             True if preload successful, False otherwise
@@ -166,6 +167,8 @@ class OllamaBackend(LLMBackend):
             print(f"[OllamaBackend] Preloading model '{model}' to GPU...")
 
             # Send a minimal chat request with keep_alive to load and keep the model
+            # keep_alive can be: int (-1 for indefinite, 0 to unload, seconds as int)
+            # or string duration ("5m", "10s", etc.)
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": "Hello"}],
@@ -208,7 +211,7 @@ class OllamaBackend(LLMBackend):
             "model": model,
             "messages": messages,
             "stream": False,
-            "keep_alive": "-1",  # Keep model loaded indefinitely
+            "keep_alive": -1,  # Keep model loaded indefinitely
             "options": {
                 "temperature": temperature
             }
@@ -230,7 +233,7 @@ class OllamaBackend(LLMBackend):
             "model": model,
             "messages": messages,
             "stream": True,
-            "keep_alive": "-1",  # Keep model loaded indefinitely
+            "keep_alive": -1,  # Keep model loaded indefinitely
             "options": {
                 "temperature": temperature
             }

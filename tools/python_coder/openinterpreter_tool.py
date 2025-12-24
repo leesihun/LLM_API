@@ -75,12 +75,12 @@ class OpenInterpreterExecutor(BasePythonExecutor):
             system_message = f.read()
 
         # Configure interpreter for Ollama
-        # OpenInterpreter uses litellm which requires specific Ollama configuration
-        # We need to set environment variable for Ollama host
-        os.environ["OLLAMA_API_BASE"] = config.OLLAMA_HOST
+        # Enable litellm verbose mode for debugging
+        import litellm
+        litellm.set_verbose = True
 
         interpreter.llm.model = f"ollama/{config.OLLAMA_MODEL}"
-        interpreter.llm.api_base = None  # Use environment variable instead
+        interpreter.llm.api_base = config.OLLAMA_HOST
         interpreter.llm.temperature = config.TOOL_PARAMETERS.get("python_coder", {}).get("temperature", 0.2)
         interpreter.auto_run = config.PYTHON_CODER_OPENINTERPRETER_AUTO_RUN
         interpreter.offline = config.PYTHON_CODER_OPENINTERPRETER_OFFLINE
@@ -250,6 +250,11 @@ class OpenInterpreterExecutor(BasePythonExecutor):
             error_msg = str(e)
 
             print(f"\n[OPENINTERPRETER] ERROR: {error_msg}")
+
+            # Print full traceback for debugging
+            import traceback
+            print(f"[OPENINTERPRETER] Full traceback:")
+            traceback.print_exc()
 
             log_to_prompts_file(f"")
             log_to_prompts_file(f"ERROR: {type(e).__name__}")

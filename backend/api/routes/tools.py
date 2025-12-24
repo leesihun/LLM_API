@@ -86,6 +86,17 @@ class ReadFileRequest(BaseModel):
     context: Optional[ToolContext] = None
 
 
+class PPTMakerRequest(BaseModel):
+    """PPT maker request"""
+    instruction: str
+    session_id: str
+    theme: Optional[str] = None
+    footer: Optional[str] = None
+    header: Optional[str] = None
+    timeout: Optional[int] = None
+    context: Optional[ToolContext] = None
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -163,6 +174,11 @@ def list_tools(current_user: Optional[dict] = Depends(get_optional_user)):
         {
             "name": "read_file",
             "description": "Read content from attached files",
+            "enabled": True
+        },
+        {
+            "name": "ppt_maker",
+            "description": "Create professional presentations from natural language",
             "enabled": True
         }
     ]
@@ -778,4 +794,109 @@ async def query_rag(
             data={},
             metadata={"execution_time": time.time() - start_time},
             error=str(e)
+        )
+
+
+@router.post("/ppt_maker", response_model=ToolResponse)
+async def ppt_maker(
+    request: PPTMakerRequest,
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Create presentation from natural language instruction
+
+    NEVER raises HTTP exceptions - always returns ToolResponse with error details
+
+    Args:
+        request: Presentation creation request
+        current_user: Authenticated user (optional)
+
+    Returns:
+        Presentation files with metadata
+    """
+    print("\n" + "=" * 80)
+    print("[TOOLS API] /api/tools/ppt_maker endpoint called")
+    print("=" * 80)
+    print(f"User: {current_user['username'] if current_user else 'guest'}")
+    print(f"Session ID: {request.session_id}")
+    print(f"Instruction: {request.instruction[:100]}...")
+    print(f"Theme: {request.theme or 'default'}")
+    print(f"Context provided: {bool(request.context)}")
+
+    start_time = time.time()
+
+    try:
+        # Import here to avoid circular imports
+        from tools.ppt_maker import PPTMakerTool
+
+        print(f"\n[TOOLS API] Initializing PPTMakerTool...")
+        tool = PPTMakerTool(session_id=request.session_id)
+        print(f"[TOOLS API] [OK] Tool initialized")
+
+        # Create presentation
+        print(f"\n[TOOLS API] Calling tool.create_presentation()...")
+        result = tool.create_presentation(
+            instruction=request.instruction,
+            theme=request.theme,
+            footer=request.footer,
+            header=request.header,
+            timeout=request.timeout
+        )
+        print(f"[TOOLS API] [OK] Presentation created")
+
+        # Format answer
+        answer = f"Presentation created successfully with {result['num_slides']} slides."
+        answer += f"\n\nFiles generated:"
+        answer += f"\n- Markdown: {Path(result['markdown_file']).name}"
+        if result['pdf_file']:
+            answer += f"\n- PDF: {Path(result['pdf_file']).name}"
+        if result['pptx_file']:
+            answer += f"\n- PPTX: {Path(result['pptx_file']).name}"
+
+        execution_time = time.time() - start_time
+
+        return ToolResponse(
+            success=True,
+            answer=answer,
+            data={
+                "markdown": result["markdown"],
+                "markdown_file": result["markdown_file"],
+                "pdf_file": result["pdf_file"],
+                "pptx_file": result["pptx_file"],
+                "num_slides": result["num_slides"],
+                "workspace": result["workspace"],
+                "files": result["files"]
+            },
+            metadata={
+                "execution_time": execution_time,
+                "theme": request.theme or config.PPT_MAKER_DEFAULT_THEME,
+                "num_slides": result["num_slides"]
+            }
+        )
+
+    except Exception as e:
+        execution_time = time.time() - start_time
+        error_msg = str(e)
+
+        print(f"[TOOLS API] ERROR: {error_msg}")
+
+        # Print full traceback for debugging
+        import traceback
+        print(f"[TOOLS API] Full traceback:")
+        traceback.print_exc()
+
+        return ToolResponse(
+            success=False,
+            answer=f"Presentation creation failed: {error_msg}",
+            data={
+                "markdown": "",
+                "markdown_file": "",
+                "pdf_file": "",
+                "pptx_file": "",
+                "num_slides": 0,
+                "workspace": "",
+                "files": {}
+            },
+            metadata={"execution_time": execution_time},
+            error=error_msg
         )
