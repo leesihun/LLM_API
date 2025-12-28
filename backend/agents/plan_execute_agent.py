@@ -3,6 +3,7 @@ Plan-Execute Agent
 Creates a plan and executes it step-by-step using ReAct agents
 """
 import json
+import re
 from typing import List, Dict, Optional, Any
 
 import config
@@ -118,12 +119,19 @@ class PlanExecuteAgent(Agent):
 
         # Parse JSON plan
         try:
-            # Extract JSON from response (handle markdown code blocks)
+            # Extract JSON from response (handle markdown code blocks and think tags)
             json_str = response
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                json_str = response.split("```")[1].split("```")[0].strip()
+
+            # Remove <think> tags if present (Claude models use these for reasoning)
+            if "<think>" in json_str and "</think>" in json_str:
+                # Remove everything between <think> and </think>
+                json_str = re.sub(r'<think>.*?</think>', '', json_str, flags=re.DOTALL).strip()
+
+            # Handle markdown code blocks
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0].strip()
 
             plan = json.loads(json_str)
 
@@ -137,7 +145,11 @@ class PlanExecuteAgent(Agent):
 
             return plan
 
-        except (json.JSONDecodeError, IndexError, KeyError):
+        except (json.JSONDecodeError, IndexError, KeyError) as e:
+            # Log the error for debugging
+            print(f"[PLAN-EXECUTE] Failed to parse plan from LLM response")
+            print(f"[PLAN-EXECUTE] Error: {str(e)}")
+            print(f"[PLAN-EXECUTE] Raw response preview: {response[:500]}...")
             return None
 
     def _execute_plan(
