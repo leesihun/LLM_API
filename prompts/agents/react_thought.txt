@@ -5,9 +5,18 @@
 
 Previous thoughts and actions:
 {scratchpad}
+
+
+
 ----------------------------------------------------
 
-What should you do next?
+Analyze the current situation and determine your next action.
+
+Output EXACTLY ONE thought/action/action input pair in this format:
+
+Thought: [Your reasoning about what to do next]
+Action: [Tool name]
+Action Input: [String input for the tool]
 
 CRITICAL RULES:
 1. Generate EXACTLY ONE Thought/Action/Action Input triplet
@@ -16,14 +25,13 @@ CRITICAL RULES:
 4. The tool will execute and provide an observation, then you'll decide what to do next
 5. Action Input should be strictly ONLY the input for the tool.
 
+REMEMBER, The 'Action Input' should BE:
+python_coder : [DETAILED python code including error messages]
+websearch, rag: [Pure search query]
+
+
 Output EXACTLY ONE thought/action/action input pair in this format:
 
 Thought: [Your reasoning about what to do next]
 Action: [Tool name]
 Action Input: [String input for the tool]
-
-
-
-REMEMBER, The 'Action Input' should BE:
-python_coder : [DETAILED python code including error messages]
-websearch, rag: [Pure search query]

@@ -22,7 +22,7 @@ TASK: Analyze the raw tool data and determine if you have enough information to 
 Output EXACTLY in this format:
 
 final_answer: true
-Observation: [Your analysis of what you found and key facts extracted]
+Observation: [RAW input of the Action Input (Python code, websearch, RAG query), followed by Your analysis of what you found and key facts extracted]
 
 OR
 
@@ -31,16 +31,15 @@ Observation: [What you learned so far and what additional information is needed]
 
 RULES:
 1. You are receiving RAW data from tools (not pre-summarized answers)
-2. Extract and summarize the key information from the raw data
-3. Set final_answer to "true" if the data contains sufficient information to fully answer the user's question
+2. Extract and summarize the key information from the raw data, spare no detail
+3. Set final_answer to "true" if the data STRICTLY contains ALL of the sufficient information to fully answer the given task
 4. Set final_answer to "false" if you need more information or need to use another tool
 5. For websearch: Look at all search results and extract relevant facts (dates, scores, names, etc.)
 6. Be precise - if asking "who won", extract the winner; if asking "what was the score", extract the exact score
-7. Do NOT continue searching if the data already contains the answer
-8. If tool execution FAILED (error message shown):
+7. If tool execution FAILED (error message shown):
    - Set final_answer to "false"
    - Analyze WHY it failed
    - In your observation, explain the error and plan a different approach
    - Consider: different input format, different tool, or refined query
 
-Output your response now:
+BE EXACT and THOROUGH, Output your response now:

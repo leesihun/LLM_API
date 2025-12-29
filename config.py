@@ -98,7 +98,7 @@ PLAN_MAX_STEPS = 20  # Maximum plan steps
 PLAN_REPLAN_ON_FAILURE = True  # Re-plan when a step fails
 PLAN_SHARE_CONTEXT = True  # Share context across plan execution steps
 PLAN_INCLUDE_FULL_HISTORY = True  # Include all conversation history in planning
-PLAN_MAX_HISTORY_MESSAGES = 50  # Maximum history messages to include (0 = unlimited)
+PLAN_MAX_HISTORY_MESSAGES = 0  # Maximum history messages to include (0 = unlimited)
 PLAN_HISTORY_IN_SYNTHESIS = True  # Include conversation history in final synthesis
 
 # ============================================================================
