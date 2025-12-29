@@ -120,7 +120,7 @@ class Agent(ABC):
                 lines.append(f"{idx}. {file_info['name']}")
                 lines.append(f"   - Type: {file_info['type']} ({file_info['category']})")
                 lines.append(f"   - Size: {size_kb:.2f} KB")
-                lines.append(f"   - Path: {file_info['path']}")
+                # lines.append(f"   - Path: {file_info['path']}")
 
                 # Add rich metadata based on file type
                 self._append_rich_metadata(lines, file_info)
