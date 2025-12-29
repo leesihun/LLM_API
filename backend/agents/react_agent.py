@@ -29,15 +29,19 @@ class ReActAgent(Agent):
         self,
         user_input: str,
         conversation_history: List[Dict[str, str]],
-        attached_files: Optional[List[Dict[str, Any]]] = None
+        attached_files: Optional[List[Dict[str, Any]]] = None,
+        original_user_input: Optional[str] = None,
+        plan_info: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Run ReAct agent with strict 2-step loop
 
         Args:
-            user_input: User's message
+            user_input: User's message (may be a step prompt from PlanExecute)
             conversation_history: Full conversation history
             attached_files: Optional list of file metadata
+            original_user_input: Original user question (before plan conversion)
+            plan_info: Optional plan information with 'full_plan' and 'current_step'
 
         Returns:
             Final answer
@@ -53,6 +57,10 @@ class ReActAgent(Agent):
 
         # Store attached files for use in prompts
         self.attached_files = attached_files
+
+        # Store plan context for use in prompts
+        self.original_user_input = original_user_input
+        self.plan_info = plan_info
 
         # Main reasoning loop
         for iteration in range(self.max_iterations):
@@ -155,10 +163,31 @@ class ReActAgent(Agent):
             files_info = self.format_attached_files(self.attached_files)
             system_prompt += files_info
 
+        # Construct comprehensive user_query with all context
+        user_query_parts = []
+
+        # 1. Add original user input (if available and different from user_input)
+        if hasattr(self, 'original_user_input') and self.original_user_input:
+            user_query_parts.append(f"Original User Question:\n{self.original_user_input}\n")
+
+        # 2. Add full plan information (if available)
+        if hasattr(self, 'plan_info') and self.plan_info:
+            plan_data = self.plan_info
+            if 'full_plan' in plan_data:
+                user_query_parts.append(f"Full Plan:\n{plan_data['full_plan']}\n")
+            if 'current_step' in plan_data:
+                user_query_parts.append(f"Current Step:\n{plan_data['current_step']}\n")
+
+        # 3. Add the actual user input (which may be step-specific)
+        user_query_parts.append(f"Task:\n{user_input}")
+
+        # Combine all parts
+        comprehensive_user_query = "\n".join(user_query_parts)
+
         # Load thought prompt
         thought_prompt = self.load_prompt(
             "agents/react_thought.txt",
-            user_query=user_input,
+            user_query=comprehensive_user_query,
             scratchpad=scratchpad if scratchpad else "No previous actions yet."
         )
 

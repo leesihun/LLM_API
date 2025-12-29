@@ -183,7 +183,9 @@ class PlanExecuteAgent(Agent):
                 step_info=step_info,
                 previous_results=results,
                 goal=plan.get("goal", user_input),
-                context=shared_context
+                context=shared_context,
+                full_plan=plan,
+                original_user_input=user_input
             )
 
             results.append({
@@ -231,7 +233,9 @@ class PlanExecuteAgent(Agent):
         step_info: Dict,
         previous_results: List[Dict],
         goal: str,
-        context: List[Dict[str, str]]
+        context: List[Dict[str, str]],
+        full_plan: Dict,
+        original_user_input: str
     ) -> Dict:
         """
         Execute a single step - either direct LLM call (tool='null') or ReAct agent (tool-based)
@@ -242,6 +246,8 @@ class PlanExecuteAgent(Agent):
             goal: Overall goal
             previous_results: Results from previous steps
             context: Shared context (if enabled)
+            full_plan: Complete plan dictionary
+            original_user_input: Original user's question
 
         Returns:
             Step result dict with 'answer' and 'success'
@@ -263,7 +269,7 @@ class PlanExecuteAgent(Agent):
         if tool is None:
             return self._execute_reasoning_step(step_num, description, prev_steps_str, goal, context)
         else:
-            return self._execute_tool_step(step_num, step_info, prev_steps_str, goal, context)
+            return self._execute_tool_step(step_num, step_info, prev_steps_str, goal, context, full_plan, original_user_input)
 
     def _execute_reasoning_step(
         self,
@@ -319,7 +325,9 @@ Based on the previous steps and the overall goal, complete this step and provide
         step_info: Dict,
         prev_steps_str: str,
         goal: str,
-        context: List[Dict[str, str]]
+        context: List[Dict[str, str]],
+        full_plan: Dict,
+        original_user_input: str
     ) -> Dict:
         """
         Execute tool-based step using ReAct agent
@@ -330,6 +338,8 @@ Based on the previous steps and the overall goal, complete this step and provide
             prev_steps_str: Formatted previous steps
             goal: Overall goal
             context: Shared context
+            full_plan: Complete plan dictionary
+            original_user_input: Original user's question
 
         Returns:
             Step result dict with 'answer' and 'success'
@@ -353,7 +363,20 @@ Based on the previous steps and the overall goal, complete this step and provide
         try:
             # Pass attached files to ReAct agent if available
             attached_files = getattr(self, 'attached_files', None)
-            result = react_agent.run(step_prompt, context, attached_files)
+
+            # Format plan information for ReAct agent
+            plan_info = {
+                'full_plan': self._format_full_plan(full_plan),
+                'current_step': f"Step {step_num}: {step_info.get('description', '')}"
+            }
+
+            result = react_agent.run(
+                user_input=step_prompt,
+                conversation_history=context,
+                attached_files=attached_files,
+                original_user_input=original_user_input,
+                plan_info=plan_info
+            )
             return {
                 "answer": result,
                 "success": True
@@ -363,6 +386,30 @@ Based on the previous steps and the overall goal, complete this step and provide
                 "answer": f"Tool step failed: {str(e)}",
                 "success": False
             }
+
+    def _format_full_plan(self, plan: Dict) -> str:
+        """
+        Format the complete plan for display
+
+        Args:
+            plan: Plan dictionary
+
+        Returns:
+            Formatted string representation of the plan
+        """
+        if not plan or "plan" not in plan:
+            return "No plan available"
+
+        formatted = []
+        formatted.append(f"Goal: {plan.get('goal', 'N/A')}")
+        formatted.append("\nSteps:")
+        for step_info in plan["plan"]:
+            step_num = step_info.get("step", "?")
+            description = step_info.get("description", "No description")
+            tool = step_info.get("tool", "null")
+            formatted.append(f"  {step_num}. {description} (tool: {tool})")
+
+        return "\n".join(formatted)
 
     def _format_previous_steps(self, previous_results: List[Dict]) -> str:
         """

@@ -1,5 +1,5 @@
 ==============================
-Original User Query:
+Original User Message:
 {user_query}
 ==============================
 
