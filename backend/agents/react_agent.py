@@ -61,7 +61,8 @@ class ReActAgent(Agent):
         conversation_history: List[Dict[str, str]],
         attached_files: Optional[List[Dict[str, Any]]] = None,
         original_user_input: Optional[str] = None,
-        plan_info: Optional[Dict[str, Any]] = None
+        plan_info: Optional[Dict[str, Any]] = None,
+        skip_final_synthesis: bool = False
     ) -> str:
         """
         Run ReAct agent with strict 2-step loop
@@ -72,6 +73,7 @@ class ReActAgent(Agent):
             attached_files: Optional list of file metadata
             original_user_input: Original user question (before plan conversion)
             plan_info: Optional plan information with 'full_plan' and 'current_step'
+            skip_final_synthesis: If True, return observation directly without react_final.txt synthesis
 
         Returns:
             Final answer
@@ -142,6 +144,11 @@ class ReActAgent(Agent):
             # Check if we're done
             if observation_result["final_answer"]:
                 print(f"\n[REACT] [OK] final_answer=true, generating final response...")
+
+                # If skip_final_synthesis is True (used by PlanExecute), return observation directly
+                if skip_final_synthesis:
+                    print(f"[REACT] [SKIP] Skipping react_final.txt synthesis (plan_execute mode)")
+                    return observation_result["observation"]
 
                 # Generate final answer based on all observations
                 final_answer = self._generate_final_answer(

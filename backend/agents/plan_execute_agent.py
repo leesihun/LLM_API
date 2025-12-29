@@ -375,7 +375,8 @@ Based on the previous steps and the overall goal, complete this step and provide
                 conversation_history=context,
                 attached_files=attached_files,
                 original_user_input=original_user_input,
-                plan_info=plan_info
+                plan_info=plan_info,
+                skip_final_synthesis=True  # Skip react_final.txt in plan_execute mode
             )
             return {
                 "answer": result,
