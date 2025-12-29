@@ -1,10 +1,3 @@
-"""
-ReAct Agent - Reasoning and Acting (Rebuilt from scratch)
-
-Clean 2-step architecture:
-1. Generate Thought/Action/Action Input
-2. Execute tool and generate Observation with final_answer decision
-"""
 import re
 import json
 from typing import List, Dict, Optional, Any
@@ -15,26 +8,11 @@ from tools_config import format_tools_for_llm
 
 
 class ReActAgent(Agent):
-    """
-    ReAct (Reasoning + Acting) agent with strict 2-step execution:
-    Step 1: LLM generates Thought/Action/Action Input
-    Step 2: Tool executes, LLM generates Observation + decides if done
-    """
-
     def __init__(self, model: str = None, temperature: float = None):
         super().__init__(model, temperature)
         self.max_iterations = config.REACT_MAX_ITERATIONS
 
     def _build_comprehensive_user_query(self, user_input: str) -> str:
-        """
-        Build comprehensive user query with original input, plan, and task context
-
-        Args:
-            user_input: Current user input (may be step-specific)
-
-        Returns:
-            Comprehensive user query string with all available context
-        """
         user_query_parts = []
 
         # 1. Add original user input (if available)
@@ -149,16 +127,17 @@ class ReActAgent(Agent):
                 if skip_final_synthesis:
                     print(f"[REACT] [SKIP] Skipping react_final.txt synthesis (plan_execute mode)")
                     return observation_result["observation"]
+                
+                else:
+                    # Generate final answer based on all observations
+                    final_answer = self._generate_final_answer(
+                        user_input=user_input,
+                        conversation_history=conversation_history,
+                        scratchpad=scratchpad
+                    )
 
-                # Generate final answer based on all observations
-                final_answer = self._generate_final_answer(
-                    user_input=user_input,
-                    conversation_history=conversation_history,
-                    scratchpad=scratchpad
-                )
-
-                print(f"[REACT] [DONE] Returning final answer: {final_answer[:200]}..." if len(final_answer) > 200 else f"[REACT] [DONE] Returning final answer")
-                return final_answer
+                    print(f"[REACT] [DONE] Returning final answer: {final_answer[:200]}..." if len(final_answer) > 200 else f"[REACT] [DONE] Returning final answer")
+                    return final_answer
             else:
                 print(f"[REACT] [CONTINUE] final_answer=false, continuing to next iteration...")
 

@@ -29,7 +29,7 @@ LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
 # For same-machine deployments, use http://127.0.0.1:11434
 # For different machines, update to http://<ollama-server-ip>:11434
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "GLM46"  # Default model
+OLLAMA_MODEL = "gpt-oss:20b"  # Default model (changed from non-existent GLM46)
 
 # Model Preloading Settings
 PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server startup
@@ -115,10 +115,10 @@ AVAILABLE_TOOLS = [
 # Tool-specific Model Configuration
 # Different tools can use different models optimized for their tasks
 TOOL_MODELS = {
-    "websearch": "GLM46",  # Web search summarization
-    "python_coder": "GLM46",  # Code generation - using fast small model
-    "rag": "GLM46",  # Document retrieval
-    "ppt_maker": "GLM46",  # Presentation markdown generation
+    "websearch": "gpt-oss:20b",  # Web search summarization
+    "python_coder": "gpt-oss:20b",  # Code generation
+    "rag": "gpt-oss:20b",  # Document retrieval
+    "ppt_maker": "gpt-oss:20b",  # Presentation markdown generation
 }
 
 # Tool-specific Model Parameters
@@ -231,7 +231,7 @@ PPT_MAKER_TIMEOUT = 120  # Marp CLI execution timeout (seconds)
 PPT_MAKER_WORKSPACE_DIR = SCRATCH_DIR  # Same as python_coder
 
 # LLM Settings for markdown generation
-PPT_MAKER_MODEL = "GLM46"  # Model for generating markdown
+PPT_MAKER_MODEL = "gpt-oss:20b"  # Model for generating markdown
 PPT_MAKER_TEMPERATURE = 0.7  # Temperature for generation
 PPT_MAKER_MAX_TOKENS = 4096  # Max tokens for markdown generation
 

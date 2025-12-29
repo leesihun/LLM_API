@@ -5,7 +5,7 @@ You have access to the following tools:
 {tools}
 
 Important:
-- Keep your Thought focused and concise but THOROUGH
+- Keep your Thought focused and THOROUGH
 - Use rag only when explicitly asked to search internal documents
 - For the Action Input: ABSOLUTELY NOTHING OTHER THAN 
 Raw python code for python_coder

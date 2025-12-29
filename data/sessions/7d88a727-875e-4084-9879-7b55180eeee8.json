@@ -1,0 +1,14 @@
+{
+  "session_id": "7d88a727-875e-4084-9879-7b55180eeee8",
+  "updated_at": "2025-12-29T13:55:08.162486",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Say hello in 2 words"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! 👋 \n"
+    }
+  ]
+}

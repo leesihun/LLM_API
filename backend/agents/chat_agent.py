@@ -19,24 +19,8 @@ class ChatAgent(Agent):
         conversation_history: List[Dict[str, str]],
         attached_files: Optional[List[Dict[str, Any]]] = None
     ) -> str:
-        """
-        Run chat agent
-
-        Args:
-            user_input: User's message
-            conversation_history: Full conversation history
-            attached_files: Optional list of file metadata
-
-        Returns:
-            Agent response
-        """
         # Load system prompt
         system_prompt = self.load_prompt("agents/chat_system.txt")
-
-        # Add attached files information if present
-        if attached_files and len(attached_files) > 0:
-            files_info = self.format_attached_files(attached_files)
-            system_prompt += files_info
 
         # Build messages for LLM
         messages = [{"role": "system", "content": system_prompt}]

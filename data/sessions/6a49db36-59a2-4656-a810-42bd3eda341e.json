@@ -1,0 +1,14 @@
+{
+  "session_id": "6a49db36-59a2-4656-a810-42bd3eda341e",
+  "updated_at": "2025-12-29T13:48:05.467510",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is 2+2? Answer with just the number."
+    },
+    {
+      "role": "assistant",
+      "content": "4"
+    }
+  ]
+}
