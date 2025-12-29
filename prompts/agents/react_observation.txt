@@ -17,7 +17,7 @@ Raw Tool Data:
 {tool_data}
 ----------------------------------------------------
 
-TASK: Analyze the raw tool data and determine if you have enough information to answer the user's question.
+TASK: Analyze the raw tool data and determine if you have enough information to answer the thought.
 
 Output EXACTLY in this format:
 

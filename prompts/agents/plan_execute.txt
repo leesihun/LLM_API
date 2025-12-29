@@ -14,7 +14,7 @@ Available tools:
 Execute this step and provide a clear result. Use tools if needed following the ReAct format:
 Thought: [reasoning]
 Action: [tool name]
-Action Input: [JSON parameters]
+Action Input: [STRING INPUT FOR THE TOOL]
 
 Or provide your result:
 Final Answer: [result of this step]

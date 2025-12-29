@@ -13,6 +13,8 @@ Guidelines:
 - Use **plan_execute** for: complex multi-step tasks, research projects, tasks requiring multiple tools, systematic problem solving
 - Don't think
 
+=======================================================================
+
 User request: {query}
 
 Respond with ONLY ONE of these words: chat, react, or plan_execute

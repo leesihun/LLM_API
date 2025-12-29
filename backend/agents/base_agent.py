@@ -110,7 +110,7 @@ class Agent(ABC):
             return ""
 
         lines = ["\n## ATTACHED FILES"]
-        lines.append(f"The user has attached {len(attached_files)} file(s). Use the 'read_file' tool to examine their contents.\n")
+        lines.append(f"The user has attached {len(attached_files)} file(s).\n")
 
         for idx, file_info in enumerate(attached_files, 1):
             if "error" in file_info:

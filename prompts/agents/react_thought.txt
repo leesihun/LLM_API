@@ -1,5 +1,4 @@
 ==============================
-Original User Message:
 {user_query}
 ==============================
 
@@ -12,13 +11,10 @@ What should you do next?
 
 CRITICAL RULES:
 1. Generate EXACTLY ONE Thought/Action/Action Input triplet
-2. Do NOT generate multiple actions - only ONE action per iteration
-3. Do NOT predict future observations or actions
-4. Stop immediately after generating ONE action
-5. The tool will execute and provide an observation, then you'll decide what to do next
-6. Action Input should be strictly ONLY the input for the tool.
-python_coder : [Natural language detailed instruction for building python code]
-websearch, rag: [Pure search query]
+2. Stop immediately after generating ONE action
+3. You can start with easy tasks and work your way up
+4. The tool will execute and provide an observation, then you'll decide what to do next
+5. Action Input should be strictly ONLY the input for the tool.
 
 Output EXACTLY ONE thought/action/action input pair in this format:
 
