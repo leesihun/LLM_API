@@ -615,24 +615,24 @@ class ReActAgent(Agent):
                 "collection_name": config.RAG_DEFAULT_COLLECTION,
                 "max_results": config.RAG_MAX_RESULTS
             }
-        elif tool_name == "read_file":
-            # Parse file path from input (may include line range)
-            # Expected formats:
-            # - "path/to/file.txt"
-            # - "path/to/file.txt lines 10-20"
-            parts = clean_input.split()
-            file_path = parts[0]
+        # elif tool_name == "read_file":
+        #     # Parse file path from input (may include line range)
+        #     # Expected formats:
+        #     # - "path/to/file.txt"
+        #     # - "path/to/file.txt lines 10-20"
+        #     parts = clean_input.split()
+        #     file_path = parts[0]
 
-            params = {"file_path": file_path}
+        #     params = {"file_path": file_path}
 
-            # Check for line range
-            if len(parts) >= 3 and parts[1].lower() == "lines":
-                line_range = parts[2]
-                if "-" in line_range:
-                    start, end = line_range.split("-")
-                    params["start_line"] = int(start)
-                    params["end_line"] = int(end)
+        #     # Check for line range
+        #     if len(parts) >= 3 and parts[1].lower() == "lines":
+        #         line_range = parts[2]
+        #         if "-" in line_range:
+        #             start, end = line_range.split("-")
+        #             params["start_line"] = int(start)
+        #             params["end_line"] = int(end)
 
-            return params
+        #     return params
         else:
             raise ValueError(f"Unknown tool: '{tool_name}'")
