@@ -1,5 +1,10 @@
 You are analyzing raw tool results to determine if you can answer the user's question.
 
+==============================
+User Context:
+{user_query}
+==============================
+
 Previous thoughts and actions:
 {scratchpad}
 ----------------------------------------------------

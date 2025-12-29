@@ -25,6 +25,36 @@ class ReActAgent(Agent):
         super().__init__(model, temperature)
         self.max_iterations = config.REACT_MAX_ITERATIONS
 
+    def _build_comprehensive_user_query(self, user_input: str) -> str:
+        """
+        Build comprehensive user query with original input, plan, and task context
+
+        Args:
+            user_input: Current user input (may be step-specific)
+
+        Returns:
+            Comprehensive user query string with all available context
+        """
+        user_query_parts = []
+
+        # 1. Add original user input (if available)
+        if hasattr(self, 'original_user_input') and self.original_user_input:
+            user_query_parts.append(f"Original User Question:\n{self.original_user_input}\n")
+
+        # 2. Add full plan information (if available)
+        if hasattr(self, 'plan_info') and self.plan_info:
+            plan_data = self.plan_info
+            if 'full_plan' in plan_data:
+                user_query_parts.append(f"Full Plan:\n{plan_data['full_plan']}\n")
+            if 'current_step' in plan_data:
+                user_query_parts.append(f"Current Step:\n{plan_data['current_step']}\n")
+
+        # 3. Add the actual user input (which may be step-specific)
+        user_query_parts.append(f"Task:\n{user_input}")
+
+        # Combine all parts
+        return "\n".join(user_query_parts)
+
     def run(
         self,
         user_input: str,
@@ -163,26 +193,8 @@ class ReActAgent(Agent):
             files_info = self.format_attached_files(self.attached_files)
             system_prompt += files_info
 
-        # Construct comprehensive user_query with all context
-        user_query_parts = []
-
-        # 1. Add original user input (if available and different from user_input)
-        if hasattr(self, 'original_user_input') and self.original_user_input:
-            user_query_parts.append(f"Original User Question:\n{self.original_user_input}\n")
-
-        # 2. Add full plan information (if available)
-        if hasattr(self, 'plan_info') and self.plan_info:
-            plan_data = self.plan_info
-            if 'full_plan' in plan_data:
-                user_query_parts.append(f"Full Plan:\n{plan_data['full_plan']}\n")
-            if 'current_step' in plan_data:
-                user_query_parts.append(f"Current Step:\n{plan_data['current_step']}\n")
-
-        # 3. Add the actual user input (which may be step-specific)
-        user_query_parts.append(f"Task:\n{user_input}")
-
-        # Combine all parts
-        comprehensive_user_query = "\n".join(user_query_parts)
+        # Build comprehensive user query with all context
+        comprehensive_user_query = self._build_comprehensive_user_query(user_input)
 
         # Load thought prompt
         thought_prompt = self.load_prompt(
@@ -236,9 +248,13 @@ class ReActAgent(Agent):
         # Format tool data for LLM
         tool_data_str = self._format_tool_data(action_info["action"], tool_result)
 
+        # Build comprehensive user query with all context
+        comprehensive_user_query = self._build_comprehensive_user_query(user_input)
+
         # Load observation prompt
         observation_prompt = self.load_prompt(
             "agents/react_observation.txt",
+            user_query=comprehensive_user_query,
             scratchpad=scratchpad,
             action=action_info["action"],
             action_input=action_info["action_input"],
@@ -300,9 +316,13 @@ class ReActAgent(Agent):
         Raises:
             ValueError: If response is invalid
         """
+        # Build comprehensive user query with all context
+        comprehensive_user_query = self._build_comprehensive_user_query(user_input)
+
         # Load final answer prompt
         final_prompt = self.load_prompt(
             "agents/react_final.txt",
+            user_query=comprehensive_user_query,
             scratchpad=scratchpad
         )
 

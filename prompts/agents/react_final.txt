@@ -1,5 +1,10 @@
 You are generating the final answer to the user's question based on all the information you've gathered.
 
+==============================
+User Context:
+{user_query}
+==============================
+
 All thoughts, actions, and observations:
 {scratchpad}
 ----------------------------------------------------

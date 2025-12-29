@@ -90,7 +90,7 @@ DEFAULT_AGENT = "auto"
 
 # ReAct Agent Settings
 REACT_FORMAT = "prompt"  # "prompt" or "native" (Ollama native tool calling)
-REACT_MAX_ITERATIONS = 10  # Maximum reasoning iterations
+REACT_MAX_ITERATIONS = 5  # Maximum reasoning iterations
 REACT_RETRY_ON_ERROR = True  # Let LLM see errors and decide next action (intelligent retry)
 
 # Plan-Execute Agent Settings
