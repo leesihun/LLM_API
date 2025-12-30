@@ -166,7 +166,7 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # Execution mode: "native" or "nanocoder"
 # - native: Direct Python code execution (fast, no LLM overhead)
 # - nanocoder: Natural language to code using nanocoder CLI (autonomous coding)
-PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder"] = "nanocoder"
+PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder"] = "native"
 
 # Native executor settings
 PYTHON_EXECUTOR_TIMEOUT = 1200  # Execution timeout in seconds

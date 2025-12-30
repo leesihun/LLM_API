@@ -69,7 +69,9 @@ class NanocoderExecutor(BasePythonExecutor):
                 capture_output=True,
                 text=True,
                 timeout=10,
-                shell=True  # Use shell for Windows compatibility
+                shell=True,  # Use shell for Windows compatibility
+                encoding='utf-8',  # Force UTF-8 encoding
+                errors='ignore'  # Ignore decode errors
             )
 
             if result.returncode != 0:
@@ -79,7 +81,8 @@ class NanocoderExecutor(BasePythonExecutor):
                     f"Current path: {self.nanocoder_path}"
                 )
 
-            print(f"[NANOCODER] Found nanocoder: {result.stdout.strip()}")
+            # Skip printing version to avoid Unicode issues on Windows
+            print(f"[NANOCODER] Nanocoder is available")
 
         except FileNotFoundError:
             raise RuntimeError(
@@ -149,8 +152,10 @@ class NanocoderExecutor(BasePythonExecutor):
                 # Configure environment for nanocoder
                 env = os.environ.copy()
 
-                # Set nanocoder config directory
-                env["NANOCODER_CONFIG_DIR"] = str(config.NANOCODER_CONFIG_DIR.absolute())
+                # Set nanocoder config directory to absolute path from project root
+                project_root = Path(original_cwd)
+                nanocoder_config_path = project_root / config.NANOCODER_CONFIG_DIR
+                env["NANOCODER_CONFIG_DIR"] = str(nanocoder_config_path.absolute())
 
                 print(f"\n[NANOCODER] Executing command...")
                 print(f"[NANOCODER] Command: {nanocoder_cmd}")
@@ -167,7 +172,9 @@ class NanocoderExecutor(BasePythonExecutor):
                     text=True,
                     timeout=exec_timeout,
                     env=env,
-                    shell=True  # Use shell to handle command string
+                    shell=True,  # Use shell to handle command string
+                    encoding='utf-8',  # Force UTF-8 encoding
+                    errors='ignore'  # Ignore decode errors
                 )
 
                 stdout = result.stdout

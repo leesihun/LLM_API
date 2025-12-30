@@ -23,7 +23,8 @@
       "Bash(test:*)",
       "Bash(taskkill:*)",
       "Bash(git push:*)",
-      "Bash(copy:*)"
+      "Bash(copy:*)",
+      "Bash(nanocoder:*)"
     ],
     "deny": [],
     "ask": []
