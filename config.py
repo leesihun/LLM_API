@@ -163,8 +163,10 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # ============================================================================
 # Python Coder Tool Settings
 # ============================================================================
-# Execution mode: "native" or "openinterpreter"
-PYTHON_EXECUTOR_MODE: Literal["native", "openinterpreter"] = "native"
+# Execution mode: "native" or "nanocoder"
+# - native: Direct Python code execution (fast, no LLM overhead)
+# - nanocoder: Natural language to code using nanocoder CLI (autonomous coding)
+PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder"] = "nanocoder"
 
 # Native executor settings
 PYTHON_EXECUTOR_TIMEOUT = 1200  # Execution timeout in seconds
@@ -172,11 +174,10 @@ PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024 * 10  # 10MB max output
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
 PYTHON_CODER_TIMEOUT = 3000  # Timeout for ReAct agent tool call
 
-# OpenInterpreter settings
-PYTHON_CODER_MAX_RETRIES = 3  # Maximum retry attempts for error correction
-PYTHON_CODER_OPENINTERPRETER_OFFLINE = True  # Run completely offline (no external API calls)
-PYTHON_CODER_OPENINTERPRETER_AUTO_RUN = True  # Auto-execute code without confirmation
-PYTHON_CODER_OPENINTERPRETER_SAFE_MODE = False  # Safe mode (experimental)
+# Nanocoder settings
+NANOCODER_PATH = "nanocoder"  # Path to nanocoder binary (globally installed)
+NANOCODER_CONFIG_DIR = Path(".nanocoder")  # Nanocoder config directory
+NANOCODER_TIMEOUT = 1200  # Nanocoder execution timeout in seconds
 
 # ============================================================================
 # RAG Tool Settings
@@ -266,3 +267,4 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 RAG_DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
 RAG_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 RAG_METADATA_DIR.mkdir(parents=True, exist_ok=True)
+NANOCODER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)

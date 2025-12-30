@@ -1,0 +1,48 @@
+==============================
+{user_query}
+==============================
+
+
+Previous thoughts and actions:
+{scratchpad}
+
+
+
+----------------------------------------------------
+
+Analyze the current situation and determine your next action.
+
+Output EXACTLY ONE thought/action/action input pair in this format:
+
+Thought: [Your reasoning about what to do next]
+Action: [Tool name]
+Action Input: [String input for the tool]
+
+RULES:
+1. Generate EXACTLY ONE Thought/Action/Action Input triplet
+2. Stop immediately after generating ONE action
+3. You can start with easy tasks and work your way up
+4. The tool will execute and provide an observation, then you'll decide what to do next
+5. Action Input should be strictly ONLY the input for the tool.
+
+Rules regarding python coder (nanocoder mode):
+- Write clear, Detailed, THOROUGH natural language instructions describing what code to generate and execute
+- Be specific about what the code should do, what outputs to produce, and what files to create
+- Nanocoder will automatically generate the Python code, execute it, and return results
+- Before you answer, think about what tasks need to be done and describe them clearly
+- MAKE NO MISTAKE AND THINK HARD!
+
+REMEMBER, The 'Action Input' should BE:
+python_coder : [Detailed, THOROUGH Natural language instruction describing the task - nanocoder will generate and execute the code]
+websearch, rag: [Pure search query]
+
+
+Output EXACTLY ONE thought/action/action input pair in this format:
+
+Thought: [Your reasoning about what to do next]
+Action: [Tool name]
+Action Input: [String input for the tool]
+
+For python_coder (nanocoder mode), give out strictly natural language instructions. The 'Action Input' should BE:
+python_coder : [Detailed, THOROUGH Clear natural language instruction - e.g., "Create a function to calculate factorial of 10, test it, and save the result to output.txt"]
+websearch, rag: [Pure search query]

@@ -186,6 +186,3 @@ zipp
 zstandard
 llama-cpp-python
 pip-system-certs
-
-# OpenInterpreter (optional - only needed if PYTHON_EXECUTOR_MODE=openinterpreter)
-open-interpreter

@@ -168,9 +168,19 @@ class ReActAgent(Agent):
         Raises:
             ValueError: If response format is invalid
         """
+        # Select prompt based on python executor mode
+        # Native mode: generates Python code directly
+        # Nanocoder mode: generates natural language instructions
+        if config.PYTHON_EXECUTOR_MODE == "nanocoder":
+            system_prompt_file = "agents/react_system_nanocoder.txt"
+            thought_prompt_file = "agents/react_thought_nanocoder.txt"
+        else:  # native mode (default)
+            system_prompt_file = "agents/react_system.txt"
+            thought_prompt_file = "agents/react_thought.txt"
+
         # Load system prompt
         system_prompt = self.load_prompt(
-            "agents/react_system.txt",
+            system_prompt_file,
             tools=tools_desc
         )
 
@@ -184,7 +194,7 @@ class ReActAgent(Agent):
 
         # Load thought prompt
         thought_prompt = self.load_prompt(
-            "agents/react_thought.txt",
+            thought_prompt_file,
             user_query=comprehensive_user_query,
             scratchpad=scratchpad if scratchpad else "No previous actions yet."
         )

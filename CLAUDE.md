@@ -48,7 +48,7 @@ pip install -r requirements.txt
 All configuration is centralized in `config.py`. Key settings:
 - `LLM_BACKEND`: Choose "ollama", "llamacpp", or "auto" (tries Ollama first)
 - `TOOLS_HOST`/`TOOLS_PORT`: Tools server location (change if on different machine)
-- `PYTHON_EXECUTOR_MODE`: "native" or "openinterpreter" for code execution
+- `PYTHON_EXECUTOR_MODE`: "native" or "nanocoder" for code execution
 
 ## High-Level Architecture
 
@@ -83,8 +83,8 @@ Tools are **completely separate services** running on port 1006:
    - Returns LLM-generated answers from search results
 
 2. **python_coder**: Python code execution with two modes:
-   - **Native** (`tools/python_coder/native_tool.py`): Direct subprocess execution
-   - **OpenInterpreter** (`tools/python_coder/openinterpreter_tool.py`): Uses Open Interpreter for smarter execution
+   - **Native** (`tools/python_coder/native_tool.py`): Direct subprocess execution of Python code
+   - **Nanocoder** (`tools/python_coder/nanocoder_tool.py`): Uses nanocoder CLI for natural language to code
    - Workspace isolation: Each session gets `data/scratch/{session_id}/`
 
 3. **rag**: Document retrieval with FAISS
@@ -200,7 +200,16 @@ The ReAct agent uses a strict 2-step loop:
 
 **Two Execution Modes**:
 1. **Native**: Direct `subprocess.run()` with timeout
-2. **OpenInterpreter**: Uses Open Interpreter's smart execution
+   - ReAct agent generates Python code directly
+   - Fast execution with no LLM overhead
+   - Uses `prompts/agents/react_system.txt` and `react_thought.txt`
+
+2. **Nanocoder**: Uses nanocoder CLI for autonomous coding
+   - ReAct agent generates natural language instructions
+   - Nanocoder generates and executes Python code
+   - Uses `prompts/agents/react_system_nanocoder.txt` and `react_thought_nanocoder.txt`
+   - Requires: `npm install -g @nanocollective/nanocoder`
+   - Auto-generates `.nanocoder/config.json` from `config.py` settings
 
 **Workspace Isolation**:
 - Each session gets isolated directory: `data/scratch/{session_id}/`
@@ -210,7 +219,7 @@ The ReAct agent uses a strict 2-step loop:
 **Output Handling**:
 - Always captures stdout, stderr, return code
 - Tracks files created in workspace
-- OpenInterpreter mode can auto-fix errors (up to `PYTHON_CODER_MAX_RETRIES`)
+- Nanocoder mode includes autonomous error handling
 
 ### File Attachments
 
@@ -249,7 +258,7 @@ backend/
   utils/           - Utilities (auth, file handling)
 tools/
   web_search/      - Tavily web search integration
-  python_coder/    - Code execution (native + openinterpreter)
+  python_coder/    - Code execution (native + nanocoder)
   rag/             - RAG document retrieval
 prompts/
   agents/          - Agent system prompts
@@ -268,7 +277,7 @@ When modifying functionality, check these config variables:
 
 - **Agent behavior**: `REACT_MAX_ITERATIONS`, `REACT_RETRY_ON_ERROR`, `PLAN_*`
 - **Tool settings**: `TOOL_MODELS`, `TOOL_PARAMETERS`, `DEFAULT_TOOL_TIMEOUT`
-- **Code execution**: `PYTHON_EXECUTOR_MODE`, `PYTHON_CODER_MAX_RETRIES`
+- **Code execution**: `PYTHON_EXECUTOR_MODE`, `NANOCODER_PATH`, `NANOCODER_TIMEOUT`
 - **Web search**: `TAVILY_API_KEY`, `TAVILY_SEARCH_DEPTH`, `WEBSEARCH_MAX_RESULTS`
 - **RAG**: `RAG_EMBEDDING_MODEL`, `RAG_CHUNK_SIZE`, `RAG_INDEX_TYPE`
 - **LLM**: `LLM_BACKEND`, `OLLAMA_MODEL`, `DEFAULT_TEMPERATURE`
