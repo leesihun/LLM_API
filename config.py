@@ -18,7 +18,7 @@ LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 # LLM Backend Settings
 # ============================================================================
 # Which LLM backend to use: "ollama", "llamacpp", or "auto" (tries ollama first, falls back to llamacpp)
-LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "auto"
+LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "llamacpp"
 
 # Ollama Settings
 # IMPORTANT FOR LINUX: If running on Linux and getting "Access denied" errors,
