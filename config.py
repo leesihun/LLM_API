@@ -36,7 +36,7 @@ PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server start
 PRELOAD_KEEP_ALIVE = -1  # Keep model in memory: -1 = indefinitely, "5m" = 5 minutes, 0 = unload immediately
 
 # Llama.cpp Settings
-LLAMACPP_HOST = "http://localhost:5904"
+LLAMACPP_HOST = "http://localhost:5905"
 LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 
 # ============================================================================
@@ -45,7 +45,7 @@ LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 DEFAULT_TEMPERATURE = 1.0  # Randomness (0.0 = deterministic, 2.0 = very random)
 DEFAULT_TOP_P = 0.9  # Nucleus sampling
 DEFAULT_TOP_K = 40  # Top-k sampling
-DEFAULT_MAX_TOKENS = 16384  # Maximum tokens in response
+DEFAULT_MAX_TOKENS = 30000  # Maximum tokens in response
 
 # ============================================================================
 # Database Settings
@@ -126,22 +126,22 @@ TOOL_MODELS = {
 TOOL_PARAMETERS = {
     "websearch": {
         "temperature": 0.7,
-        "max_tokens": 16384,
+        "max_tokens": 30000,
         "timeout": 360,  # 1 minute for web search (includes 2 LLM calls + Tavily API call)
     },
     "python_coder": {
         "temperature": 1.0,  # Lower temp for more deterministic code
-        "max_tokens": 16384,
+        "max_tokens": 30000,
         "timeout": 1200,  # 2 minutes for code execution
     },
     "rag": {
         "temperature": 1.0,
-        "max_tokens": 16384,
+        "max_tokens": 30000,
         "timeout": 120,  # 2 minutes for RAG retrieval
     },
     "ppt_maker": {
         "temperature": 0.7,
-        "max_tokens": 16384,
+        "max_tokens": 30000,
         "timeout": 120,  # 2 minutes for generation + export
     },
 }

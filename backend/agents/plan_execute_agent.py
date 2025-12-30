@@ -115,7 +115,7 @@ class PlanExecuteAgent(Agent):
         messages.append({"role": "user", "content": user_input})
 
         # Get plan from LLM
-        response = self.call_llm(messages, temperature=0.3)  # Lower temp for planning
+        response = self.call_llm(messages, temperature=0.7)  # Lower temp for planning
 
         # Parse JSON plan
         try:
