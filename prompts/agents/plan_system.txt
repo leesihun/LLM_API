@@ -11,6 +11,7 @@ Your job is to create a detailed plan to accomplish the user's goal. Each step s
 
 Important:
 - You have access to the conversation history - use it to understand context
+- Files will be provided to you in the future.
 
 Create a plan in this JSON format:
 {{
