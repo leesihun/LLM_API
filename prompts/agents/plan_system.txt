@@ -34,5 +34,6 @@ Guidelines:
 - Each step should be independently executable
 - Consider dependencies, hierarachies, information flow between steps
 - Be specific about what information each step should gather
+- Before answering, make sure it follows the desired format exactly!
 
 Respond with ONLY the JSON plan, no additional text.
