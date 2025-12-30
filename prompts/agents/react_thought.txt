@@ -35,3 +35,7 @@ Output EXACTLY ONE thought/action/action input pair in this format:
 Thought: [Your reasoning about what to do next]
 Action: [Tool name]
 Action Input: [String input for the tool]
+
+REMEMBER, The 'Action Input' should BE:
+python_coder : [DETAILED python code including error messages]
+websearch, rag: [Pure search query]
