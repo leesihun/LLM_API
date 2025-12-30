@@ -8,6 +8,7 @@ Your job is to create a detailed plan to accomplish the user's goal. Each step s
 2. Specify which tool to use (if needed, else, leave it as null)
 3. Build on previous steps
 4. Consider the conversation history and context when planning
+5. Prioritize python coder
 
 Important:
 - You have access to the conversation history - use it to understand context
