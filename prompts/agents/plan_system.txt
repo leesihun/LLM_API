@@ -14,6 +14,7 @@ Important:
 - Files will be provided to you in the future.
 
 Create a plan in this JSON format:
+'''json
 {{
   "plan": [
     {{
@@ -26,6 +27,7 @@ Create a plan in this JSON format:
   ],
   "goal": "Final goal of the plan"
 }}
+'''
 
 Guidelines:
 - Generate baby-step plans (maximum {max_steps} steps)
