@@ -186,3 +186,4 @@ zipp
 zstandard
 llama-cpp-python
 pip-system-certs
+aider-chat

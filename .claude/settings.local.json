@@ -24,7 +24,11 @@
       "Bash(taskkill:*)",
       "Bash(git push:*)",
       "Bash(copy:*)",
-      "Bash(nanocoder:*)"
+      "Bash(nanocoder:*)",
+      "Bash(aider:*)",
+      "Bash(pip index versions:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(pip search aider)"
     ],
     "deny": [],
     "ask": []

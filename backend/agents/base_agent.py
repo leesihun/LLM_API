@@ -183,7 +183,8 @@ class Agent(ABC):
     def call_llm(
         self,
         messages: List[Dict[str, str]],
-        temperature: float = None
+        temperature: float = None,
+        stage: str = None
     ) -> str:
         """
         Call LLM with messages
@@ -191,12 +192,17 @@ class Agent(ABC):
         Args:
             messages: List of message dicts
             temperature: Temperature override (optional)
+            stage: Optional stage name for logging (e.g., "plan_creation", "step_execution")
 
         Returns:
             LLM response
         """
         temp = temperature if temperature is not None else self.temperature
         agent_type = self.__class__.__name__.replace("Agent", "").lower()
+
+        # Include stage in agent_type for logging if provided
+        if stage:
+            agent_type = f"{agent_type}:{stage}"
 
         return self.llm.chat(
             messages,

@@ -14,15 +14,21 @@ from tools_config import format_tools_for_llm
 
 class PlanExecuteAgent(Agent):
     """
-    Plan-Execute agent that:
+    Plan-Execute agent with multi-level replanning:
+
     1. Creates a multi-step plan
     2. Executes each step using a ReAct agent
-    3. Re-plans if steps fail (configurable)
+    3. TWO replanning mechanisms:
+       a) PLAN_REPLAN_ON_FAILURE: Replans when individual steps fail (step-level)
+       b) FINISHED flag iteration: Replans when answer is incomplete (plan-level)
+
+    These work together: (a) handles execution failures, (b) handles missing information.
     """
 
     def __init__(self, model: str = None, temperature: float = None):
         super().__init__(model, temperature)
         self.max_steps = config.PLAN_MAX_STEPS
+        self.max_iterations = config.PLAN_MAX_ITERATIONS
         self.replan_on_failure = config.PLAN_REPLAN_ON_FAILURE
         self.share_context = config.PLAN_SHARE_CONTEXT
 
@@ -50,7 +56,13 @@ class PlanExecuteAgent(Agent):
         attached_files: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
-        Run plan-execute agent
+        Run plan-execute agent with iterative replanning
+
+        This method implements a loop that:
+        1. Creates a plan
+        2. Executes the plan
+        3. Synthesizes answer and checks if FINISHED=True
+        4. If FINISHED=False, creates ADDITIONAL plan and repeats (up to max_iterations)
 
         Args:
             user_input: User's message
@@ -62,24 +74,101 @@ class PlanExecuteAgent(Agent):
         """
         # Store attached files for passing to ReAct agents
         self.attached_files = attached_files
-        # Step 1: Create plan
-        plan = self._create_plan(user_input, conversation_history)
 
-        if not plan:
-            return "I apologize, but I was unable to create a plan for your request. Please try rephrasing your question."
+        # Track all plans and results across iterations
+        all_results = []  # Accumulates results from ALL iterations
+        current_query = user_input
+        iteration = 0
+        last_plan = None  # Track last successful plan for fallback
+        last_synthesis_result = None  # Track last synthesis for fallback
 
-        # Step 2: Execute plan
-        results = self._execute_plan(plan, user_input, conversation_history)
+        # ITERATIVE PLANNING LOOP
+        # Each iteration creates a NEW plan, executes it, and checks if done
+        while iteration < self.max_iterations:
+            iteration += 1
+            print(f"[PLAN-EXECUTE] Starting iteration {iteration}/{self.max_iterations}")
 
-        # Step 3: Synthesize final answer
-        final_answer = self._synthesize_answer(plan, results, user_input, conversation_history)
+            # STEP 1: CREATE NEW PLAN (or first plan if iteration==1)
+            plan = self._create_plan(current_query, conversation_history)
 
-        return final_answer
+            if not plan:
+                if iteration == 1:
+                    return "I apologize, but I was unable to create a plan for your request. Please try rephrasing your question."
+                else:
+                    # Can't create additional plan, use what we have
+                    print("[PLAN-EXECUTE] Unable to create additional plan. Using existing results.")
+                    break
+
+            # STEP 2: EXECUTE THE NEW PLAN
+            results = self._execute_plan(plan, user_input, conversation_history)
+            all_results.extend(results)  # Add to cumulative results
+
+            # Track for fallback
+            last_plan = plan
+
+            # STEP 3: SYNTHESIZE FROM ALL RESULTS AND CHECK IF FINISHED
+            synthesis_result = self._synthesize_answer(plan, all_results, user_input, conversation_history)
+            last_synthesis_result = synthesis_result
+
+            # DECISION POINT: Are we done?
+            if synthesis_result['finished']:
+                # FINISHED=True: We have a complete answer!
+                print(f"[PLAN-EXECUTE] Task completed in {iteration} iteration(s)")
+                return synthesis_result['answer']
+
+            # FINISHED=False: Need more information, prepare for NEXT ITERATION
+            print(f"[PLAN-EXECUTE] Iteration {iteration} incomplete. Preparing additional plan...")
+
+            # Check if we've reached max iterations
+            if iteration >= self.max_iterations:
+                print(f"[PLAN-EXECUTE] Reached max iterations ({self.max_iterations}). Returning partial answer.")
+                # Return the answer with a note that it's incomplete
+                partial_answer = synthesis_result['answer']
+                if synthesis_result.get('missing_info'):
+                    partial_answer += f"\n\n**Note**: This answer is incomplete. {synthesis_result['missing_info']}"
+                return partial_answer
+
+            # PREPARE FOR NEXT ITERATION
+            # Create a targeted query for the NEXT PLAN based on what's missing
+            if synthesis_result.get('missing_info'):
+                continuation_reason = f"What's still needed:\n{synthesis_result['missing_info']}"
+            else:
+                continuation_reason = "The previous plan was insufficient. Create additional steps to fully answer the question."
+
+            current_query = self.load_prompt(
+                "agents/plan_replan_continuation.txt",
+                user_input=user_input,
+                previous_steps=self._format_previous_steps(all_results),
+                continuation_reason=continuation_reason
+            )
+
+            # Add context for next iteration (use copy to avoid mutating original)
+            if self.share_context:
+                conversation_history = conversation_history + [{
+                    "role": "assistant",
+                    "content": f"Iteration {iteration} partial result: {synthesis_result['answer']}"
+                }]
+
+            # Loop continues: will create ANOTHER plan in next iteration!
+
+        # Fallback: Loop exited without returning (e.g., via break at line 95)
+        print(f"[PLAN-EXECUTE] Loop exited. Returning best available synthesis.")
+        if last_synthesis_result:
+            # We have at least one synthesis result
+            return last_synthesis_result['answer']
+        elif last_plan and all_results:
+            # We have results but no synthesis, create one
+            final_synthesis = self._synthesize_answer(last_plan, all_results, user_input, conversation_history)
+            return final_synthesis['answer']
+        else:
+            # No results at all (shouldn't happen, but safety fallback)
+            return "I apologize, but I was unable to complete your request. Please try rephrasing your question."
 
     def _create_plan(
         self,
         user_input: str,
-        conversation_history: List[Dict[str, str]]
+        conversation_history: List[Dict[str, str]],
+        replan_reason: str = None
     ) -> Optional[Dict]:
         """
         Create execution plan
@@ -87,6 +176,7 @@ class PlanExecuteAgent(Agent):
         Args:
             user_input: User's message
             conversation_history: Conversation history
+            replan_reason: Optional reason for replanning (for logging)
 
         Returns:
             Plan dictionary or None
@@ -114,8 +204,9 @@ class PlanExecuteAgent(Agent):
         # Add current user input
         messages.append({"role": "user", "content": user_input})
 
-        # Get plan from LLM
-        response = self.call_llm(messages, temperature=0.7)  # Lower temp for planning
+        # Get plan from LLM with stage tracking
+        stage = f"plan_creation_{replan_reason}" if replan_reason else "plan_creation"
+        response = self.call_llm(messages, temperature=0.7, stage=stage)
 
         # Parse JSON plan
         try:
@@ -206,7 +297,15 @@ class PlanExecuteAgent(Agent):
             # Handle failure
             if not step_result["success"] and self.replan_on_failure:
                 # Re-plan from this point with full context
-                remaining_goal = f"Continue from step {step_num}: {description}. Previous steps: {json.dumps(results)}"
+                # Format previous results for prompt
+                prev_results_str = json.dumps(results, indent=2)
+
+                remaining_goal = self.load_prompt(
+                    "agents/plan_failure_replan.txt",
+                    step_num=step_num,
+                    description=description,
+                    previous_results=prev_results_str
+                )
 
                 # Build replanning context: original history + step results
                 replan_context = conversation_history.copy()
@@ -216,8 +315,8 @@ class PlanExecuteAgent(Agent):
                         "content": f"Step {res['step']} ({res['description']}): {res['result']}"
                     })
 
-                # Create new plan with full context
-                new_plan = self._create_plan(remaining_goal, replan_context)
+                # Create new plan with full context (step failure recovery)
+                new_plan = self._create_plan(remaining_goal, replan_context, replan_reason="step_failure")
 
                 if new_plan:
                     # Execute new plan with original history
@@ -292,23 +391,20 @@ class PlanExecuteAgent(Agent):
         Returns:
             Step result dict with 'answer' and 'success'
         """
-        # Build step prompt
-        step_prompt = f"""You are executing step {step_num} of a multi-step plan.
-
-Overall Goal: {goal}
-
-Current Step: {description}
-
-Previous Steps:
-{prev_steps_str}
-
-Based on the previous steps and the overall goal, complete this step and provide your answer."""
+        # Load reasoning step prompt from file
+        step_prompt = self.load_prompt(
+            "agents/plan_reasoning_step.txt",
+            step_num=step_num,
+            goal=goal,
+            description=description,
+            prev_steps=prev_steps_str
+        )
 
         # Use full conversation context + current step
         messages = context + [{"role": "user", "content": step_prompt}]
 
         try:
-            answer = self.call_llm(messages)
+            answer = self.call_llm(messages, stage=f"reasoning_step_{step_num}")
             return {
                 "answer": answer,
                 "success": True
@@ -439,7 +535,7 @@ Based on the previous steps and the overall goal, complete this step and provide
         results: List[Dict],
         user_input: str,
         conversation_history: List[Dict[str, str]]
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Synthesize final answer from all step results
 
@@ -450,7 +546,10 @@ Based on the previous steps and the overall goal, complete this step and provide
             conversation_history: Full conversation history
 
         Returns:
-            Final synthesized answer
+            Dictionary with:
+            - 'finished': bool (True if answer is complete, False if more steps needed)
+            - 'answer': str (the synthesized answer)
+            - 'missing_info': str (what's missing, only present if finished=False)
         """
         # Format all results
         results_summary = ""
@@ -458,17 +557,13 @@ Based on the previous steps and the overall goal, complete this step and provide
             results_summary += f"**Step {res['step']}**: {res['description']}\n"
             results_summary += f"Result: {res['result']}\n\n"
 
-        # Ask LLM to synthesize
-        synthesis_prompt = f"""Based on the following step-by-step execution, provide a comprehensive final answer to the user's question.
-
-User Question: {user_input}
-
-Goal: {plan.get('goal', user_input)}
-
-Step Results:
-{results_summary}
-
-Provide a clear, complete answer that addresses the user's question using the information gathered from all steps."""
+        # Load synthesis prompt from file
+        synthesis_prompt = self.load_prompt(
+            "agents/plan_synthesis.txt",
+            user_input=user_input,
+            goal=plan.get('goal', user_input),
+            results_summary=results_summary.strip()
+        )
 
         # Build messages with optional conversation history
         messages = []
@@ -481,6 +576,65 @@ Provide a clear, complete answer that addresses the user's question using the in
         # Add synthesis prompt
         messages.append({"role": "user", "content": synthesis_prompt})
 
-        final_answer = self.call_llm(messages)
+        final_answer = self.call_llm(messages, stage="synthesis")
 
-        return final_answer
+        # Parse the response to extract FINISHED flag and content
+        # Expected format:
+        # Line 1: "FINISHED=True" or "FINISHED=False"
+        # Rest: The answer and optional missing info section
+
+        finished = True  # Default to True (optimistic)
+        answer = final_answer
+        missing_info = None
+
+        # Check if response starts with FINISHED flag
+        if final_answer.strip().startswith("FINISHED="):
+            lines = final_answer.strip().split('\n', 1)
+
+            # Extract FINISHED flag from first line
+            first_line = lines[0].strip()
+            if "FINISHED=False" in first_line or "FINISHED = False" in first_line:
+                finished = False
+            elif "FINISHED=True" in first_line or "FINISHED = True" in first_line:
+                finished = True
+
+            # Extract the rest of the content
+            if len(lines) > 1:
+                content = lines[1].strip()
+
+                # If FINISHED=False, try to separate answer from missing_info
+                if not finished:
+                    # Look for common separators or headers
+                    # The prompt asks for answer first, then missing info section
+                    # We'll store everything as answer and parse missing info if clearly marked
+                    answer = content
+
+                    # Try to extract missing info section (optional)
+                    # Look for markers like "Missing information:", "What's needed:", etc.
+                    missing_markers = [
+                        "missing information:",
+                        "what's missing:",
+                        "additional steps needed:",
+                        "what information is missing:",
+                        "to complete the answer:"
+                    ]
+
+                    content_lower = content.lower()
+                    for marker in missing_markers:
+                        if marker in content_lower:
+                            # Split at the marker
+                            split_idx = content_lower.index(marker)
+                            answer = content[:split_idx].strip()
+                            missing_info = content[split_idx:].strip()
+                            break
+                else:
+                    answer = content
+            else:
+                # Only FINISHED flag, no content
+                answer = "I've completed the analysis of the available information."
+
+        return {
+            'finished': finished,
+            'answer': answer,
+            'missing_info': missing_info
+        }

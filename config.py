@@ -95,6 +95,7 @@ REACT_RETRY_ON_ERROR = True  # Let LLM see errors and decide next action (intell
 
 # Plan-Execute Agent Settings
 PLAN_MAX_STEPS = 20  # Maximum plan steps
+PLAN_MAX_ITERATIONS = 3  # Maximum iterations of plan-execute-replan cycle
 PLAN_REPLAN_ON_FAILURE = True  # Re-plan when a step fails
 PLAN_SHARE_CONTEXT = True  # Share context across plan execution steps
 PLAN_INCLUDE_FULL_HISTORY = True  # Include all conversation history in planning
