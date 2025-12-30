@@ -29,7 +29,7 @@ Rules regarding python coder:
 - Write thorough code that can answer the given task.
 - Always save important variables that might be used in the future.
 - Before you answer, reexamine the codeset.
-- THINK HARD!
+- MAKE NO MISTAKE AND THINK HARD!
 
 REMEMBER, The 'Action Input' should BE:
 python_coder : [DETAILED python code including error messages]
