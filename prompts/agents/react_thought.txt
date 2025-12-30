@@ -36,6 +36,6 @@ Thought: [Your reasoning about what to do next]
 Action: [Tool name]
 Action Input: [String input for the tool]
 
-REMEMBER, The 'Action Input' should BE:
+For python_coder and websearch, give out strictly the followings, no additional text, json format, etc. The 'Action Input' should BE:
 python_coder : [DETAILED python code including error messages]
 websearch, rag: [Pure search query]
