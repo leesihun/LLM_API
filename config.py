@@ -170,7 +170,7 @@ PYTHON_EXECUTOR_MODE: Literal["native", "openinterpreter"] = "native"
 PYTHON_EXECUTOR_TIMEOUT = 1200  # Execution timeout in seconds
 PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024 * 10  # 10MB max output
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
-PYTHON_CODER_TIMEOUT = 300  # Timeout for ReAct agent tool call
+PYTHON_CODER_TIMEOUT = 3000  # Timeout for ReAct agent tool call
 
 # OpenInterpreter settings
 PYTHON_CODER_MAX_RETRIES = 3  # Maximum retry attempts for error correction
