@@ -14,6 +14,13 @@ TOOLS_HOST = "127.0.0.1"  # Tools server host (change if on different machine)
 TOOLS_PORT = 10006   # Tools API server (websearch, python_coder, rag) - separate to avoid deadlock
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
+# Concurrency Settings
+# Number of worker processes for handling concurrent requests
+# Workers are lightweight (~50MB each) since llama.cpp is on remote server
+# Set to 1 to disable multi-processing (for debugging)
+SERVER_WORKERS = 4  # Number of parallel workers for main API
+TOOLS_SERVER_WORKERS = 4  # Number of parallel workers for tools API
+
 # ============================================================================
 # LLM Backend Settings
 # ============================================================================

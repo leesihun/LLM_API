@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
+from filelock import FileLock
 
 import config
 
@@ -179,26 +180,35 @@ class ConversationStore:
         return self.sessions_dir / f"{session_id}.json"
 
     def save_conversation(self, session_id: str, messages: List[Dict[str, str]]):
-        """Save conversation to JSON file"""
+        """Save conversation to JSON file with file locking for concurrency safety"""
         session_file = self._get_session_file(session_id)
+        lock_file = session_file.with_suffix('.lock')
+
         data = {
             "session_id": session_id,
             "updated_at": datetime.now().isoformat(),
             "messages": messages
         }
-        with open(session_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        # Use file lock to prevent concurrent write corruption
+        with FileLock(lock_file, timeout=10):
+            with open(session_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
 
     def load_conversation(self, session_id: str) -> Optional[List[Dict[str, str]]]:
-        """Load conversation from JSON file"""
+        """Load conversation from JSON file with file locking for concurrency safety"""
         session_file = self._get_session_file(session_id)
         if not session_file.exists():
             return None
 
+        lock_file = session_file.with_suffix('.lock')
+
         try:
-            with open(session_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get("messages", [])
+            # Use file lock to ensure we don't read while another process is writing
+            with FileLock(lock_file, timeout=10):
+                with open(session_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get("messages", [])
         except Exception:
             return None
 

@@ -123,7 +123,8 @@ def main():
         port=config.TOOLS_PORT,
         reload=False,
         log_level=config.LOG_LEVEL.lower(),
-        access_log=True
+        access_log=True,
+        workers=config.TOOLS_SERVER_WORKERS
     )
 
 

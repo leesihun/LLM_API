@@ -45,7 +45,8 @@ def main():
         host=config.SERVER_HOST,
         port=config.SERVER_PORT,
         reload=False,
-        log_level=config.LOG_LEVEL.lower()
+        log_level=config.LOG_LEVEL.lower(),
+        workers=config.SERVER_WORKERS
     )
 
 

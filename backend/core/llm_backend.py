@@ -2,7 +2,7 @@
 LLM Backend abstraction for Ollama and llama.cpp
 Provides unified interface for both backends with auto-fallback
 """
-from typing import Iterator, List, Dict, Optional
+from typing import Iterator, List, Dict, Optional, AsyncIterator
 import httpx
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -14,22 +14,22 @@ class LLMBackend(ABC):
     """Abstract base class for LLM backends"""
 
     @abstractmethod
-    def chat(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> str:
+    async def chat(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> str:
         """Non-streaming chat completion"""
         pass
 
     @abstractmethod
-    def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> Iterator[str]:
+    async def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> AsyncIterator[str]:
         """Streaming chat completion"""
         pass
 
     @abstractmethod
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available models"""
         pass
 
     @abstractmethod
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if backend is available"""
         pass
 
@@ -54,9 +54,9 @@ class OllamaBackend(LLMBackend):
         ssl_options.append(False)
         return ssl_options
 
-    def _make_request(self, method: str, url: str, **kwargs):
+    async def _make_request(self, method: str, url: str, **kwargs):
         """
-        Make HTTP request with SSL fallback mechanism.
+        Make async HTTP request with SSL fallback mechanism.
 
         Args:
             method: HTTP method (GET, POST, etc.)
@@ -72,18 +72,19 @@ class OllamaBackend(LLMBackend):
         last_error = None
         for ssl_verify in self._ssl_options:
             try:
-                if method.upper() == "GET":
-                    response = httpx.get(url, verify=ssl_verify, **kwargs)
-                elif method.upper() == "POST":
-                    response = httpx.post(url, verify=ssl_verify, **kwargs)
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {method}")
+                async with httpx.AsyncClient(verify=ssl_verify) as client:
+                    if method.upper() == "GET":
+                        response = await client.get(url, **kwargs)
+                    elif method.upper() == "POST":
+                        response = await client.post(url, **kwargs)
+                    else:
+                        raise ValueError(f"Unsupported HTTP method: {method}")
 
-                if ssl_verify is False:
-                    import warnings
-                    warnings.warn(f"[OllamaBackend] SSL verification disabled for {url}")
+                    if ssl_verify is False:
+                        import warnings
+                        warnings.warn(f"[OllamaBackend] SSL verification disabled for {url}")
 
-                return response
+                    return response
 
             except Exception as e:
                 error_msg = str(e)
@@ -98,7 +99,7 @@ class OllamaBackend(LLMBackend):
         # All SSL options failed
         raise last_error if last_error else Exception("All SSL verification options failed")
 
-    def _stream_request(self, method: str, url: str, **kwargs):
+    async def _stream_request(self, method: str, url: str, **kwargs):
         """
         Make streaming HTTP request with SSL fallback mechanism.
 
@@ -116,8 +117,8 @@ class OllamaBackend(LLMBackend):
         last_error = None
         for ssl_verify in self._ssl_options:
             try:
-                client = httpx.Client(verify=ssl_verify)
-                stream_context = client.stream(method, url, **kwargs)
+                # Async streaming client will be created in the calling function
+                return ssl_verify  # Return the verified SSL option
 
                 if ssl_verify is False:
                     import warnings
@@ -138,15 +139,15 @@ class OllamaBackend(LLMBackend):
         # All SSL options failed
         raise last_error if last_error else Exception("All SSL verification options failed")
 
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if Ollama is running"""
         try:
-            response = self._make_request("GET", f"{self.host}/api/tags", timeout=2.0)
+            response = await self._make_request("GET", f"{self.host}/api/tags", timeout=2.0)
             return response.status_code == 200
         except Exception:
             return False
 
-    def preload_model(self, model: str = None, keep_alive = -1) -> bool:
+    async def preload_model(self, model: str = None, keep_alive = -1) -> bool:
         """
         Preload a model into GPU memory and keep it loaded.
 
@@ -176,7 +177,7 @@ class OllamaBackend(LLMBackend):
                 "keep_alive": keep_alive
             }
 
-            response = self._make_request(
+            response = await self._make_request(
                 "POST",
                 f"{self.host}/api/chat",
                 json=payload,
@@ -195,17 +196,17 @@ class OllamaBackend(LLMBackend):
             print(f"[OllamaBackend] Error preloading model '{model}': {e}")
             return False
 
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available Ollama models"""
         try:
-            response = self._make_request("GET", f"{self.host}/api/tags", timeout=5.0)
+            response = await self._make_request("GET", f"{self.host}/api/tags", timeout=5.0)
             response.raise_for_status()
             data = response.json()
             return [model["name"] for model in data.get("models", [])]
         except Exception:
             return []
 
-    def chat(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> str:
+    async def chat(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> str:
         """Non-streaming chat completion"""
         payload = {
             "model": model,
@@ -217,7 +218,7 @@ class OllamaBackend(LLMBackend):
             }
         }
 
-        response = self._make_request(
+        response = await self._make_request(
             "POST",
             f"{self.host}/api/chat",
             json=payload,
@@ -227,7 +228,7 @@ class OllamaBackend(LLMBackend):
         data = response.json()
         return data["message"]["content"]
 
-    def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> Iterator[str]:
+    async def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> AsyncIterator[str]:
         """Streaming chat completion"""
         payload = {
             "model": model,
@@ -322,7 +323,7 @@ class LlamaCppBackend(LLMBackend):
         # All SSL options failed
         raise last_error if last_error else Exception("All SSL verification options failed")
 
-    def _stream_request(self, method: str, url: str, **kwargs):
+    async def _stream_request(self, method: str, url: str, **kwargs):
         """
         Make streaming HTTP request with SSL fallback mechanism.
 
@@ -340,8 +341,8 @@ class LlamaCppBackend(LLMBackend):
         last_error = None
         for ssl_verify in self._ssl_options:
             try:
-                client = httpx.Client(verify=ssl_verify)
-                stream_context = client.stream(method, url, **kwargs)
+                # Async streaming client will be created in the calling function
+                return ssl_verify  # Return the verified SSL option
 
                 if ssl_verify is False:
                     import warnings
@@ -399,7 +400,7 @@ class LlamaCppBackend(LLMBackend):
         data = response.json()
         return data["choices"][0]["message"]["content"]
 
-    def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> Iterator[str]:
+    async def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> AsyncIterator[str]:
         """Streaming chat completion (OpenAI-compatible)"""
         payload = {
             "model": model,
@@ -476,7 +477,7 @@ class AutoLLMBackend(LLMBackend):
         backend = self._get_backend()
         return backend.chat(messages, model, temperature)
 
-    def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> Iterator[str]:
+    async def chat_stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> AsyncIterator[str]:
         """Streaming chat using active backend"""
         backend = self._get_backend()
         return backend.chat_stream(messages, model, temperature)
