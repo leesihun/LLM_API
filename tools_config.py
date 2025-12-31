@@ -102,39 +102,6 @@ TOOL_SCHEMAS = {
         }
     },
 
-    "read_file": {
-        "name": "read_file",
-        "description": "Read the content of an attached file. Use this tool to examine files that the user has uploaded in their message. The file path is provided in the ATTACHED FILES section.",
-        "endpoint": "/api/tools/read_file",
-        "method": "POST",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "The full path to the file to read (from ATTACHED FILES)"
-                },
-                "start_line": {
-                    "type": "integer",
-                    "description": "Optional starting line number for partial reads (1-indexed)",
-                    "default": 1
-                },
-                "end_line": {
-                    "type": "integer",
-                    "description": "Optional ending line number for partial reads (inclusive)",
-                    "default": -1
-                }
-            },
-            "required": ["file_path"]
-        },
-        "returns": {
-            "success": "Boolean indicating if file read succeeded",
-            "answer": "Human-readable file content or summary",
-            "data": "Dictionary with file_path, content, lines, size, and encoding",
-            "metadata": "Execution metadata including file information"
-        }
-    },
-
     "ppt_maker": {
         "name": "ppt_maker",
         "description": "Create professional presentations from natural language descriptions. Generates PDF and PPTX files with customizable themes and layouts. Use this when user asks to create slides, presentations, or decks.",

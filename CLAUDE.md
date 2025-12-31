@@ -92,9 +92,10 @@ Tools are **completely separate services** running on port 1006:
    - Uses sentence transformers for embeddings
    - Collections stored in `data/rag_*` directories
 
-4. **read_file**: Reads attached files
-   - Supports line ranges for large files
-   - Handles various file types with rich metadata
+4. **ppt_maker**: Presentation generation with Marp
+   - Located: `tools/ppt_maker/tool.py`
+   - Creates PDF and PPTX from natural language instructions
+   - Uses Marp CLI for markdown-to-slides conversion
 
 **Tool Configuration** (`tools_config.py`):
 - `TOOL_SCHEMAS`: Defines all tool schemas with parameters

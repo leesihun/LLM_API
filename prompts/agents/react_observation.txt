@@ -19,7 +19,7 @@ Raw Tool Data:
 
 TASK: Analyze the raw tool data and determine if you have enough information to answer the thought.
 
-Output EXACTLY in this format:
+Output EXACTLY in this format (DO NOT SKIP ANY FIELD):
 
 final_answer: true
 Observation: [RAW input of the Action Input (Python code, websearch, RAG query), followed by Your analysis of what you found and key facts extracted]
@@ -29,7 +29,13 @@ OR
 final_answer: false
 Observation: [What you learned so far and what additional information is needed]
 
-RULES:
+CRITICAL FORMATTING RULES:
+- You MUST include BOTH lines: "final_answer:" and "Observation:"
+- The word "Observation:" must appear exactly as written
+- Do NOT skip the "Observation:" line even if the data is clear
+- Do NOT replace "Observation:" with other words like "Analysis:", "Result:", etc.
+
+CONTENT RULES:
 1. You are receiving RAW data from tools (not pre-summarized answers)
 2. Extract and summarize the key information from the raw data, spare no detail
 3. Set final_answer to "true" if the data STRICTLY contains ALL of the sufficient information to fully answer the given task
@@ -42,4 +48,4 @@ RULES:
    - In your observation, explain the error and plan a different approach
    - Consider: different input format, different tool, or refined query
 
-BE EXACT and THOROUGH, Output your response now:
+BE EXACT and THOROUGH. Output your response now:

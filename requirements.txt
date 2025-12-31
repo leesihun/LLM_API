@@ -148,6 +148,7 @@ safetensors
 scikit-learn
 scipy
 seaborn
+sentence-transformers
 setuptools
 shellingham
 six

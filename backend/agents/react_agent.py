@@ -277,6 +277,7 @@ class ReActAgent(Agent):
 
         print(f"\n[REACT] Parsing observation response...")
         print(f"Response preview: {response[:300]}...")
+        print(f"Full response length: {len(response)} chars")
 
         # Extract final_answer
         final_answer_match = re.search(r"final_answer:\s*(true|false)", response, re.IGNORECASE)
@@ -285,12 +286,35 @@ class ReActAgent(Agent):
 
         final_answer = final_answer_match.group(1).lower() == "true"
 
-        # Extract observation
+        # Extract observation - try multiple patterns
         observation_match = re.search(r"Observation:\s*(.+)", response, re.DOTALL | re.IGNORECASE)
-        if not observation_match:
-            raise ValueError("LLM response missing 'Observation:' field")
+        observation = None
 
-        observation = observation_match.group(1).strip()
+        if observation_match:
+            observation = observation_match.group(1).strip()
+        else:
+            # Fallback: look for any text after final_answer line
+            fallback_match = re.search(r"final_answer:\s*(?:true|false)\s*\n+(.+)", response, re.DOTALL | re.IGNORECASE)
+            if fallback_match:
+                observation = fallback_match.group(1).strip()
+                print(f"[REACT] [WARN] No 'Observation:' field found, using text after final_answer")
+            else:
+                # Last resort: check if we can extract anything useful
+                # Some LLMs might just output text without the "Observation:" prefix
+                lines = response.split('\n')
+                observation_lines = [line for line in lines if line.strip() and not line.strip().startswith('final_answer:')]
+
+                if observation_lines:
+                    # Use the remaining text as observation
+                    observation = '\n'.join(observation_lines).strip()
+                    print(f"[REACT] [WARN] No 'Observation:' field found, using fallback extraction")
+                else:
+                    # Complete failure
+                    print(f"[REACT] [ERROR] Could not parse Observation field. Full response:\n{response}")
+                    raise ValueError(f"LLM response missing 'Observation:' field. Response: {response[:500]}")
+
+        if not observation:
+            raise ValueError(f"LLM response has empty observation. Response: {response[:500]}")
 
         print(f"[REACT] [OK] Parsed: final_answer={final_answer}, observation={len(observation)} chars")
 
@@ -618,24 +642,5 @@ class ReActAgent(Agent):
                 "collection_name": config.RAG_DEFAULT_COLLECTION,
                 "max_results": config.RAG_MAX_RESULTS
             }
-        elif tool_name == "read_file":
-            # Parse file path from input (may include line range)
-            # Expected formats:
-            # - "path/to/file.txt"
-            # - "path/to/file.txt lines 10-20"
-            parts = clean_input.split()
-            file_path = parts[0]
-
-            params = {"file_path": file_path}
-
-            # Check for line range
-            if len(parts) >= 3 and parts[1].lower() == "lines":
-                line_range = parts[2]
-                if "-" in line_range:
-                    start, end = line_range.split("-")
-                    params["start_line"] = int(start)
-                    params["end_line"] = int(end)
-
-            return params
         else:
             raise ValueError(f"Unknown tool: '{tool_name}'")

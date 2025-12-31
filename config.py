@@ -94,7 +94,7 @@ REACT_MAX_ITERATIONS = 5  # Maximum reasoning iterations
 REACT_RETRY_ON_ERROR = True  # Let LLM see errors and decide next action (intelligent retry)
 
 # Plan-Execute Agent Settings
-PLAN_MAX_STEPS = 20  # Maximum plan steps
+PLAN_MAX_STEPS = 10  # Maximum plan steps
 PLAN_MAX_ITERATIONS = 3  # Maximum iterations of plan-execute-replan cycle
 PLAN_REPLAN_ON_FAILURE = True  # Re-plan when a step fails
 PLAN_MIN_REACT_ITERATIONS_FOR_REPLAN = REACT_MAX_ITERATIONS  # Minimum React iterations before allowing step-level replanning

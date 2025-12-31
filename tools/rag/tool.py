@@ -437,6 +437,156 @@ class RAGTool:
             "collection_name": collection_name
         }
 
+    def list_documents(self, collection_name: str) -> Dict[str, Any]:
+        """
+        List all documents in a collection
+
+        Args:
+            collection_name: Collection to list documents from
+
+        Returns:
+            List of documents with metadata
+        """
+        metadata_path = self.user_metadata_dir / f"{collection_name}.json"
+
+        if not metadata_path.exists():
+            return {
+                "success": False,
+                "error": f"Collection '{collection_name}' does not exist"
+            }
+
+        try:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+
+            documents = []
+            for doc_id, doc_meta in metadata.get("documents", {}).items():
+                documents.append({
+                    "id": doc_id,
+                    "name": doc_meta["name"],
+                    "path": doc_meta["path"],
+                    "chunks": len(doc_meta["chunks"]),
+                    "uploaded_at": doc_meta["uploaded_at"]
+                })
+
+            return {
+                "success": True,
+                "collection_name": collection_name,
+                "documents": documents,
+                "total_documents": len(documents),
+                "total_chunks": metadata.get("chunk_count", 0)
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Error listing documents: {str(e)}"
+            }
+
+    def delete_document(self, collection_name: str, document_id: str) -> Dict[str, Any]:
+        """
+        Delete a specific document from a collection
+        Note: This rebuilds the FAISS index without the deleted document
+
+        Args:
+            collection_name: Collection containing the document
+            document_id: ID of document to delete
+
+        Returns:
+            Result dictionary
+        """
+        metadata_path = self.user_metadata_dir / f"{collection_name}.json"
+
+        if not metadata_path.exists():
+            return {
+                "success": False,
+                "error": f"Collection '{collection_name}' does not exist"
+            }
+
+        try:
+            # Load metadata
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+
+            # Check if document exists
+            if document_id not in metadata["documents"]:
+                return {
+                    "success": False,
+                    "error": f"Document '{document_id}' not found in collection"
+                }
+
+            # Get document info before deletion
+            deleted_doc = metadata["documents"][document_id]
+            deleted_doc_name = deleted_doc["name"]
+            deleted_chunks_count = len(deleted_doc["chunks"])
+
+            # Remove document from metadata
+            del metadata["documents"][document_id]
+
+            # Rebuild FAISS index without deleted document
+            self._load_embedding_model()
+
+            # Collect all remaining chunks and embeddings
+            all_chunks = []
+            for doc_id, doc_meta in metadata["documents"].items():
+                all_chunks.extend(doc_meta["chunks"])
+
+            if len(all_chunks) > 0:
+                # Re-generate embeddings for all remaining documents
+                embeddings = self.embedding_model.encode(
+                    all_chunks,
+                    batch_size=config.RAG_EMBEDDING_BATCH_SIZE,
+                    show_progress_bar=False
+                )
+
+                # Create new index
+                import faiss
+                if config.RAG_INDEX_TYPE == "Flat":
+                    if config.RAG_SIMILARITY_METRIC == "cosine":
+                        index = faiss.IndexFlatIP(self.embedding_dim)
+                    else:
+                        index = faiss.IndexFlatL2(self.embedding_dim)
+                else:
+                    index = faiss.IndexFlatL2(self.embedding_dim)
+
+                # Add all embeddings
+                index.add(np.array(embeddings).astype('float32'))
+
+                # Update chunk indices for remaining documents
+                current_idx = 0
+                for doc_id, doc_meta in metadata["documents"].items():
+                    chunk_count = len(doc_meta["chunks"])
+                    doc_meta["chunk_indices"] = list(range(current_idx, current_idx + chunk_count))
+                    current_idx += chunk_count
+
+                # Save updated index
+                self._save_index(index, collection_name)
+                metadata["chunk_count"] = index.ntotal
+            else:
+                # No documents left - create empty index
+                import faiss
+                index = faiss.IndexFlatL2(self.embedding_dim)
+                self._save_index(index, collection_name)
+                metadata["chunk_count"] = 0
+
+            # Save updated metadata
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+
+            return {
+                "success": True,
+                "collection_name": collection_name,
+                "deleted_document": deleted_doc_name,
+                "deleted_chunks": deleted_chunks_count,
+                "remaining_documents": len(metadata["documents"]),
+                "remaining_chunks": metadata["chunk_count"]
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Error deleting document: {str(e)}"
+            }
+
     def _chunk_text(self, text: str) -> List[str]:
         """
         Split text into chunks
