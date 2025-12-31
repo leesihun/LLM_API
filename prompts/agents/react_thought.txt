@@ -45,3 +45,7 @@ Action Input: [String input for the tool]
 For python_coder and websearch, give out strictly the followings, no additional text, json format, etc. The 'Action Input' should BE:
 python_coder : [DETAILED python code including error messages]
 websearch, rag: [Pure search query]
+ex)
+Thought: Some detailed reasoning
+Action: python_coder
+Action Input: print('hello world')
