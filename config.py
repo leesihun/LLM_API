@@ -181,6 +181,9 @@ NANOCODER_PATH = "nanocoder"  # Path to nanocoder binary (globally installed)
 NANOCODER_CONFIG_DIR = Path(".nanocoder")  # Nanocoder config directory
 NANOCODER_TIMEOUT = 1200  # Nanocoder execution timeout in seconds
 
+# Smart Edit Settings (Context-aware code generation)
+PYTHON_CODER_SMART_EDIT = True  # Enable LLM-based smart editing (merges with existing .py files when beneficial)
+
 # ============================================================================
 # RAG Tool Settings
 # ============================================================================

@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is an **LLM API server** that provides OpenAI-compatible endpoints with support for multiple LLM backends (Ollama, llama.cpp). The system features a sophisticated agent-based architecture with tool calling capabilities, including web search, Python code execution, and RAG (Retrieval Augmented Generation).
 
 **Key Architecture Pattern**: Dual-server architecture to prevent deadlock:
-- **Main API Server** (port 1007): Handles chat, authentication, sessions
-- **Tools API Server** (port 1006): Handles tool execution (websearch, python_coder, rag)
+- **Main API Server** (port 10007): Handles chat, authentication, sessions
+- **Tools API Server** (port 10006): Handles tool execution (websearch, python_coder, rag, ppt_maker)
 
 The separation is critical because agents running on the main server make HTTP calls to tools on the tools server. Running tools on the same server would cause deadlock.
 
@@ -224,13 +224,18 @@ The ReAct agent uses a strict 2-step loop:
 
 ### File Attachments
 
-Files attached to messages get rich metadata extraction:
+Files attached to messages get **automatic** rich metadata extraction (no tool call needed):
 - **JSON**: Structure, keys, sample data
 - **CSV/Excel**: Headers, row count, sample rows
 - **Python**: Imports, function/class definitions, preview
 - **PDF/DOCX**: Basic metadata
 
-Metadata formatted and injected into agent prompts via `format_attached_files()` in `base_agent.py`.
+**Flow**:
+1. Files uploaded → `extract_file_metadata()` in `backend/utils/file_handler.py` extracts metadata
+2. Metadata formatted via `format_attached_files()` in `base_agent.py`
+3. Auto-injected into system prompt before LLM sees it
+
+This means LLMs can "see" file contents and structure without calling any tool.
 
 ### Streaming
 
@@ -310,6 +315,36 @@ When modifying functionality, check these config variables:
 }
 ```
 
+## Adding New Tools
+
+When implementing new tools, follow this pattern:
+
+1. **Create tool implementation** in `tools/{tool_name}/tool.py`
+   - Implement tool logic with proper error handling
+   - Return structured response: `{"success": bool, "answer": str, "data": dict, "metadata": dict}`
+   - Support session-based workspace if needed (use `config.SCRATCH_DIR / session_id`)
+
+2. **Add tool schema** to `tools_config.py`
+   - Define in `TOOL_SCHEMAS` dict with name, description, endpoint, parameters, returns
+   - Tool will be auto-discovered by agents
+
+3. **Add API endpoint** in `backend/api/routes/tools.py`
+   - Create request schema (Pydantic BaseModel)
+   - Add route handler: `@router.post("/api/tools/{tool_name}")`
+   - Add to `/api/tools/list` endpoint
+
+4. **Add parameter parsing** in `backend/agents/react_agent.py`
+   - Add case in `_convert_string_to_params()` method to parse tool-specific input
+
+5. **Update configuration** in `config.py`
+   - Add to `AVAILABLE_TOOLS` list
+   - Add tool-specific settings if needed (timeouts, models, etc.)
+   - Add to `TOOL_MODELS` and `TOOL_PARAMETERS` dicts
+
+6. **Update documentation** in this file
+   - Add tool to "Available Tools" section with brief description
+
 ## Recent Changes
 
-See `BCRYPT_PASSWORD_FIX.md` for details on password validation improvements to handle bcrypt's 72-byte limit.
+- **2025-12-31**: Removed `read_file` tool (redundant with automatic file metadata injection)
+- See `BCRYPT_PASSWORD_FIX.md` for details on password validation improvements to handle bcrypt's 72-byte limit

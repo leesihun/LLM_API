@@ -9,7 +9,7 @@ import subprocess
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 import config
@@ -108,8 +108,17 @@ class PythonCoderTool:
         exec_timeout = timeout or self.timeout
         start_time = time.time()
 
-        # Generate human-readable script name
-        script_name = self._generate_script_name(code)
+        # Smart edit: Check if we should merge with existing .py files
+        existing_py_files = [f for f in self.list_files() if f.endswith('.py')]
+
+        if existing_py_files and config.PYTHON_CODER_SMART_EDIT:
+            # Let LLM decide how to handle code with workspace context
+            final_code, script_name = self._smart_code_generation(code, existing_py_files)
+        else:
+            # No existing .py files or smart edit disabled - use code as-is
+            final_code = code
+            script_name = self._generate_script_name(code)
+
         script_path = self.workspace / script_name
 
         # Log to prompts.log
@@ -121,11 +130,13 @@ class PythonCoderTool:
         log_to_prompts_file(f"Session ID: {self.session_id}")
         log_to_prompts_file(f"Workspace: {self.workspace}")
         log_to_prompts_file(f"Script: {script_name}")
-        log_to_prompts_file(f"Code Length: {len(code)} chars")
+        log_to_prompts_file(f"Code Length: {len(final_code)} chars")
         log_to_prompts_file(f"Timeout: {exec_timeout}s")
+        if existing_py_files and config.PYTHON_CODER_SMART_EDIT:
+            log_to_prompts_file(f"Smart Edit: Enabled (existing .py files: {existing_py_files})")
         log_to_prompts_file(f"")
         log_to_prompts_file(f"CODE:")
-        for line in code.split('\n'):
+        for line in final_code.split('\n'):
             log_to_prompts_file(f"  {line}")
 
         # Console logging
@@ -135,12 +146,14 @@ class PythonCoderTool:
         print(f"Session ID: {self.session_id}")
         print(f"Workspace: {self.workspace}")
         print(f"Script: {script_name}")
-        print(f"Code length: {len(code)} chars")
+        print(f"Code length: {len(final_code)} chars")
         print(f"Timeout: {exec_timeout}s")
+        if existing_py_files and config.PYTHON_CODER_SMART_EDIT:
+            print(f"Smart Edit: Enabled (merged with existing files)")
 
-        # Write raw code to file
+        # Write code to file
         print(f"\n[PYTHON] Writing script to disk...")
-        script_path.write_text(code, encoding='utf-8')
+        script_path.write_text(final_code, encoding='utf-8')
         print(f"[PYTHON] [OK] Script written: {script_path}")
 
         try:
@@ -327,3 +340,134 @@ class PythonCoderTool:
         if self.workspace.exists():
             shutil.rmtree(self.workspace)
         self.workspace.mkdir(parents=True, exist_ok=True)
+
+    def _smart_code_generation(self, code: str, existing_py_files: List[str]) -> Tuple[str, str]:
+        """
+        Use LLM to decide whether to merge with existing code or create new file
+
+        Args:
+            code: New Python code to execute
+            existing_py_files: List of existing .py files in workspace
+
+        Returns:
+            Tuple of (final_code, script_name)
+        """
+        # Build context of existing files
+        files_context = ""
+        for f in existing_py_files:
+            content = self.read_file(f)
+            if content:
+                files_context += f"\n### {f}\n```python\n{content}\n```\n"
+
+        # Prompt LLM to generate context-aware code
+        prompt = f"""Python workspace has existing files. Generate executable code.
+
+**Existing files:**{files_context}
+
+**New code to execute:**
+```python
+{code}
+```
+
+**Instructions:**
+- If new code builds on existing variables/dataframes → edit/merge with existing file
+- If new code is independent task → output as-is (new file will be created)
+- Maintain all necessary functionality and variable continuity
+- Remove duplicate imports
+- Keep the code clean and well-organized
+
+**Output ONLY the complete Python code to execute:**
+```python"""
+
+        print(f"\n[PYTHON SMART EDIT] Calling LLM for context-aware code generation...")
+        print(f"[PYTHON SMART EDIT] Existing files: {existing_py_files}")
+
+        try:
+            final_code = self._llm_call(prompt)
+
+            # Generate script name from the final code
+            script_name = self._generate_script_name(final_code)
+
+            print(f"[PYTHON SMART EDIT] Target file: {script_name}")
+
+            return final_code, script_name
+
+        except Exception as e:
+            # LLM call failed - fall back to using original code without merging
+            print(f"[PYTHON SMART EDIT] Smart edit failed, using original code: {e}")
+            script_name = self._generate_script_name(code)
+            return code, script_name
+
+    def _llm_call(self, prompt: str) -> str:
+        """
+        Call LLM backend for code generation
+
+        Args:
+            prompt: Prompt for code generation
+
+        Returns:
+            Generated Python code
+        """
+        try:
+            from backend.core.llm_backend import LLMBackend
+
+            llm = LLMBackend()
+
+            # Use python_coder tool configuration
+            model = config.TOOL_MODELS.get('python_coder', config.OLLAMA_MODEL)
+            temperature = config.TOOL_PARAMETERS.get('python_coder', {}).get('temperature', config.DEFAULT_TEMPERATURE)
+            max_tokens = config.TOOL_PARAMETERS.get('python_coder', {}).get('max_tokens', config.DEFAULT_MAX_TOKENS)
+
+            print(f"[PYTHON SMART EDIT] LLM model: {model}, temperature: {temperature}, max_tokens: {max_tokens}")
+
+            response = llm.generate(
+                prompt=prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+
+            # Extract Python code from response
+            code = self._extract_python_code(response)
+
+            print(f"[PYTHON SMART EDIT] Generated code length: {len(code)} chars")
+
+            return code
+
+        except Exception as e:
+            print(f"[PYTHON SMART EDIT] ERROR: LLM call failed: {e}")
+            print(f"[PYTHON SMART EDIT] Falling back to original code (no merge)")
+            # Return empty string to signal failure
+            raise
+
+    def _extract_python_code(self, response: str) -> str:
+        """
+        Extract Python code from LLM response
+
+        Args:
+            response: LLM response text
+
+        Returns:
+            Extracted Python code
+        """
+        # Try to extract from markdown code blocks
+        if "```python" in response:
+            parts = response.split("```python")
+            if len(parts) > 1:
+                code = parts[1].split("```")[0].strip()
+            else:
+                code = response.strip()
+        elif "```" in response:
+            parts = response.split("```")
+            if len(parts) >= 3:
+                code = parts[1].strip()
+            else:
+                code = response.strip()
+        else:
+            code = response.strip()
+
+        # Validate it looks like Python code (basic sanity check)
+        if not code or len(code) < 10:
+            print(f"[PYTHON SMART EDIT] WARNING: Extracted code is very short ({len(code)} chars)")
+
+        return code
