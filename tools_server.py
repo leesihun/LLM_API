@@ -117,8 +117,10 @@ def main():
     print("=" * 70)
     print()
 
+    # When using workers, uvicorn needs an import string, not the app object
+    # Format: "module:variable" where the app is defined
     uvicorn.run(
-        app,
+        "tools_server:app",  # Changed from 'app' to import string
         host=config.SERVER_HOST,
         port=config.TOOLS_PORT,
         reload=False,
