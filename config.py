@@ -266,6 +266,7 @@ STREAM_TIMEOUT = 3600  # Streaming timeout in seconds (1 hour)
 CORS_ORIGINS = [
     "http://localhost:10007",
     "http://127.0.0.1:10007",
+    "*",  # Allow all origins (change to specific IP if you want to restrict)
 ]
 
 # ============================================================================
