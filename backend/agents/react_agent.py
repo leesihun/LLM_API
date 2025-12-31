@@ -7,6 +7,13 @@ from backend.agents.base_agent import Agent
 from tools_config import format_tools_for_llm
 
 
+class ReActMaxIterationsError(Exception):
+    """Exception raised when ReAct agent reaches maximum iterations"""
+    def __init__(self, message: str, iterations_used: int):
+        super().__init__(message)
+        self.iterations_used = iterations_used
+
+
 class ReActAgent(Agent):
     def __init__(self, model: str = None, temperature: float = None):
         super().__init__(model, temperature)
@@ -144,7 +151,7 @@ class ReActAgent(Agent):
         # Max iterations reached
         error_msg = f"Maximum iterations ({self.max_iterations}) reached without completing task"
         print(f"\n[REACT] [ERROR] {error_msg}")
-        raise ValueError(error_msg)
+        raise ReActMaxIterationsError(error_msg, iterations_used=self.max_iterations)
 
     def _step1_generate_action(
         self,

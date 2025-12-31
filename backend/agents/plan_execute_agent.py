@@ -8,7 +8,7 @@ from typing import List, Dict, Optional, Any
 
 import config
 from backend.agents.base_agent import Agent
-from backend.agents.react_agent import ReActAgent
+from backend.agents.react_agent import ReActAgent, ReActMaxIterationsError
 from tools_config import format_tools_for_llm
 
 
@@ -294,8 +294,23 @@ class PlanExecuteAgent(Agent):
                     "content": f"Step {step_num} result: {step_result['answer']}"
                 })
 
-            # Handle failure
+            # Handle failure - only replan if React agent tried enough iterations
             if not step_result["success"] and self.replan_on_failure:
+                # Check if React agent tried enough iterations before replanning
+                react_iterations = step_result.get("react_iterations", 0)
+                min_iterations = config.PLAN_MIN_REACT_ITERATIONS_FOR_REPLAN
+
+                if react_iterations < min_iterations:
+                    # React agent failed early (not all iterations exhausted)
+                    # Don't replan - this was likely a quick failure (parsing error, tool error, etc.)
+                    print(f"[PLAN-EXECUTE] Step {step_num} failed after only {react_iterations} ReAct iterations")
+                    print(f"[PLAN-EXECUTE] Minimum {min_iterations} iterations required for replanning. Continuing with current plan.")
+                    # Continue to next step without replanning
+                    continue
+
+                # React agent exhausted all iterations - proceed with replanning
+                print(f"[PLAN-EXECUTE] Step {step_num} failed after {react_iterations} ReAct iterations (>= {min_iterations}). Replanning...")
+
                 # Re-plan from this point with full context
                 # Format previous results for prompt
                 prev_results_str = json.dumps(results, indent=2)
@@ -478,10 +493,22 @@ class PlanExecuteAgent(Agent):
                 "answer": result,
                 "success": True
             }
+        except ReActMaxIterationsError as e:
+            # ReAct agent exhausted its iterations
+            # Return failure with metadata about iterations used
+            print(f"[PLAN-EXECUTE] ReAct agent exhausted {e.iterations_used} iterations for step {step_num}")
+            return {
+                "answer": f"Tool step failed after {e.iterations_used} ReAct iterations: {str(e)}",
+                "success": False,
+                "react_iterations": e.iterations_used  # Track how many iterations were used
+            }
         except Exception as e:
+            # Other exceptions (e.g., tool errors, parsing errors)
+            print(f"[PLAN-EXECUTE] Tool step {step_num} failed with exception: {str(e)}")
             return {
                 "answer": f"Tool step failed: {str(e)}",
-                "success": False
+                "success": False,
+                "react_iterations": 0  # Unknown iterations, treat as early failure
             }
 
     def _format_full_plan(self, plan: Dict) -> str:
