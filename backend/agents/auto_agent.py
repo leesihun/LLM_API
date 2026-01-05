@@ -85,7 +85,7 @@ class AutoAgent(Agent):
         messages = [{"role": "user", "content": routing_prompt}]
 
         # Use lower temperature for more deterministic routing
-        response = self.call_llm(messages, temperature=0.1)
+        response = self.call_llm(messages, temperature=0.5)
 
         # Parse response
         response_lower = response.strip().lower()

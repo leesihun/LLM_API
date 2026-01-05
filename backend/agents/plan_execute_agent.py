@@ -91,13 +91,10 @@ class PlanExecuteAgent(Agent):
             # STEP 1: CREATE NEW PLAN (or first plan if iteration==1)
             plan = self._create_plan(current_query, conversation_history)
 
+            # Replan
             if not plan:
-                if iteration == 1:
-                    return "I apologize, but I was unable to create a plan for your request. Please try rephrasing your question."
-                else:
-                    # Can't create additional plan, use what we have
-                    print("[PLAN-EXECUTE] Unable to create additional plan. Using existing results.")
-                    break
+                print(f"[PLAN-EXECUTE] Failed to create plan. Replanning...")
+                plan = self._create_plan(current_query, conversation_history)
 
             # STEP 2: EXECUTE THE NEW PLAN
             results = self._execute_plan(plan, user_input, conversation_history)
