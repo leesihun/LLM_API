@@ -41,13 +41,12 @@ def main():
     print()
 
     # DEV_MODE enables auto-reload but requires single worker
-    workers = 1 if config.DEV_MODE else config.SERVER_WORKERS
+    workers = config.SERVER_WORKERS
 
     uvicorn.run(
         "backend.api.app:app",
         host=config.SERVER_HOST,
         port=config.SERVER_PORT,
-        reload=config.DEV_MODE,
         log_level=config.LOG_LEVEL.lower(),
         workers=workers
     )
