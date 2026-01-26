@@ -172,10 +172,11 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # ============================================================================
 # Python Coder Tool Settings
 # ============================================================================
-# Execution mode: "native" or "nanocoder"
+# Execution mode: "native", "nanocoder", or "opencode"
 # - native: Direct Python code execution (fast, no LLM overhead)
 # - nanocoder: Natural language to code using nanocoder CLI (autonomous coding)
-PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder"] = "native"
+# - opencode: Natural language to code using opencode AI coding agent (recommended)
+PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder", "opencode"] = "opencode"
 
 # Native executor settings
 PYTHON_EXECUTOR_TIMEOUT = 864000  # Execution timeout in seconds (10 days)
@@ -187,6 +188,14 @@ PYTHON_CODER_TIMEOUT = 864000  # Timeout for ReAct agent tool call (10 days)
 NANOCODER_PATH = "nanocoder"  # Path to nanocoder binary (globally installed)
 NANOCODER_CONFIG_DIR = Path(".nanocoder")  # Nanocoder config directory
 NANOCODER_TIMEOUT = 864000  # Nanocoder execution timeout in seconds (10 days)
+
+# OpenCode settings
+OPENCODE_PATH: str = "opencode"  # Path to opencode binary (globally installed via npm)
+OPENCODE_SERVER_PORT: int = 4096  # Server port
+OPENCODE_SERVER_HOST: str = "127.0.0.1"  # Server host
+OPENCODE_TIMEOUT: int = 864000  # Execution timeout in seconds (10 days)
+OPENCODE_PROVIDER: str = "opencode"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
+OPENCODE_MODEL: str = "gpt-5-nano"  # Model name within the provider
 
 # Smart Edit Settings (Context-aware code generation)
 PYTHON_CODER_SMART_EDIT = True  # Enable LLM-based smart editing (merges with existing .py files when beneficial)

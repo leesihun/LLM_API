@@ -28,7 +28,12 @@
       "Bash(aider:*)",
       "Bash(pip index versions:*)",
       "Bash(pip uninstall:*)",
-      "Bash(pip search aider)"
+      "Bash(pip search aider)",
+      "Bash(opencode auth login --help:*)",
+      "Bash(opencode debug --help:*)",
+      "Bash(opencode debug:*)",
+      "Bash(opencode run:*)",
+      "Read(//c/Users/Lee/.config/opencode/**)"
     ],
     "deny": [],
     "ask": []

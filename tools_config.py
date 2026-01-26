@@ -4,6 +4,43 @@ Define all available tools with their schemas for LLM understanding
 """
 from typing import List, Dict, Any
 
+import config
+
+
+# ============================================================================
+# Mode-Aware Tool Description Functions
+# ============================================================================
+
+def get_python_coder_description() -> str:
+    """Get python_coder description based on executor mode"""
+    if config.PYTHON_EXECUTOR_MODE in ["nanocoder", "opencode"]:
+        return (
+            "Execute code tasks using an AI coding agent. Provide detailed natural language "
+            "instructions describing what code to write and execute. The agent will generate "
+            "Python code, execute it, handle errors, and iterate as needed. "
+            "Example: 'Create a function to calculate factorial of numbers 1-10, test it, "
+            "and save the results to a file called results.txt'"
+        )
+    else:  # native mode
+        return (
+            "Execute Python code in a sandboxed environment. Provide the complete Python "
+            "code to execute. Can access files created in previous executions within the "
+            "same session. Use for calculations, data analysis, visualizations, or any "
+            "computational task."
+        )
+
+
+def get_python_coder_input_description() -> str:
+    """Get python_coder input parameter description based on executor mode"""
+    if config.PYTHON_EXECUTOR_MODE in ["nanocoder", "opencode"]:
+        return (
+            "Detailed natural language instruction describing the code task. "
+            "Be specific about: what the code should do, expected outputs, "
+            "files to create, and any constraints."
+        )
+    else:  # native mode
+        return "The Python code to execute"
+
 
 # ============================================================================
 # Tool Schemas
@@ -40,7 +77,7 @@ TOOL_SCHEMAS = {
 
     "python_coder": {
         "name": "python_coder",
-        "description": "Execute Python code in a sandboxed environment. Can access files created in previous executions within the same session. Use for calculations, data analysis, visualizations, or any computational task.",
+        "description": get_python_coder_description(),
         "endpoint": "/api/tools/python_coder",
         "method": "POST",
         "parameters": {
@@ -48,7 +85,7 @@ TOOL_SCHEMAS = {
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "The Python code to execute"
+                    "description": get_python_coder_input_description()
                 },
                 "session_id": {
                     "type": "string",

@@ -1,0 +1,38 @@
+==============================
+{user_query}
+==============================
+
+Previous thoughts and actions:
+{scratchpad}
+
+----------------------------------------------------
+
+Analyze the current situation and determine your next action.
+
+Output EXACTLY ONE thought/action/action input pair:
+
+Thought: [Your reasoning about what to do next]
+Action: [Tool name]
+Action Input: [Input for the tool]
+
+RULES:
+1. Generate EXACTLY ONE Thought/Action/Action Input triplet
+2. Stop immediately after generating ONE action
+3. The tool will execute and provide an observation
+4. Action Input must be ONLY the input for the tool
+
+For python_coder (OpenCode mode):
+- Write clear, detailed natural language instructions
+- Describe what the code should do, outputs to produce, files to create
+- OpenCode will generate Python code, execute it, and handle errors
+- OpenCode has full filesystem access in the workspace
+- Example: "Create a function to calculate factorial of 10, test it with several values, and save results to output.txt"
+
+For websearch and rag:
+- Provide a pure search query
+
+Output format:
+
+Thought: [Your reasoning]
+Action: [Tool name]
+Action Input: [Input for the tool]

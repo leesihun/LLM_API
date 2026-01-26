@@ -30,10 +30,14 @@ def get_python_executor(session_id: str) -> BasePythonExecutor:
         from tools.python_coder.nanocoder_tool import NanocoderExecutor
         return NanocoderExecutor(session_id)
 
+    elif mode == "opencode":
+        from tools.python_coder.opencode_tool import OpenCodeExecutor
+        return OpenCodeExecutor(session_id)
+
     else:
         raise ValueError(
             f"Invalid PYTHON_EXECUTOR_MODE: '{mode}'. "
-            f"Must be 'native' or 'nanocoder'"
+            f"Must be 'native', 'nanocoder', or 'opencode'"
         )
 
 

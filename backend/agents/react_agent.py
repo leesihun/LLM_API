@@ -19,6 +19,15 @@ class ReActAgent(Agent):
         super().__init__(model, temperature)
         self.max_iterations = config.REACT_MAX_ITERATIONS
 
+    def _get_prompt_suffix(self) -> str:
+        """Get prompt file suffix based on executor mode"""
+        mode = config.PYTHON_EXECUTOR_MODE
+        if mode == "nanocoder":
+            return "_nanocoder"
+        elif mode == "opencode":
+            return "_opencode"
+        return ""  # native mode uses base prompts
+
     def _build_comprehensive_user_query(self, user_input: str) -> str:
         user_query_parts = []
 
@@ -177,13 +186,10 @@ class ReActAgent(Agent):
         """
         # Select prompt based on python executor mode
         # Native mode: generates Python code directly
-        # Nanocoder mode: generates natural language instructions
-        if config.PYTHON_EXECUTOR_MODE == "nanocoder":
-            system_prompt_file = "agents/react_system_nanocoder.txt"
-            thought_prompt_file = "agents/react_thought_nanocoder.txt"
-        else:  # native mode (default)
-            system_prompt_file = "agents/react_system.txt"
-            thought_prompt_file = "agents/react_thought.txt"
+        # Nanocoder/OpenCode mode: generates natural language instructions
+        suffix = self._get_prompt_suffix()
+        system_prompt_file = f"agents/react_system{suffix}.txt"
+        thought_prompt_file = f"agents/react_thought{suffix}.txt"
 
         # Load system prompt
         system_prompt = self.load_prompt(
@@ -597,11 +603,18 @@ class ReActAgent(Agent):
                 "max_results": config.WEBSEARCH_MAX_RESULTS
             }
         elif tool_name == "python_coder":
-            # Extract code from fenced code blocks if present
-            extracted_code = self._extract_code_from_fenced_block(clean_input)
+            # Mode-specific input handling
+            if config.PYTHON_EXECUTOR_MODE == "native":
+                # Native mode: extract Python code from fenced blocks
+                code_input = self._extract_code_from_fenced_block(clean_input)
+            else:
+                # OpenCode/Nanocoder mode: pass natural language instruction directly
+                # DO NOT extract from fenced blocks - preserve full instruction
+                code_input = clean_input
+                print(f"[REACT] {config.PYTHON_EXECUTOR_MODE} mode: passing natural language instruction ({len(code_input)} chars)")
 
             return {
-                "code": extracted_code,
+                "code": code_input,
                 "session_id": self.session_id or "auto",
                 "timeout": config.PYTHON_CODER_TIMEOUT
             }
