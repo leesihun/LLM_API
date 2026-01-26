@@ -233,7 +233,10 @@ class ReActAgent(Agent):
         action_info: Dict[str, str]
     ) -> Dict[str, any]:
         """
-        STEP 2: Generate Observation and decide if task is complete
+        STEP 2: Determine if task is complete and return raw tool output as observation
+
+        The observation is always the full raw tool output (no summarization) to preserve
+        all information for downstream reasoning.
 
         Args:
             user_input: User's question
@@ -248,13 +251,13 @@ class ReActAgent(Agent):
         Raises:
             ValueError: If response format is invalid
         """
-        # Format tool data for LLM
+        # Format tool data - this will be used as the observation directly
         tool_data_str = self._format_tool_data(action_info["action"], tool_result)
 
         # Build comprehensive user query with all context
         comprehensive_user_query = self._build_comprehensive_user_query(user_input)
 
-        # Load observation prompt
+        # Load observation prompt - LLM only needs to determine final_answer
         observation_prompt = self.load_prompt(
             "agents/react_observation.txt",
             user_query=comprehensive_user_query,
@@ -270,14 +273,9 @@ class ReActAgent(Agent):
 
         response = self.call_llm(messages)
 
-        # Parse the structured response
-        # Expected format:
-        # final_answer: true/false
-        # Observation: [text]
-
-        print(f"\n[REACT] Parsing observation response...")
+        # Parse final_answer from LLM response
+        print(f"\n[REACT] Parsing final_answer from response...")
         print(f"Response preview: {response[:300]}...")
-        print(f"Full response length: {len(response)} chars")
 
         # Extract final_answer
         final_answer_match = re.search(r"final_answer:\s*(true|false)", response, re.IGNORECASE)
@@ -286,40 +284,11 @@ class ReActAgent(Agent):
 
         final_answer = final_answer_match.group(1).lower() == "true"
 
-        # Extract observation - try multiple patterns
-        observation_match = re.search(r"Observation:\s*(.+)", response, re.DOTALL | re.IGNORECASE)
-        observation = None
+        print(f"[REACT] [OK] Parsed: final_answer={final_answer}, using raw tool output ({len(tool_data_str)} chars)")
 
-        if observation_match:
-            observation = observation_match.group(1).strip()
-        else:
-            # Fallback: look for any text after final_answer line
-            fallback_match = re.search(r"final_answer:\s*(?:true|false)\s*\n+(.+)", response, re.DOTALL | re.IGNORECASE)
-            if fallback_match:
-                observation = fallback_match.group(1).strip()
-                print(f"[REACT] [WARN] No 'Observation:' field found, using text after final_answer")
-            else:
-                # Last resort: check if we can extract anything useful
-                # Some LLMs might just output text without the "Observation:" prefix
-                lines = response.split('\n')
-                observation_lines = [line for line in lines if line.strip() and not line.strip().startswith('final_answer:')]
-
-                if observation_lines:
-                    # Use the remaining text as observation
-                    observation = '\n'.join(observation_lines).strip()
-                    print(f"[REACT] [WARN] No 'Observation:' field found, using fallback extraction")
-                else:
-                    # Complete failure
-                    print(f"[REACT] [ERROR] Could not parse Observation field. Full response:\n{response}")
-                    raise ValueError(f"LLM response missing 'Observation:' field. Response: {response[:500]}")
-
-        if not observation:
-            raise ValueError(f"LLM response has empty observation. Response: {response[:500]}")
-
-        print(f"[REACT] [OK] Parsed: final_answer={final_answer}, observation={len(observation)} chars")
-
+        # Return raw tool data as observation (no summarization)
         return {
-            "observation": observation,
+            "observation": tool_data_str,
             "final_answer": final_answer
         }
 
