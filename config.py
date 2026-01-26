@@ -136,27 +136,27 @@ TOOL_PARAMETERS = {
     "websearch": {
         "temperature": 0.7,
         "max_tokens": 30000,
-        "timeout": 3600000000,  # 1 minute for web search (includes 2 LLM calls + Tavily API call)
+        "timeout": 864000,  # 10 days for web search
     },
     "python_coder": {
         "temperature": 1.0,  # Lower temp for more deterministic code
         "max_tokens": 30000,
-        "timeout": 3600000000,  # 2 minutes for code execution
+        "timeout": 864000,  # 10 days for code execution
     },
     "rag": {
         "temperature": 1.0,
         "max_tokens": 30000,
-        "timeout": 3600000000,  # 2 minutes for RAG retrieval
+        "timeout": 864000,  # 10 days for RAG retrieval
     },
     "ppt_maker": {
         "temperature": 0.7,
         "max_tokens": 30000,
-        "timeout": 3600000000,  # 2 minutes for generation + export
+        "timeout": 864000,  # 10 days for generation + export
     },
 }
 
-# Default tool timeout (seconds)
-DEFAULT_TOOL_TIMEOUT = 3600000000
+# Default tool timeout (seconds) - 10 days
+DEFAULT_TOOL_TIMEOUT = 864000
 
 # ============================================================================
 # Web Search Tool Settings
@@ -178,15 +178,15 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder"] = "native"
 
 # Native executor settings
-PYTHON_EXECUTOR_TIMEOUT = 3600000000  # Execution timeout in seconds
+PYTHON_EXECUTOR_TIMEOUT = 864000  # Execution timeout in seconds (10 days)
 PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024 * 10  # 10MB max output
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
-PYTHON_CODER_TIMEOUT = 3600000000  # Timeout for ReAct agent tool call
+PYTHON_CODER_TIMEOUT = 864000  # Timeout for ReAct agent tool call (10 days)
 
 # Nanocoder settings
 NANOCODER_PATH = "nanocoder"  # Path to nanocoder binary (globally installed)
 NANOCODER_CONFIG_DIR = Path(".nanocoder")  # Nanocoder config directory
-NANOCODER_TIMEOUT = 3600000000  # Nanocoder execution timeout in seconds
+NANOCODER_TIMEOUT = 864000  # Nanocoder execution timeout in seconds (10 days)
 
 # Smart Edit Settings (Context-aware code generation)
 PYTHON_CODER_SMART_EDIT = True  # Enable LLM-based smart editing (merges with existing .py files when beneficial)
@@ -258,7 +258,7 @@ SESSION_CLEANUP_DAYS = 7  # Delete sessions older than this
 # Streaming Settings
 # ============================================================================
 STREAM_CHUNK_SIZE = 1  # How many tokens to send per SSE chunk
-STREAM_TIMEOUT = 3600000000  # Streaming timeout in seconds (1 hour)
+STREAM_TIMEOUT = 864000  # Streaming timeout in seconds (10 days)
 
 # ============================================================================
 # CORS Settings
