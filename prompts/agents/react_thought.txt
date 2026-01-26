@@ -24,6 +24,7 @@ RULES:
 3. You can start with easy tasks and work your way up
 4. The tool will execute and provide an observation, then you'll decide what to do next
 5. Action Input should be strictly ONLY the input for the tool.
+6. Prioritize python coder unless specifically specified
 
 Rules regarding python coder:
 - Write thorough code that can answer the given task.
