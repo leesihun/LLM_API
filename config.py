@@ -194,8 +194,8 @@ OPENCODE_PATH: str = "opencode"  # Path to opencode binary (globally installed v
 OPENCODE_SERVER_PORT: int = 4096  # Server port
 OPENCODE_SERVER_HOST: str = "127.0.0.1"  # Server host
 OPENCODE_TIMEOUT: int = 864000  # Execution timeout in seconds (10 days)
-OPENCODE_PROVIDER: str = "opencode"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
-OPENCODE_MODEL: str = "gpt-5-nano"  # Model name within the provider
+OPENCODE_PROVIDER: str = "llama.cpp"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
+OPENCODE_MODEL: str = "GPT-OSS:120b"  # Model name within the provider
 
 # Smart Edit Settings (Context-aware code generation)
 PYTHON_CODER_SMART_EDIT = True  # Enable LLM-based smart editing (merges with existing .py files when beneficial)
