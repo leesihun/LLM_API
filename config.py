@@ -43,7 +43,7 @@ PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server start
 PRELOAD_KEEP_ALIVE = -1  # Keep model in memory: -1 = indefinitely, "5m" = 5 minutes, 0 = unload immediately
 
 # Llama.cpp Settings
-LLAMACPP_HOST = "http://localhost:5905"
+LLAMACPP_HOST = "http://localhost:5904"
 LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 
 # ============================================================================
@@ -136,27 +136,27 @@ TOOL_PARAMETERS = {
     "websearch": {
         "temperature": 0.7,
         "max_tokens": 30000,
-        "timeout": 360,  # 1 minute for web search (includes 2 LLM calls + Tavily API call)
+        "timeout": 3600000000,  # 1 minute for web search (includes 2 LLM calls + Tavily API call)
     },
     "python_coder": {
         "temperature": 1.0,  # Lower temp for more deterministic code
         "max_tokens": 30000,
-        "timeout": 1200,  # 2 minutes for code execution
+        "timeout": 3600000000,  # 2 minutes for code execution
     },
     "rag": {
         "temperature": 1.0,
         "max_tokens": 30000,
-        "timeout": 120,  # 2 minutes for RAG retrieval
+        "timeout": 3600000000,  # 2 minutes for RAG retrieval
     },
     "ppt_maker": {
         "temperature": 0.7,
         "max_tokens": 30000,
-        "timeout": 120,  # 2 minutes for generation + export
+        "timeout": 3600000000,  # 2 minutes for generation + export
     },
 }
 
 # Default tool timeout (seconds)
-DEFAULT_TOOL_TIMEOUT = 1200
+DEFAULT_TOOL_TIMEOUT = 3600000000
 
 # ============================================================================
 # Web Search Tool Settings
@@ -178,15 +178,15 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder"] = "native"
 
 # Native executor settings
-PYTHON_EXECUTOR_TIMEOUT = 1200  # Execution timeout in seconds
+PYTHON_EXECUTOR_TIMEOUT = 3600000000  # Execution timeout in seconds
 PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024 * 10  # 10MB max output
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
-PYTHON_CODER_TIMEOUT = 3000  # Timeout for ReAct agent tool call
+PYTHON_CODER_TIMEOUT = 3600000000  # Timeout for ReAct agent tool call
 
 # Nanocoder settings
 NANOCODER_PATH = "nanocoder"  # Path to nanocoder binary (globally installed)
 NANOCODER_CONFIG_DIR = Path(".nanocoder")  # Nanocoder config directory
-NANOCODER_TIMEOUT = 1200  # Nanocoder execution timeout in seconds
+NANOCODER_TIMEOUT = 3600000000  # Nanocoder execution timeout in seconds
 
 # Smart Edit Settings (Context-aware code generation)
 PYTHON_CODER_SMART_EDIT = True  # Enable LLM-based smart editing (merges with existing .py files when beneficial)
@@ -258,7 +258,7 @@ SESSION_CLEANUP_DAYS = 7  # Delete sessions older than this
 # Streaming Settings
 # ============================================================================
 STREAM_CHUNK_SIZE = 1  # How many tokens to send per SSE chunk
-STREAM_TIMEOUT = 3600  # Streaming timeout in seconds (1 hour)
+STREAM_TIMEOUT = 3600000000  # Streaming timeout in seconds (1 hour)
 
 # ============================================================================
 # CORS Settings
