@@ -139,7 +139,7 @@ class OpenCodeExecutor(BasePythonExecutor):
             opencode_cmd = f"{opencode_cmd}.cmd"
 
         # Add "ultrawork" prefix to instruction
-        prefixed_instruction = f"ultrawork {instruction}"
+        prefixed_instruction = f"ultrawork, Your job is to write a python code that performs the given task, run and output the results. Your task: {instruction}"
 
         cmd = [
             opencode_cmd,
