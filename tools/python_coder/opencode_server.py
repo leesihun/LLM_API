@@ -211,15 +211,28 @@ def get_server_manager() -> OpenCodeServerManager:
 
 
 def start_opencode_server() -> None:
-    """Start the opencode server (call on tools_server startup)"""
+    """
+    Verify opencode server is running (call on tools_server startup)
+
+    Note: Assumes external opencode server is already running.
+    Does not attempt to start a new server.
+    """
     from tools.python_coder.opencode_config import ensure_opencode_config
 
     # Generate config first
     ensure_opencode_config()
 
-    # Start server
+    # Just verify the server is reachable, don't start it
     manager = get_server_manager()
-    manager.start()
+
+    # Check if external server is running
+    if manager._is_port_in_use():
+        print(f"[OPENCODE SERVER] External server detected on {manager.server_url}")
+        print(f"[OPENCODE SERVER] Ready to use")
+    else:
+        print(f"[OPENCODE SERVER] WARNING: No server detected on {manager.server_url}")
+        print(f"[OPENCODE SERVER] Please start opencode server manually:")
+        print(f"[OPENCODE SERVER]   opencode serve --port {config.OPENCODE_SERVER_PORT}")
 
 
 def stop_opencode_server() -> None:
