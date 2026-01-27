@@ -155,6 +155,7 @@ class OpenCodeExecutor(BasePythonExecutor):
             "--format", "json",
             "--attach", self._server.server_url,
             "--model", f"{config.OPENCODE_PROVIDER}/{config.OPENCODE_MODEL}",
+            "--cwd", str(self.workspace),  # Set working directory for code execution
         ]
 
         # Continue existing session if available
@@ -166,46 +167,47 @@ class OpenCodeExecutor(BasePythonExecutor):
 
     def _parse_output(self, stdout: str) -> tuple:
         """
-        Parse OpenCode JSON output
+        Parse OpenCode output - extract session ID and return full output
 
         Returns:
             Tuple of (text_output, opencode_session_id, error_message)
         """
-        text_parts = []
         session_id = None
         error_msg = None
+        output_parts = []
 
         for line in stdout.strip().split('\n'):
             if not line:
                 continue
 
+            # Try to extract session ID and error from JSON events
             try:
                 event = json.loads(line)
+                event_type = event.get("type")
+                part = event.get("part", {})
+
+                # Extract session ID from any event
+                if not session_id:
+                    session_id = event.get("sessionID") or part.get("sessionID")
+
+                # Check for errors
+                if event_type == "error":
+                    error_msg = part.get("message") or part.get("error") or str(part)
+
+                # Extract any text content from events
+                for key in ["text", "content", "output", "stdout", "result"]:
+                    value = part.get(key)
+                    if value and isinstance(value, str) and value.strip():
+                        output_parts.append(value)
+                        break
+
             except json.JSONDecodeError:
-                # Skip non-JSON lines (INFO logs)
-                continue
+                # Non-JSON line - include if not a log prefix
+                if not line.startswith("INFO ") and not line.startswith("DEBUG "):
+                    output_parts.append(line)
 
-            event_type = event.get("type")
-            part = event.get("part", {})
-
-            if event_type == "step_start":
-                # Extract session ID
-                session_id = event.get("sessionID") or part.get("sessionID")
-
-            elif event_type == "text":
-                text = part.get("text", "")
-                if text:
-                    text_parts.append(text)
-
-            elif event_type == "tool_result":
-                content = part.get("content", "")
-                if content:
-                    text_parts.append(f"[Tool Result]: {content}")
-
-            elif event_type == "error":
-                error_msg = part.get("message") or str(part)
-
-        return "\n".join(text_parts), session_id, error_msg
+        # Return combined output
+        return "\n".join(output_parts), session_id, error_msg
 
     def _get_workspace_files(self) -> Dict[str, Any]:
         """Get list of files in workspace with metadata"""
