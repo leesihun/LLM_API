@@ -5,6 +5,7 @@ Runs on a separate port (1006) to avoid deadlock when main server calls tools
 import uvicorn
 import sys
 import io
+import atexit
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -89,12 +90,27 @@ async def startup_event():
 
         print("=" * 70 + "\n")
 
-    # OpenCode mode: no separate server needed (uses embedded server)
+    # Start OpenCode headless server for autonomous operation
     if config.PYTHON_EXECUTOR_MODE == "opencode":
+        from tools.python_coder.opencode_server import start_opencode_server, stop_opencode_server
+
         print("\n" + "=" * 70)
-        print("OPENCODE MODE")
+        print("OPENCODE SERVER INITIALIZATION")
         print("=" * 70)
-        print("[TOOLS SERVER] OpenCode executor ready (embedded server mode)")
+        print("[TOOLS SERVER] Starting OpenCode headless server...")
+
+        try:
+            start_opencode_server()
+            print("[TOOLS SERVER] OpenCode server started successfully")
+            print("[TOOLS SERVER] Using 'build' agent for autonomous operation")
+
+            # Register shutdown handler
+            atexit.register(stop_opencode_server)
+            print("[TOOLS SERVER] Shutdown handler registered")
+        except Exception as e:
+            print(f"[TOOLS SERVER] Failed to start OpenCode server: {e}")
+            print("[TOOLS SERVER] Python coder tool will not work in opencode mode")
+
         print("=" * 70 + "\n")
 
 

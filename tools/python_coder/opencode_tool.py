@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import config
 from tools.python_coder.base import BasePythonExecutor
+from tools.python_coder.opencode_server import get_server_manager
 
 
 def log_to_prompts_file(message: str) -> None:
@@ -26,7 +27,7 @@ class OpenCodeExecutor(BasePythonExecutor):
     """
     OpenCode-based executor for natural language code generation and execution
 
-    Uses opencode CLI directly (embedded server mode).
+    Uses headless opencode server for autonomous operation.
     Maintains session across tool calls within same LLM API session.
     """
 
@@ -48,6 +49,9 @@ class OpenCodeExecutor(BasePythonExecutor):
         self.timeout = config.OPENCODE_TIMEOUT
         self.max_output_size = config.PYTHON_EXECUTOR_MAX_OUTPUT_SIZE
 
+        # Get server manager for headless operation
+        self._server = get_server_manager()
+
     def execute(
         self,
         code: str,
@@ -64,6 +68,9 @@ class OpenCodeExecutor(BasePythonExecutor):
 
         Returns:
             Standardized execution result dictionary
+
+        Raises:
+            RuntimeError: If opencode server is unavailable
         """
         instruction = code  # Alias for clarity in OpenCode context
         exec_timeout = timeout or self.timeout
@@ -71,6 +78,9 @@ class OpenCodeExecutor(BasePythonExecutor):
 
         # Log execution start
         self._log_start(instruction, exec_timeout)
+
+        # Ensure headless server is running
+        self._server.ensure_running()
 
         # Build command
         cmd = self._build_command(instruction)
@@ -131,7 +141,7 @@ class OpenCodeExecutor(BasePythonExecutor):
             }
 
     def _build_command(self, instruction: str) -> List[str]:
-        """Build opencode run command"""
+        """Build opencode run command for autonomous execution"""
         # On Windows, use .cmd extension for npm global binaries
         import sys
         opencode_cmd = config.OPENCODE_PATH
@@ -143,9 +153,10 @@ class OpenCodeExecutor(BasePythonExecutor):
             "run",
             instruction,
             "--format", "json",
+            "--attach", self._server.server_url,  # Connect to headless server
+            "--agent", "build",  # Use build agent for autonomous operation (no user prompts)
             "--model", f"{config.OPENCODE_PROVIDER}/{config.OPENCODE_MODEL}",
             # Note: Working directory is set via subprocess cwd parameter
-            # Note: opencode manages its own embedded server (no --attach needed)
         ]
 
         # Continue existing session if available

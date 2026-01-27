@@ -236,7 +236,8 @@ class ReActAgent(Agent):
         conversation_history: List[Dict[str, str]],
         scratchpad: str,
         tool_result: Dict,
-        action_info: Dict[str, str]
+        action_info: Dict[str, str],
+        max_retries: int = 3
     ) -> Dict[str, any]:
         """
         STEP 2: Determine if task is complete and return raw tool output as observation
@@ -250,12 +251,13 @@ class ReActAgent(Agent):
             scratchpad: Current scratchpad
             tool_result: Full result dict from tool with 'data' field
             action_info: Dict with 'action' and 'action_input'
+            max_retries: Maximum retry attempts for parsing (default: 2)
 
         Returns:
             Dict with 'observation' (str) and 'final_answer' (bool)
 
         Raises:
-            ValueError: If response format is invalid
+            ValueError: If response format is invalid after all retries
         """
         # Format tool data - this will be used as the observation directly
         tool_data_str = self._format_tool_data(action_info["action"], tool_result)
@@ -277,26 +279,56 @@ class ReActAgent(Agent):
         messages = list(conversation_history)
         messages.append({"role": "user", "content": observation_prompt})
 
-        response = self.call_llm(messages)
+        # Retry loop for robust parsing
+        for retry_attempt in range(max_retries + 1):
+            if retry_attempt > 0:
+                print(f"\n[REACT] [RETRY {retry_attempt}/{max_retries}] Re-asking LLM for correct format...")
+                # Add clarification message for retry
+                messages.append({
+                    "role": "system",
+                    "content": "Your previous response was invalid. You MUST respond in EXACTLY this format:\n\nfinal_answer: true/false\nreason: [explanation]\n\nDo not include any other text or formatting. Respond now:"
+                })
 
-        # Parse final_answer from LLM response
-        print(f"\n[REACT] Parsing final_answer from response...")
-        print(f"Response preview: {response[:300]}...")
+            response = self.call_llm(messages)
 
-        # Extract final_answer
-        final_answer_match = re.search(r"final_answer:\s*(true|false)", response, re.IGNORECASE)
-        if not final_answer_match:
-            raise ValueError("LLM response missing 'final_answer: true/false' field")
+            # Parse final_answer from LLM response
+            print(f"\n[REACT] Parsing final_answer from response...")
 
-        final_answer = final_answer_match.group(1).lower() == "true"
+            # Check for empty response
+            if not response or not response.strip():
+                print(f"[REACT] [ERROR] LLM returned empty response!")
+                if retry_attempt < max_retries:
+                    continue  # Retry
+                else:
+                    print(f"[REACT] [FATAL] Empty response after {max_retries} retries")
+                    raise ValueError(f"LLM returned empty response in observation step after {max_retries} retries. This may indicate context overflow, prompt issues, or model problems.")
 
-        print(f"[REACT] [OK] Parsed: final_answer={final_answer}, using raw tool output ({len(tool_data_str)} chars)")
+            print(f"Response length: {len(response)} chars")
+            print(f"Response preview: {response[:300]}...")
 
-        # Return raw tool data as observation (no summarization)
-        return {
-            "observation": tool_data_str,
-            "final_answer": final_answer
-        }
+            # Extract final_answer
+            final_answer_match = re.search(r"final_answer:\s*(true|false)", response, re.IGNORECASE)
+            if not final_answer_match:
+                print(f"[REACT] [ERROR] Failed to parse 'final_answer' field from response!")
+                print(f"[REACT] [DEBUG] Full response:\n{response}")
+                if retry_attempt < max_retries:
+                    continue  # Retry
+                else:
+                    print(f"[REACT] [FATAL] Parsing failed after {max_retries} retries")
+                    raise ValueError(f"LLM response missing 'final_answer: true/false' field after {max_retries} retries. Last response: {response[:500]}...")
+
+            # Successfully parsed
+            final_answer = final_answer_match.group(1).lower() == "true"
+            print(f"[REACT] [OK] Parsed: final_answer={final_answer}, using raw tool output ({len(tool_data_str)} chars)")
+
+            # Return raw tool data as observation (no summarization)
+            return {
+                "observation": tool_data_str,
+                "final_answer": final_answer
+            }
+
+        # Should never reach here, but just in case
+        raise ValueError("Failed to parse observation after maximum retries")
 
     def _generate_final_answer(
         self,
