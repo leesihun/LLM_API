@@ -63,6 +63,12 @@ class OpenCodeServerManager:
             print(f"[OPENCODE SERVER] Already running on {self._server_url}")
             return
 
+        # Check if port is already in use (external server already running)
+        if self._is_port_in_use():
+            print(f"[OPENCODE SERVER] Port {config.OPENCODE_SERVER_PORT} already in use")
+            print(f"[OPENCODE SERVER] Assuming external server is running on {self._server_url}")
+            return
+
         print(f"[OPENCODE SERVER] Starting on port {config.OPENCODE_SERVER_PORT}...")
 
         # On Windows, use .cmd extension for npm global binaries
@@ -109,6 +115,19 @@ class OpenCodeServerManager:
             raise RuntimeError(error_detail)
 
         print(f"[OPENCODE SERVER] Running on {self._server_url}")
+
+    def _is_port_in_use(self) -> bool:
+        """Check if the opencode server port is already in use"""
+        import socket
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((config.OPENCODE_SERVER_HOST, config.OPENCODE_SERVER_PORT))
+            sock.close()
+            return result == 0  # Port is in use if connection succeeds
+        except Exception:
+            return False
 
     def _wait_for_server(self, timeout: int) -> tuple[bool, str]:
         """
