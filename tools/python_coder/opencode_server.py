@@ -86,31 +86,64 @@ class OpenCodeServerManager:
         )
 
         # Wait for server to be ready (max 30 seconds)
-        if not self._wait_for_server(timeout=30):
+        ready, error_msg = self._wait_for_server(timeout=30)
+        if not ready:
+            # Get process output for debugging
+            stderr_output = ""
+            if self._process.stderr:
+                try:
+                    stderr_output = self._process.stderr.read(1000)  # Read first 1000 chars
+                except:
+                    pass
+
             self._process.terminate()
             self._process = None
-            raise RuntimeError(
-                f"OpenCode server failed to start on {self._server_url}. "
-                f"Check if opencode is installed: npm install -g opencode-ai@latest"
-            )
+
+            error_detail = f"OpenCode server failed to start on {self._server_url}."
+            if stderr_output:
+                error_detail += f"\n\nServer output:\n{stderr_output}"
+            if error_msg:
+                error_detail += f"\n\nError: {error_msg}"
+            error_detail += "\n\nCheck if opencode is installed: npm install -g opencode-ai@latest"
+
+            raise RuntimeError(error_detail)
 
         print(f"[OPENCODE SERVER] Running on {self._server_url}")
 
-    def _wait_for_server(self, timeout: int) -> bool:
-        """Wait for server to be ready"""
-        import urllib.request
-        import urllib.error
+    def _wait_for_server(self, timeout: int) -> tuple[bool, str]:
+        """
+        Wait for server to be ready
+
+        Returns:
+            Tuple of (is_ready, error_message)
+        """
+        import socket
 
         start = time.time()
+        last_error = ""
+
         while time.time() - start < timeout:
+            # Check if process is still alive
+            if self._process and self._process.poll() is not None:
+                return False, f"Server process terminated with code {self._process.returncode}"
+
+            # Try to connect to port (more reliable than HTTP endpoint)
             try:
-                # Try to connect to server
-                req = urllib.request.Request(f"{self._server_url}/health")
-                with urllib.request.urlopen(req, timeout=2):
-                    return True
-            except (urllib.error.URLError, ConnectionRefusedError, OSError):
-                time.sleep(0.5)
-        return False
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result = sock.connect_ex((config.OPENCODE_SERVER_HOST, config.OPENCODE_SERVER_PORT))
+                sock.close()
+
+                if result == 0:
+                    # Port is open, server is ready
+                    return True, ""
+
+            except Exception as e:
+                last_error = str(e)
+
+            time.sleep(0.5)
+
+        return False, f"Timeout after {timeout}s. Last error: {last_error}"
 
     def stop(self) -> None:
         """Stop opencode server"""
