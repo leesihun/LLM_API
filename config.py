@@ -194,7 +194,7 @@ OPENCODE_PATH: str = "opencode"  # Path to opencode binary (globally installed v
 OPENCODE_SERVER_PORT: int = 37254  # Server port
 OPENCODE_SERVER_HOST: str = "127.0.0.1"  # Server host
 OPENCODE_TIMEOUT: int = 864000  # Execution timeout in seconds (10 days)
-OPENCODE_PROVIDER: str = "llama.cpp"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
+OPENCODE_PROVIDER: str = "llama-server"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
 OPENCODE_MODEL: str = "GPT-OSS:120b"  # Model name within the provider
 
 # Smart Edit Settings (Context-aware code generation)
