@@ -139,7 +139,7 @@ class OpenCodeExecutor(BasePythonExecutor):
             opencode_cmd = f"{opencode_cmd}.cmd"
 
         # Add "ultrawork" prefix to instruction
-        prefixed_instruction = f"ultrawork, Your job is to write a python code that performs the given task, run and output the results. Your task: {instruction}"
+        prefixed_instruction = f"ultrawork, Your job is to write a python code that performs the given task, run and output the results. Your task is: {instruction} and when all of the process are done, ALWAYS DISPLAY 'Workflow completely done.' Make sure you end with 'Workflow completely done.'"
 
         cmd = [
             opencode_cmd,
@@ -161,7 +161,10 @@ class OpenCodeExecutor(BasePythonExecutor):
 
     def _parse_output(self, stdout: str) -> tuple:
         """
-        Parse OpenCode output - extract session ID and return full output
+        Parse OpenCode output - extract session ID and return output only when complete
+
+        Looks for the completion flag "Workflow completely done." to determine when
+        all agents have finished, preventing premature output.
 
         Returns:
             Tuple of (text_output, opencode_session_id, error_message)
@@ -169,6 +172,11 @@ class OpenCodeExecutor(BasePythonExecutor):
         session_id = None
         error_msg = None
         output_parts = []
+        is_complete = False
+
+        # Check for completion flag
+        if "Workflow completely done." in stdout:
+            is_complete = True
 
         for line in stdout.strip().split('\n'):
             if not line:
@@ -188,20 +196,28 @@ class OpenCodeExecutor(BasePythonExecutor):
                 if event_type == "error":
                     error_msg = part.get("message") or part.get("error") or str(part)
 
-                # Extract any text content from events
+                # Extract any text content from events (exclude completion flag)
                 for key in ["text", "content", "output", "stdout", "result"]:
                     value = part.get(key)
                     if value and isinstance(value, str) and value.strip():
-                        output_parts.append(value)
+                        # Don't include the completion flag in output
+                        if "Workflow completely done." not in value:
+                            output_parts.append(value)
                         break
 
             except json.JSONDecodeError:
-                # Non-JSON line - include if not a log prefix
-                if not line.startswith("INFO ") and not line.startswith("DEBUG "):
+                # Non-JSON line - include if not a log prefix or completion flag
+                if (not line.startswith("INFO ") and
+                    not line.startswith("DEBUG ") and
+                    "Workflow completely done." not in line):
                     output_parts.append(line)
 
-        # Return combined output
-        return "\n".join(output_parts), session_id, error_msg
+        # Return output only if workflow is complete
+        if is_complete:
+            return "\n".join(output_parts), session_id, error_msg
+        else:
+            # Not complete - return empty to signal incomplete
+            return "", session_id, error_msg or "Execution incomplete - 'Workflow completely done.' flag not found"
 
     def _get_workspace_files(self) -> Dict[str, Any]:
         """Get list of files in workspace with metadata"""
