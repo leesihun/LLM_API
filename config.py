@@ -191,7 +191,7 @@ NANOCODER_TIMEOUT = 864000  # Nanocoder execution timeout in seconds (10 days)
 
 # OpenCode settings
 OPENCODE_PATH: str = "opencode"  # Path to opencode binary (globally installed via npm)
-OPENCODE_SERVER_PORT: int = 4096  # Server port
+OPENCODE_SERVER_PORT: int = 37253  # Server port
 OPENCODE_SERVER_HOST: str = "127.0.0.1"  # Server host
 OPENCODE_TIMEOUT: int = 864000  # Execution timeout in seconds (10 days)
 OPENCODE_PROVIDER: str = "llama.cpp"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
