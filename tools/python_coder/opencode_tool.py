@@ -161,10 +161,10 @@ class OpenCodeExecutor(BasePythonExecutor):
 
     def _parse_output(self, stdout: str) -> tuple:
         """
-        Parse OpenCode output - extract session ID and return output only when complete
+        Parse OpenCode output - extract session ID and return output
 
-        Looks for the completion flag "Workflow completely done." to determine when
-        all agents have finished, preventing premature output.
+        Looks for the completion flag "Workflow completely done." to verify completion.
+        Always returns collected outputs (never empty unless truly empty).
 
         Returns:
             Tuple of (text_output, opencode_session_id, error_message)
@@ -174,9 +174,17 @@ class OpenCodeExecutor(BasePythonExecutor):
         output_parts = []
         is_complete = False
 
+        # Debug: Log raw stdout length
+        print(f"[OPENCODE DEBUG] Raw stdout length: {len(stdout)}")
+        if stdout:
+            print(f"[OPENCODE DEBUG] First 500 chars: {stdout[:500]}")
+
         # Check for completion flag
         if "Workflow completely done." in stdout:
             is_complete = True
+            print("[OPENCODE DEBUG] Completion flag found!")
+        else:
+            print("[OPENCODE DEBUG] Completion flag NOT found")
 
         for line in stdout.strip().split('\n'):
             if not line:
@@ -212,12 +220,25 @@ class OpenCodeExecutor(BasePythonExecutor):
                     "Workflow completely done." not in line):
                     output_parts.append(line)
 
-        # Return output only if workflow is complete
-        if is_complete:
-            return "\n".join(output_parts), session_id, error_msg
-        else:
-            # Not complete - return empty to signal incomplete
-            return "", session_id, error_msg or "Execution incomplete - 'Workflow completely done.' flag not found"
+        # Debug: Log parsed output count
+        print(f"[OPENCODE DEBUG] Parsed output parts: {len(output_parts)}")
+
+        # Always return collected outputs (never empty)
+        combined_output = "\n".join(output_parts)
+
+        # If output is empty but stdout wasn't, return raw stdout as fallback
+        if not combined_output and stdout.strip():
+            print("[OPENCODE DEBUG] No parsed output, returning raw stdout")
+            # Filter out INFO/DEBUG lines from raw output
+            raw_lines = [l for l in stdout.strip().split('\n')
+                        if l and not l.startswith("INFO ") and not l.startswith("DEBUG ")]
+            combined_output = "\n".join(raw_lines)
+
+        # Set error if not complete, but still return whatever output we have
+        if not is_complete and not error_msg:
+            error_msg = "Warning: 'Workflow completely done.' flag not found"
+
+        return combined_output, session_id, error_msg
 
     def _get_workspace_files(self) -> Dict[str, Any]:
         """Get list of files in workspace with metadata"""
