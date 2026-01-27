@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional
 
 import config
 from tools.python_coder.base import BasePythonExecutor
-from tools.python_coder.opencode_server import get_server_manager
 
 
 def log_to_prompts_file(message: str) -> None:
@@ -27,7 +26,7 @@ class OpenCodeExecutor(BasePythonExecutor):
     """
     OpenCode-based executor for natural language code generation and execution
 
-    Uses persistent opencode server for reduced latency.
+    Uses opencode CLI directly (embedded server mode).
     Maintains session across tool calls within same LLM API session.
     """
 
@@ -49,9 +48,6 @@ class OpenCodeExecutor(BasePythonExecutor):
         self.timeout = config.OPENCODE_TIMEOUT
         self.max_output_size = config.PYTHON_EXECUTOR_MAX_OUTPUT_SIZE
 
-        # Get server manager (ensures server is running)
-        self._server = get_server_manager()
-
     def execute(
         self,
         code: str,
@@ -68,9 +64,6 @@ class OpenCodeExecutor(BasePythonExecutor):
 
         Returns:
             Standardized execution result dictionary
-
-        Raises:
-            RuntimeError: If opencode server is unavailable
         """
         instruction = code  # Alias for clarity in OpenCode context
         exec_timeout = timeout or self.timeout
@@ -79,27 +72,12 @@ class OpenCodeExecutor(BasePythonExecutor):
         # Log execution start
         self._log_start(instruction, exec_timeout)
 
-        # Ensure server is running
-        self._server.ensure_running()
-
-        # #region agent log
-        import json as _json
-        _log_data = {"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "opencode_tool.py:execute:server_check", "message": "Server status after ensure_running", "data": {"server_url": self._server.server_url, "is_running": self._server.is_running()}, "timestamp": int(time.time() * 1000)}
-        with open(r"c:\Users\Lee\Desktop\Huni\LLM_API\.cursor\debug.log", "a", encoding="utf-8") as _f: _f.write(_json.dumps(_log_data) + "\n")
-        # #endregion
-
         # Build command
         cmd = self._build_command(instruction)
 
         print(f"\n[OPENCODE] Executing: {' '.join(cmd[:6])}...")
 
         try:
-            # #region agent log
-            import json as _json
-            _log_data = {"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B,C", "location": "opencode_tool.py:execute:pre_run", "message": "About to execute subprocess", "data": {"cmd_count": len(cmd), "cwd": str(self.workspace), "timeout": exec_timeout}, "timestamp": int(time.time() * 1000)}
-            with open(r"c:\Users\Lee\Desktop\Huni\LLM_API\.cursor\debug.log", "a", encoding="utf-8") as _f: _f.write(_json.dumps(_log_data) + "\n")
-            # #endregion
-
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -109,11 +87,6 @@ class OpenCodeExecutor(BasePythonExecutor):
                 encoding='utf-8',
                 errors='replace'
             )
-
-            # #region agent log
-            _log_data = {"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C,D,E", "location": "opencode_tool.py:execute:post_run", "message": "Subprocess completed", "data": {"returncode": result.returncode, "stdout_len": len(result.stdout), "stderr_len": len(result.stderr), "stdout_preview": result.stdout[:500] if result.stdout else "", "stderr_preview": result.stderr[:500] if result.stderr else ""}, "timestamp": int(time.time() * 1000)}
-            with open(r"c:\Users\Lee\Desktop\Huni\LLM_API\.cursor\debug.log", "a", encoding="utf-8") as _f: _f.write(_json.dumps(_log_data) + "\n")
-            # #endregion
 
             # Parse JSON output
             output_text, opencode_session_id, error_msg = self._parse_output(result.stdout)
@@ -170,21 +143,15 @@ class OpenCodeExecutor(BasePythonExecutor):
             "run",
             instruction,
             "--format", "json",
-            "--attach", self._server.server_url,
             "--model", f"{config.OPENCODE_PROVIDER}/{config.OPENCODE_MODEL}",
-            # Note: Working directory is set via subprocess cwd parameter, not CLI flag
+            # Note: Working directory is set via subprocess cwd parameter
+            # Note: opencode manages its own embedded server (no --attach needed)
         ]
 
         # Continue existing session if available
         if self.session_id in OpenCodeExecutor._session_map:
             opencode_session = OpenCodeExecutor._session_map[self.session_id]
             cmd.extend(["--session", opencode_session])
-
-        # #region agent log
-        import json as _json
-        _log_data = {"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,D", "location": "opencode_tool.py:_build_command", "message": "Command built", "data": {"opencode_cmd": opencode_cmd, "instruction_len": len(instruction), "instruction_preview": instruction[:100], "server_url": self._server.server_url, "model": f"{config.OPENCODE_PROVIDER}/{config.OPENCODE_MODEL}", "workspace": str(self.workspace), "full_cmd": cmd}, "timestamp": int(time.time() * 1000)}
-        with open(r"c:\Users\Lee\Desktop\Huni\LLM_API\.cursor\debug.log", "a", encoding="utf-8") as _f: _f.write(_json.dumps(_log_data) + "\n")
-        # #endregion
 
         return cmd
 
