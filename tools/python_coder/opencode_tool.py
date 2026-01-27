@@ -26,7 +26,7 @@ class OpenCodeExecutor(BasePythonExecutor):
     """
     OpenCode-based executor for natural language code generation and execution
 
-    Uses embedded server mode with 'build' agent for fully autonomous operation.
+    Uses embedded server mode with default agent and 'ultrawork' prefix for fully autonomous operation.
     Maintains session across tool calls within same LLM API session.
     """
 
@@ -72,7 +72,7 @@ class OpenCodeExecutor(BasePythonExecutor):
         # Log execution start
         self._log_start(instruction, exec_timeout)
 
-        # Build command (uses embedded server mode with --agent build for autonomous operation)
+        # Build command (uses embedded server mode with default agent and 'ultrawork' prefix)
         cmd = self._build_command(instruction)
 
         print(f"\n[OPENCODE] Executing: {' '.join(cmd[:6])}...")
@@ -138,12 +138,15 @@ class OpenCodeExecutor(BasePythonExecutor):
         if sys.platform == "win32" and not opencode_cmd.endswith(".cmd"):
             opencode_cmd = f"{opencode_cmd}.cmd"
 
+        # Add "ultrawork" prefix to instruction
+        prefixed_instruction = f"ultrawork {instruction}"
+
         cmd = [
             opencode_cmd,
             "run",
-            instruction,
+            prefixed_instruction,
             "--format", "json",
-            "--agent", "build",  # Use build agent for autonomous operation (no user prompts)
+            # Use default agent (no --agent flag)
             "--model", f"{config.OPENCODE_PROVIDER}/{config.OPENCODE_MODEL}",
             # Note: Working directory is set via subprocess cwd parameter
             # Note: Uses embedded server mode (no --attach), context from cwd

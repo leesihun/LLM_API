@@ -89,13 +89,14 @@ async def startup_event():
 
         print("=" * 70 + "\n")
 
-    # OpenCode mode: uses embedded server with 'build' agent for autonomous operation
+    # OpenCode mode: uses embedded server with default agent and 'ultrawork' prefix
     if config.PYTHON_EXECUTOR_MODE == "opencode":
         print("\n" + "=" * 70)
         print("OPENCODE MODE")
         print("=" * 70)
         print("[TOOLS SERVER] OpenCode executor ready")
-        print("[TOOLS SERVER] Using embedded server mode with 'build' agent")
+        print("[TOOLS SERVER] Using embedded server mode with default agent")
+        print("[TOOLS SERVER] Instructions prefixed with 'ultrawork' for optimal performance")
         print("[TOOLS SERVER] Fully autonomous operation (no user prompts)")
         print("=" * 70 + "\n")
 
