@@ -54,7 +54,7 @@ class OpenCodeExecutor(BasePythonExecutor):
 
     def execute(
         self,
-        instruction: str,
+        code: str,
         timeout: Optional[int] = None,
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -62,7 +62,7 @@ class OpenCodeExecutor(BasePythonExecutor):
         Execute natural language instruction using OpenCode
 
         Args:
-            instruction: Natural language instruction (NOT Python code)
+            code: Natural language instruction (passed as 'code' for API compatibility)
             timeout: Execution timeout in seconds
             context: Additional context (unused)
 
@@ -72,6 +72,7 @@ class OpenCodeExecutor(BasePythonExecutor):
         Raises:
             RuntimeError: If opencode server is unavailable
         """
+        instruction = code  # Alias for clarity in OpenCode context
         exec_timeout = timeout or self.timeout
         start_time = time.time()
 
