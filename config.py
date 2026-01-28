@@ -32,7 +32,7 @@ PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server start
 PRELOAD_KEEP_ALIVE = -1  # Keep model in memory: -1 = indefinitely, "5m" = 5 minutes, 0 = unload immediately
 
 # Llama.cpp Settings
-LLAMACPP_HOST = "http://localhost:5905"
+LLAMACPP_HOST = "http://localhost:5904"
 LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 
 # ============================================================================
