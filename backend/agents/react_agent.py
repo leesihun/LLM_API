@@ -167,23 +167,29 @@ class ReActAgent(Agent):
         user_input: str,
         conversation_history: List[Dict[str, str]],
         tools_desc: str,
-        scratchpad: str
+        scratchpad: str,
+        max_retries: int = None
     ) -> str:
         """
-        STEP 1: Generate Thought/Action/Action Input
+        STEP 1: Generate Thought/Action/Action Input with retry logic
 
         Args:
             user_input: User's question
             conversation_history: Chat history
             tools_desc: Tools description
             scratchpad: Current scratchpad
+            max_retries: Maximum retry attempts (defaults to config.REACT_MAX_PARSE_RETRIES)
 
         Returns:
             LLM response with Thought/Action/Action Input
 
         Raises:
-            ValueError: If response format is invalid
+            ValueError: If response format is invalid after all retries
         """
+        # Use config default if not specified
+        if max_retries is None:
+            max_retries = config.REACT_MAX_PARSE_RETRIES
+
         # Select prompt based on python executor mode
         # Native mode: generates Python code directly
         # Nanocoder/OpenCode mode: generates natural language instructions
@@ -218,17 +224,64 @@ class ReActAgent(Agent):
         messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": thought_prompt})
 
-        response = self.call_llm(messages)
+        # Retry loop for robust parsing
+        for retry_attempt in range(max_retries + 1):
+            if retry_attempt > 0:
+                print(f"\n[REACT] [RETRY {retry_attempt}/{max_retries}] Re-asking LLM for correct format...")
+                # Add clarification message for retry
+                messages.append({
+                    "role": "system",
+                    "content": "Your previous response was invalid. You MUST respond in EXACTLY this format:\n\nThought: [your reasoning]\nAction: [tool_name]\nAction Input: [input for the tool]\n\nDo not include any other formatting. Respond now:"
+                })
 
-        # Validate response contains required fields
-        if "Thought:" not in response:
-            raise ValueError("LLM response missing 'Thought:' field")
-        if "Action:" not in response:
-            raise ValueError("LLM response missing 'Action:' field")
-        if "Action Input:" not in response:
-            raise ValueError("LLM response missing 'Action Input:' field")
+            response = self.call_llm(messages)
 
-        return response
+            # Check for empty response
+            if not response or not response.strip():
+                print(f"[REACT] [ERROR] LLM returned empty response!")
+                if retry_attempt < max_retries:
+                    continue  # Retry
+                else:
+                    print(f"[REACT] [FATAL] Empty response after {max_retries} retries")
+                    raise ValueError(f"LLM returned empty response in Step 1 after {max_retries} retries. This may indicate context overflow, prompt issues, or model problems.")
+
+            print(f"Response length: {len(response)} chars")
+            print(f"Response preview: {response[:300]}...")
+
+            # Validate response contains required fields
+            missing_fields = []
+            if "Thought:" not in response:
+                missing_fields.append("Thought:")
+            if "Action:" not in response:
+                missing_fields.append("Action:")
+            if "Action Input:" not in response:
+                missing_fields.append("Action Input:")
+
+            if missing_fields:
+                print(f"[REACT] [ERROR] LLM response missing fields: {', '.join(missing_fields)}")
+                print(f"[REACT] [DEBUG] Full response:\n{response}")
+                if retry_attempt < max_retries:
+                    continue  # Retry
+                else:
+                    print(f"[REACT] [FATAL] Parsing failed after {max_retries} retries")
+                    raise ValueError(f"LLM response missing required fields {missing_fields} after {max_retries} retries. Last response: {response[:500]}...")
+
+            # Successfully validated - now try parsing with regex
+            try:
+                # Attempt to parse to ensure it's not just present but also parseable
+                action_info = self._parse_action(response)
+                print(f"[REACT] [OK] Successfully parsed Thought/Action/Action Input")
+                return response
+            except ValueError as parse_error:
+                print(f"[REACT] [ERROR] Parsing failed: {parse_error}")
+                if retry_attempt < max_retries:
+                    continue  # Retry
+                else:
+                    print(f"[REACT] [FATAL] Parsing failed after {max_retries} retries")
+                    raise ValueError(f"Failed to parse LLM response after {max_retries} retries. Last error: {parse_error}")
+
+        # Should never reach here, but just in case
+        raise ValueError("Failed to generate valid Thought/Action/Action Input after maximum retries")
 
     def _step2_generate_observation(
         self,

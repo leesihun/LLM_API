@@ -99,6 +99,7 @@ DEFAULT_AGENT = "auto"
 REACT_FORMAT = "prompt"  # "prompt" or "native" (Ollama native tool calling)
 REACT_MAX_ITERATIONS = 5  # Maximum reasoning iterations
 REACT_RETRY_ON_ERROR = True  # Let LLM see errors and decide next action (intelligent retry)
+REACT_MAX_PARSE_RETRIES = 3  # Maximum retries for parsing Thought/Action/Action Input (if LLM fails to follow format)
 
 # Plan-Execute Agent Settings
 PLAN_MAX_STEPS = 10  # Maximum plan steps
@@ -195,7 +196,7 @@ OPENCODE_SERVER_PORT: int = 37254  # Server port
 OPENCODE_SERVER_HOST: str = "127.0.0.1"  # Server host
 OPENCODE_TIMEOUT: int = 864000  # Execution timeout in seconds (10 days)
 OPENCODE_PROVIDER: str = "llama.cpp"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
-OPENCODE_MODEL: str = "MiniMax M2.1"  # Model name within the provider
+OPENCODE_MODEL: str = "MiniMax"  # Model name within the provider
 
 # Smart Edit Settings (Context-aware code generation)
 PYTHON_CODER_SMART_EDIT = True  # Enable LLM-based smart editing (merges with existing .py files when beneficial)
