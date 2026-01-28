@@ -43,7 +43,7 @@ PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server start
 PRELOAD_KEEP_ALIVE = -1  # Keep model in memory: -1 = indefinitely, "5m" = 5 minutes, 0 = unload immediately
 
 # Llama.cpp Settings
-LLAMACPP_HOST = "http://localhost:5904"
+LLAMACPP_HOST = "http://localhost:5905"
 LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 
 # ============================================================================
@@ -140,7 +140,7 @@ TOOL_PARAMETERS = {
     },
     "python_coder": {
         "temperature": 1.0,  # Lower temp for more deterministic code
-        "max_tokens": 30000,
+        "max_tokens": 128000,
         "timeout": 864000,  # 10 days for code execution
     },
     "rag": {
@@ -194,8 +194,8 @@ OPENCODE_PATH: str = "opencode"  # Path to opencode binary (globally installed v
 OPENCODE_SERVER_PORT: int = 37254  # Server port
 OPENCODE_SERVER_HOST: str = "127.0.0.1"  # Server host
 OPENCODE_TIMEOUT: int = 864000  # Execution timeout in seconds (10 days)
-OPENCODE_PROVIDER: str = "llama.cpp2"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
-OPENCODE_MODEL: str = "GPT-OSS:120b"  # Model name within the provider
+OPENCODE_PROVIDER: str = "llama.cpp"  # Provider: "ollama", "llama.cpp", or "opencode" (free)
+OPENCODE_MODEL: str = "MiniMax M2.1"  # Model name within the provider
 
 # Smart Edit Settings (Context-aware code generation)
 PYTHON_CODER_SMART_EDIT = True  # Enable LLM-based smart editing (merges with existing .py files when beneficial)
