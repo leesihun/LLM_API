@@ -196,8 +196,16 @@ async def chat_completions(
         # Handle file uploads
         file_paths = []
         file_metadata = []
+        print(f"\n[CHAT] File upload check:")
+        print(f"  files parameter: {files}")
+        print(f"  files is None: {files is None}")
+        print(f"  files length: {len(files) if files else 0}")
         if files and len(files) > 0:
+            print(f"  ✓ Files detected, calling save_uploaded_files()...")
             file_paths = save_uploaded_files(files, username, session_id)
+            print(f"  ✓ Files saved. Paths returned: {len(file_paths)}")
+        else:
+            print(f"  ✗ No files to save")
 
         # Prepare messages and file metadata (without full content injection)
         llm_messages, file_metadata = _prepare_messages_with_files(chat_messages, file_paths)

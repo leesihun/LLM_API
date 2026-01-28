@@ -27,28 +27,65 @@ def save_uploaded_files(
     Returns:
         List of file paths in scratch directory
     """
+    print("\n" + "=" * 80)
+    print("[FILE_HANDLER] save_uploaded_files() called")
+    print("=" * 80)
+    print(f"Username: {username}")
+    print(f"Session ID: {session_id}")
+    print(f"Number of files: {len(files) if files else 0}")
+
     scratch_paths = []
 
     # Create directories
     user_upload_dir = config.UPLOAD_DIR / username
     session_scratch_dir = config.SCRATCH_DIR / session_id
+
+    print(f"\n[FILE_HANDLER] Creating directories:")
+    print(f"  User upload dir: {user_upload_dir.absolute()}")
+    print(f"  Session scratch dir: {session_scratch_dir.absolute()}")
+
     user_upload_dir.mkdir(parents=True, exist_ok=True)
     session_scratch_dir.mkdir(parents=True, exist_ok=True)
 
-    for file in files:
+    print(f"  ✓ Directories created")
+
+    for i, file in enumerate(files):
+        print(f"\n[FILE_HANDLER] Processing file {i+1}/{len(files)}:")
+        print(f"  Filename: {file.filename}")
+        print(f"  Content type: {file.content_type}")
+
         if file.filename:
-            # Save to user's persistent upload directory
-            user_file_path = user_upload_dir / file.filename
-            with open(user_file_path, 'wb') as f:
-                shutil.copyfileobj(file.file, f)
+            try:
+                # Save to user's persistent upload directory
+                user_file_path = user_upload_dir / file.filename
+                print(f"  Saving to user dir: {user_file_path.absolute()}")
+                with open(user_file_path, 'wb') as f:
+                    shutil.copyfileobj(file.file, f)
+                user_size = user_file_path.stat().st_size
+                print(f"  ✓ Saved to user dir ({user_size} bytes)")
 
-            # Also copy to session scratch directory
-            file.file.seek(0)  # Reset file pointer
-            scratch_file_path = session_scratch_dir / file.filename
-            with open(scratch_file_path, 'wb') as f:
-                shutil.copyfileobj(file.file, f)
+                # Also copy to session scratch directory
+                file.file.seek(0)  # Reset file pointer
+                scratch_file_path = session_scratch_dir / file.filename
+                print(f"  Saving to scratch dir: {scratch_file_path.absolute()}")
+                with open(scratch_file_path, 'wb') as f:
+                    shutil.copyfileobj(file.file, f)
+                scratch_size = scratch_file_path.stat().st_size
+                print(f"  ✓ Saved to scratch dir ({scratch_size} bytes)")
 
-            scratch_paths.append(str(scratch_file_path))
+                scratch_paths.append(str(scratch_file_path))
+            except Exception as e:
+                print(f"  ✗ ERROR saving file: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"  ✗ Skipped (no filename)")
+
+    print(f"\n[FILE_HANDLER] Completed: {len(scratch_paths)} files saved")
+    print(f"[FILE_HANDLER] Scratch paths:")
+    for path in scratch_paths:
+        print(f"  - {path}")
+    print("=" * 80)
 
     return scratch_paths
 
