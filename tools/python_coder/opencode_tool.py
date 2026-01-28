@@ -269,7 +269,7 @@ class OpenCodeExecutor(BasePythonExecutor):
 
         try:
             result = subprocess.run(
-                ["python", str(python_file)],
+                ["python", python_file.name],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
