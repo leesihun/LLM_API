@@ -317,7 +317,6 @@ class OpenCodeExecutor(BasePythonExecutor):
             f"DO NOT run the code yourself - just write and save it. "
             f"After saving, output the filename you created. "
             f"Task: {instruction} "
-            f"When done, display 'Workflow completely done.'"
         )
 
         cmd = [
@@ -345,11 +344,6 @@ class OpenCodeExecutor(BasePythonExecutor):
         session_id = None
         error_msg = None
         output_parts = []
-        is_complete = False
-
-        # Check for completion flag
-        if "Workflow completely done." in stdout:
-            is_complete = True
 
         for line in stdout.strip().split('\n'):
             if not line:
@@ -372,14 +366,11 @@ class OpenCodeExecutor(BasePythonExecutor):
                 for key in ["text", "content", "output", "stdout", "result"]:
                     value = part.get(key)
                     if value and isinstance(value, str) and value.strip():
-                        if "Workflow completely done." not in value:
-                            output_parts.append(value)
+                        output_parts.append(value)
                         break
 
             except json.JSONDecodeError:
-                if (not line.startswith("INFO ") and
-                    not line.startswith("DEBUG ") and
-                    "Workflow completely done." not in line):
+                if not line.startswith("INFO ") and not line.startswith("DEBUG "):
                     output_parts.append(line)
 
         combined_output = "\n".join(output_parts)
@@ -389,9 +380,6 @@ class OpenCodeExecutor(BasePythonExecutor):
             raw_lines = [l for l in stdout.strip().split('\n')
                         if l and not l.startswith("INFO ") and not l.startswith("DEBUG ")]
             combined_output = "\n".join(raw_lines)
-
-        if not is_complete and not error_msg:
-            error_msg = "Warning: 'Workflow completely done.' flag not found"
 
         return combined_output, session_id, error_msg
 
