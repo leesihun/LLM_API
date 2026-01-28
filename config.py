@@ -14,10 +14,6 @@ TOOLS_HOST = "127.0.0.1"  # Tools server host (change if on different machine)
 TOOLS_PORT = 10006   # Tools API server (websearch, python_coder, rag) - separate to avoid deadlock
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
-# Concurrency Settings
-# Number of worker processes for handling concurrent requests
-# Workers are lightweight (~50MB each) since llama.cpp is on remote server
-# Set to 1 to disable multi-processing (for debugging)
 SERVER_WORKERS = 4  # Number of parallel workers for main API
 TOOLS_SERVER_WORKERS = 4  # Number of parallel workers for tools API
 
@@ -27,16 +23,9 @@ TOOLS_SERVER_WORKERS = 4  # Number of parallel workers for tools API
 # Which LLM backend to use: "ollama", "llamacpp", or "auto" (tries ollama first, falls back to llamacpp)
 LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "llamacpp"
 
-# Ollama Settings
-# IMPORTANT FOR LINUX: If running on Linux and getting "Access denied" errors,
-# you need to configure Ollama to accept network connections:
-#   1. Set environment variable: export OLLAMA_HOST=0.0.0.0:11434
-#   2. Then start Ollama: ollama serve
-#   3. Or run: OLLAMA_HOST=0.0.0.0:11434 ollama serve
-# For same-machine deployments, use http://127.0.0.1:11434
-# For different machines, update to http://<ollama-server-ip>:11434
+
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "gpt-oss:20b"  # Default model (changed from non-existent GLM46)
+OLLAMA_MODEL = "gpt-oss:20b"  # Default model
 
 # Model Preloading Settings
 PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server startup
@@ -52,7 +41,7 @@ LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 DEFAULT_TEMPERATURE = 1.0  # Randomness (0.0 = deterministic, 2.0 = very random)
 DEFAULT_TOP_P = 0.9  # Nucleus sampling
 DEFAULT_TOP_K = 40  # Top-k sampling
-DEFAULT_MAX_TOKENS = 30000  # Maximum tokens in response
+DEFAULT_MAX_TOKENS = 128000  # Maximum tokens in response
 
 # ============================================================================
 # Database Settings
@@ -102,7 +91,7 @@ REACT_RETRY_ON_ERROR = True  # Let LLM see errors and decide next action (intell
 REACT_MAX_PARSE_RETRIES = 3  # Maximum retries for parsing Thought/Action/Action Input (if LLM fails to follow format)
 
 # Plan-Execute Agent Settings
-PLAN_MAX_STEPS = 10  # Maximum plan steps
+PLAN_MAX_STEPS = 5  # Maximum plan steps
 PLAN_MAX_ITERATIONS = 3  # Maximum iterations of plan-execute-replan cycle
 PLAN_REPLAN_ON_FAILURE = True  # Re-plan when a step fails
 PLAN_MIN_REACT_ITERATIONS_FOR_REPLAN = REACT_MAX_ITERATIONS  # Minimum React iterations before allowing step-level replanning
@@ -122,8 +111,6 @@ AVAILABLE_TOOLS = [
     "ppt_maker",
 ]
 
-# Tool-specific Model Configuration
-# Different tools can use different models optimized for their tasks
 TOOL_MODELS = {
     "websearch": "gpt-oss:20b",  # Web search summarization
     "python_coder": "gpt-oss:20b",  # Code generation
