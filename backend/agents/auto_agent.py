@@ -1,18 +1,21 @@
 """
 Auto Agent - LLM-based routing
-Automatically selects the best agent (chat, react, plan_execute) based on user input
+Automatically selects the best agent (chat, react, plan_execute, ultrawork) based on user input
 """
 from typing import List, Dict, Optional, Any
 
+import config
 from backend.agents.base_agent import Agent
 from backend.agents.chat_agent import ChatAgent
 from backend.agents.react_agent import ReActAgent
 from backend.agents.plan_execute_agent import PlanExecuteAgent
+from backend.agents.ultrawork_agent import UltraworkAgent
 
 
 class AutoAgent(Agent):
     """
-    Auto-routing agent that uses LLM to decide which agent to use
+    Auto-routing agent that uses LLM to decide which agent to use.
+    When PYTHON_EXECUTOR_MODE="opencode", plan_execute is replaced by ultrawork.
     """
 
     def __init__(self, model: str = None, temperature: float = None):
@@ -22,7 +25,8 @@ class AutoAgent(Agent):
         self.agents = {
             "chat": ChatAgent(model, temperature),
             "react": ReActAgent(model, temperature),
-            "plan_execute": PlanExecuteAgent(model, temperature)
+            "plan_execute": PlanExecuteAgent(model, temperature),
+            "ultrawork": UltraworkAgent(model, temperature)
         }
 
     def run(
@@ -73,7 +77,7 @@ class AutoAgent(Agent):
             conversation_history: Conversation history
 
         Returns:
-            Agent name ("chat", "react", or "plan_execute")
+            Agent name ("chat", "react", "plan_execute", or "ultrawork")
         """
         # Load routing prompt
         routing_prompt = self.load_prompt(
@@ -91,6 +95,9 @@ class AutoAgent(Agent):
         response_lower = response.strip().lower()
 
         if "plan_execute" in response_lower:
+            # When opencode mode is enabled, use ultrawork instead of plan_execute
+            if config.PYTHON_EXECUTOR_MODE == "opencode":
+                return "ultrawork"
             return "plan_execute"
         elif "react" in response_lower:
             return "react"

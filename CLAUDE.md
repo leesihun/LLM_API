@@ -48,7 +48,7 @@ pip install -r requirements.txt
 All configuration is centralized in `config.py`. Key settings:
 - `LLM_BACKEND`: Choose "ollama", "llamacpp", or "auto" (tries Ollama first)
 - `TOOLS_HOST`/`TOOLS_PORT`: Tools server location (change if on different machine)
-- `PYTHON_EXECUTOR_MODE`: "native" or "nanocoder" for code execution
+- `PYTHON_EXECUTOR_MODE`: "native", "nanocoder", or "opencode" for code execution
 
 ## High-Level Architecture
 
@@ -65,6 +65,12 @@ The system implements multiple agent types, all inheriting from `backend/agents/
 - **PlanExecuteAgent**: Multi-step planning agent
   - Creates plan, executes steps, can re-plan on failure
   - Configurable via `PLAN_*` settings in config
+- **UltraworkAgent**: Iterative refinement agent using OpenCode
+  - Only active when `PYTHON_EXECUTOR_MODE="opencode"`
+  - Replaces PlanExecuteAgent when opencode mode is enabled
+  - Flow: Send task to OpenCode → Verify adequacy → Refine if needed → Repeat
+  - System prompts in `prompts/agents/ultrawork_*.txt`
+  - Configurable via `ULTRAWORK_MAX_ITERATIONS`, `ULTRAWORK_VERIFY_TEMPERATURE` in config
 - **AutoAgent**: Automatically selects best agent based on user input
 
 **Agent Base Class** (`base_agent.py`):
@@ -281,7 +287,7 @@ data/
 
 When modifying functionality, check these config variables:
 
-- **Agent behavior**: `REACT_MAX_ITERATIONS`, `REACT_RETRY_ON_ERROR`, `PLAN_*`
+- **Agent behavior**: `REACT_MAX_ITERATIONS`, `REACT_RETRY_ON_ERROR`, `PLAN_*`, `ULTRAWORK_*`
 - **Tool settings**: `TOOL_MODELS`, `TOOL_PARAMETERS`, `DEFAULT_TOOL_TIMEOUT`
 - **Code execution**: `PYTHON_EXECUTOR_MODE`, `NANOCODER_PATH`, `NANOCODER_TIMEOUT`
 - **Web search**: `TAVILY_API_KEY`, `TAVILY_SEARCH_DEPTH`, `WEBSEARCH_MAX_RESULTS`

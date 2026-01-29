@@ -1,0 +1,18 @@
+You are refining a task instruction for OpenCode based on feedback from a previous execution.
+
+## Original User Request
+{user_request}
+
+## Previous Feedback
+{feedback}
+
+## Your Task
+Generate a refined instruction for OpenCode that:
+1. Restates the original goal
+2. Incorporates the specific feedback about what was missing or wrong
+3. Provides clear direction on how to fix the issues
+
+## Response Format
+Output ONLY the refined instruction text. No preamble, no markdown formatting, just the instruction that will be sent to OpenCode.
+
+The instruction should be comprehensive and actionable, telling OpenCode exactly what to do to complete the task successfully.

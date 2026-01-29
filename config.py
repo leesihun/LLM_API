@@ -81,7 +81,7 @@ PROMPTS_LOG_PATH = LOG_DIR / "prompts.log"  # LLM interaction logs
 # Agent Settings
 # ============================================================================
 # Available agent types
-AVAILABLE_AGENTS = ["auto", "react", "plan_execute", "chat"]
+AVAILABLE_AGENTS = ["auto", "react", "plan_execute", "ultrawork", "chat"]
 DEFAULT_AGENT = "auto"
 
 # ReAct Agent Settings
@@ -99,6 +99,10 @@ PLAN_SHARE_CONTEXT = True  # Share context across plan execution steps
 PLAN_INCLUDE_FULL_HISTORY = True  # Include all conversation history in planning
 PLAN_MAX_HISTORY_MESSAGES = 0  # Maximum history messages to include (0 = unlimited)
 PLAN_HISTORY_IN_SYNTHESIS = True  # Include conversation history in final synthesis
+
+# Ultrawork Agent Settings (replaces plan_execute when PYTHON_EXECUTOR_MODE="opencode")
+ULTRAWORK_MAX_ITERATIONS = 5  # Maximum refinement iterations
+ULTRAWORK_VERIFY_TEMPERATURE = 0.3  # Temperature for verification (low for consistency)
 
 # ============================================================================
 # Tools Settings (for future implementation)

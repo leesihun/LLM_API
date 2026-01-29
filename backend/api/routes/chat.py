@@ -22,7 +22,7 @@ from backend.core.database import db, conversation_store
 from backend.core.llm_backend import llm_backend
 from backend.utils.file_handler import save_uploaded_files, extract_file_metadata
 from backend.utils.auth import get_optional_user
-from backend.agents import ChatAgent, ReActAgent, PlanExecuteAgent, AutoAgent
+from backend.agents import ChatAgent, ReActAgent, PlanExecuteAgent, AutoAgent, UltraworkAgent
 from fastapi import Depends
 import config
 
@@ -34,7 +34,7 @@ def _get_agent(agent_type: str, model: str, temperature: float):
     Get agent instance based on type
 
     Args:
-        agent_type: Type of agent (chat, react, plan_execute, auto)
+        agent_type: Type of agent (chat, react, plan_execute, ultrawork, auto)
         model: Model name
         temperature: Temperature setting
 
@@ -48,7 +48,12 @@ def _get_agent(agent_type: str, model: str, temperature: float):
     elif agent_type == "react":
         return ReActAgent(model, temperature)
     elif agent_type == "plan_execute":
+        # When opencode mode is enabled, use ultrawork instead of plan_execute
+        if config.PYTHON_EXECUTOR_MODE == "opencode":
+            return UltraworkAgent(model, temperature)
         return PlanExecuteAgent(model, temperature)
+    elif agent_type == "ultrawork":
+        return UltraworkAgent(model, temperature)
     elif agent_type == "auto":
         return AutoAgent(model, temperature)
     else:
