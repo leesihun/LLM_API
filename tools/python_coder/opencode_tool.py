@@ -77,11 +77,12 @@ class OpenCodeExecutor(BasePythonExecutor):
         exec_timeout = timeout or self.timeout
         start_time = time.time()
 
-        prefix = f"ultrawork, Your job is to write a Python script that performs the given task. "
-        prefix += f"Before you write the code, think if you have all necessary pre-steps to perform the task."
+        prefix = f"ultrawork, Your job is to write a Python script that performs the given task. \n"
+        prefix += f"Before you write the code, think if you have all necessary pre-steps to perform the task.\n"
         prefix += f"Then, write the code and save the code to a .py file in the current directory. "
-        prefix += f"Before you run the code, think again if the code is implemented correctly"
-        prefix += f"Then, run the code to verify if it works and check the output."
+        prefix += f"Before you run the code, think again if the code is implemented correctly.\n"
+        prefix += f"Then, run the code to verify if it works and check the output.\n"
+        prefix += f"Fully answer and explain outputs othe followings, without missing any details: \n"
 
         instruction = prefix + instruction
 
