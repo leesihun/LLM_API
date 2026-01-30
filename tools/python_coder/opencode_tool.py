@@ -77,14 +77,18 @@ class OpenCodeExecutor(BasePythonExecutor):
         exec_timeout = timeout or self.timeout
         start_time = time.time()
 
-        prefix = f"ULTRAWORK MODE\n"
-        prefix += f"Your job is to write a Python script that performs the given task. \n"
-        prefix += f"Before you write the code, think if you have all necessary pre-steps to perform the task.\n"
-        prefix += f"Then, write the code and save the code to a .py file in the current directory. "
-        prefix += f"The code should be contain various information on what the task is and what the code does, it needs to print these information.\n"
-        prefix += f"Before you run the code, think again if the code is implemented correctly.\n"
-        prefix += f"Then, run the code to verify if it works and check the output.\n"
-        prefix += f"Fully answer and explain outputs othe followings, without missing any details: \n"
+        prefix = (
+            "ULTRAWORK MODE\n"
+            "Your job is to write a Python script that performs the given task.\n"
+            "Before writing the code:\n"
+            "  1. Think if you have all necessary pre-steps to perform the task\n"
+            "  2. Write the code and save it to a .py file in the current directory\n"
+            "  3. Include print statements explaining what the task is and what the code does\n"
+            "  4. Add print statements to display key information\n"
+            "Before running the code, verify the implementation is correct.\n"
+            "Then run the code, check the output, and fully explain all results without missing any details:\n"
+            "THINK HARD AND MAKE NO MISTAKE!\n"
+        )
 
         instruction = prefix + instruction
 
