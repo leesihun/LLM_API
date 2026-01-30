@@ -78,16 +78,14 @@ class OpenCodeExecutor(BasePythonExecutor):
         start_time = time.time()
 
         prefix = (
-            "ULTRAWORK MODE\n"
-            "Your job is to write a Python script that performs the given task.\n"
-            "Before writing the code:\n"
-            "  1. Think if you have all necessary pre-steps to perform the task\n"
-            "  2. Write the code and save it to a .py file in the current directory\n"
-            "  3. Include print statements explaining what the task is and what the code does\n"
-            "  4. Add print statements to display key information\n"
-            "Before running the code, verify the implementation is correct.\n"
-            "Then run the code, check the output, and fully explain all results without missing any details:\n"
-            "THINK HARD AND MAKE NO MISTAKE!\n"
+            "ULTRAWORK MODE - Write and execute a Python script for this task.\n"
+            "Steps:\n"
+            "1. Plan: Identify all prerequisites and dependencies needed\n"
+            "2. Write: Create a complete .py file with descriptive print statements\n"
+            "3. Verify: Review the code for correctness before execution\n"
+            "4. Execute: Run the script and analyze the output thoroughly\n"
+            "Requirements: Include informative prints. Explain all results in detail. BE PRECISE!\n"
+            "Task: "
         )
 
         instruction = prefix + instruction
@@ -319,25 +317,17 @@ class OpenCodeExecutor(BasePythonExecutor):
             }
 
     def _build_command(self, instruction: str) -> List[str]:
-        """Build opencode run command for code generation only"""
+        """Build opencode run command"""
         import sys
         opencode_cmd = config.OPENCODE_PATH
         if sys.platform == "win32" and not opencode_cmd.endswith(".cmd"):
             opencode_cmd = f"{opencode_cmd}.cmd"
 
-        # Instruction tells OpenCode to ONLY generate code, not run it
-        prefixed_instruction = (
-            f"ultrawork, Your job is to write a Python script that performs the given task. "
-            f"Save the code to a .py file in the current directory. "
-            f"DO NOT run the code yourself - just write and save it. "
-            f"After saving, output the filename you created. "
-            f"Task: {instruction} "
-        )
-
+        # Instruction already has ULTRAWORK prefix from execute()
         cmd = [
             opencode_cmd,
             "run",
-            prefixed_instruction,
+            instruction,
             "--format", "json",
             "--model", f"{config.OPENCODE_PROVIDER}/{config.OPENCODE_MODEL}",
         ]
