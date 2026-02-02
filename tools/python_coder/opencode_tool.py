@@ -81,10 +81,15 @@ class OpenCodeExecutor(BasePythonExecutor):
             "ULTRAWORK MODE - Write and execute a Python script for this task.\n"
             "Steps:\n"
             "1. Plan: Identify all prerequisites and dependencies needed\n"
-            "2. Write: Create a complete .py file with descriptive print statements\n"
+            "2. Write: Create a complete .py file with descriptive print statements - the python code must be stored in the current working directory\n"
             "3. Verify: Review the code for correctness before execution\n"
             "4. Execute: Run the script and analyze the output thoroughly\n"
-            "Requirements: Include informative prints. Explain all results in detail. BE PRECISE!\n"
+            """Requirements: 
+            - Include informative prints. 
+            - Explain all results in detail. 
+            - BE PRECISE!
+            - The python code must be stored in the current working directory
+            - If you need to read/move/execute files in different directories, use the absolute path.\n"""
             "Task: "
         )
 

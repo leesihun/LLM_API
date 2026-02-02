@@ -38,7 +38,7 @@ LLAMACPP_MODEL = "default"  # Model loaded in llama.cpp server
 # ============================================================================
 # Model Parameters (Default LLM Inference Settings)
 # ============================================================================
-DEFAULT_TEMPERATURE = 1.0  # Randomness (0.0 = deterministic, 2.0 = very random)
+DEFAULT_TEMPERATURE = 0.7  # Randomness (0.0 = deterministic, 2.0 = very random)
 DEFAULT_TOP_P = 0.9  # Nucleus sampling
 DEFAULT_TOP_K = 40  # Top-k sampling
 DEFAULT_MAX_TOKENS = 128000  # Maximum tokens in response
@@ -81,7 +81,7 @@ PROMPTS_LOG_PATH = LOG_DIR / "prompts.log"  # LLM interaction logs
 # Agent Settings
 # ============================================================================
 # Available agent types
-AVAILABLE_AGENTS = ["auto", "react", "plan_execute", "ultrawork", "chat"]
+AVAILABLE_AGENTS = ["auto", "react", "plan_execute", "chat"]
 DEFAULT_AGENT = "auto"
 
 # ReAct Agent Settings
@@ -112,14 +112,12 @@ AVAILABLE_TOOLS = [
     "websearch",
     "python_coder",
     "rag",
-    "ppt_maker",
 ]
 
 TOOL_MODELS = {
     "websearch": "gpt-oss:20b",  # Web search summarization
     "python_coder": "gpt-oss:20b",  # Code generation
     "rag": "gpt-oss:20b",  # Document retrieval
-    "ppt_maker": "gpt-oss:20b",  # Presentation markdown generation
 }
 
 # Tool-specific Model Parameters
@@ -140,11 +138,6 @@ TOOL_PARAMETERS = {
         "max_tokens": 30000,
         "timeout": 864000,  # 10 days for RAG retrieval
     },
-    "ppt_maker": {
-        "temperature": 0.7,
-        "max_tokens": 30000,
-        "timeout": 864000,  # 10 days for generation + export
-    },
 }
 
 # Default tool timeout (seconds) - 10 days
@@ -164,22 +157,16 @@ WEBSEARCH_MAX_RESULTS = 5  # Maximum search results for ReAct agent
 # ============================================================================
 # Python Coder Tool Settings
 # ============================================================================
-# Execution mode: "native", "nanocoder", or "opencode"
+# Execution mode: "native" or "opencode"
 # - native: Direct Python code execution (fast, no LLM overhead)
-# - nanocoder: Natural language to code using nanocoder CLI (autonomous coding)
 # - opencode: Natural language to code using opencode AI coding agent (recommended)
-PYTHON_EXECUTOR_MODE: Literal["native", "nanocoder", "opencode"] = "opencode"
+PYTHON_EXECUTOR_MODE: Literal["native", "opencode"] = "opencode"
 
 # Native executor settings
 PYTHON_EXECUTOR_TIMEOUT = 864000  # Execution timeout in seconds (10 days)
 PYTHON_EXECUTOR_MAX_OUTPUT_SIZE = 1024 * 1024 * 10  # 10MB max output
 PYTHON_WORKSPACE_DIR = SCRATCH_DIR  # Uses session scratch directory
 PYTHON_CODER_TIMEOUT = 864000  # Timeout for ReAct agent tool call (10 days)
-
-# Nanocoder settings
-NANOCODER_PATH = "nanocoder"  # Path to nanocoder binary (globally installed)
-NANOCODER_CONFIG_DIR = Path(".nanocoder")  # Nanocoder config directory
-NANOCODER_TIMEOUT = 864000  # Nanocoder execution timeout in seconds (10 days)
 
 # OpenCode settings
 OPENCODE_PATH: str = "opencode"  # Path to opencode binary (globally installed via npm)
@@ -218,38 +205,6 @@ RAG_DEFAULT_COLLECTION = "default"  # Default collection name
 RAG_SUPPORTED_FORMATS = [".txt", ".pdf", ".docx", ".md", ".json", ".csv"]
 
 # ============================================================================
-# PPT Maker Tool Settings
-# ============================================================================
-# Marp CLI path (use npx if not globally installed)
-PPT_MAKER_MARP_CLI = "npx -y @marp-team/marp-cli"  # -y for auto-install
-
-# Marp Theme Settings
-PPT_MAKER_DEFAULT_THEME = "gaia"  # "default", "gaia", "uncover"
-PPT_MAKER_THEMES = ["default", "gaia", "uncover"]  # Available themes
-
-# Presentation Settings
-PPT_MAKER_PAGINATE = True  # Show page numbers
-PPT_MAKER_DEFAULT_FOOTER = ""  # Default footer text (empty = no footer)
-PPT_MAKER_DEFAULT_HEADER = ""  # Default header text (empty = no header)
-
-# Export Settings
-PPT_MAKER_EXPORT_PDF = True  # Export to PDF
-PPT_MAKER_EXPORT_PPTX = True  # Export to PPTX
-PPT_MAKER_ALLOW_LOCAL_FILES = True  # Allow local file embedding
-
-# Limits
-PPT_MAKER_MAX_SLIDES = 100  # Maximum slides per presentation
-PPT_MAKER_TIMEOUT = 120  # Marp CLI execution timeout (seconds)
-
-# Workspace (uses session scratch directory)
-PPT_MAKER_WORKSPACE_DIR = SCRATCH_DIR  # Same as python_coder
-
-# LLM Settings for markdown generation
-PPT_MAKER_MODEL = "gpt-oss:20b"  # Model for generating markdown
-PPT_MAKER_TEMPERATURE = 0.7  # Temperature for generation
-PPT_MAKER_MAX_TOKENS = 4096  # Max tokens for markdown generation
-
-# ============================================================================
 # Session Settings
 # ============================================================================
 MAX_CONVERSATION_HISTORY = 50  # Maximum messages to keep in conversation history
@@ -281,4 +236,3 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 RAG_DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
 RAG_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 RAG_METADATA_DIR.mkdir(parents=True, exist_ok=True)
-NANOCODER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)

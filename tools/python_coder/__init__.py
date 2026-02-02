@@ -1,6 +1,6 @@
 """
 Python Coder Tool - Factory for selecting execution backend
-Supports both native subprocess execution and Nanocoder
+Supports both native subprocess execution and OpenCode
 """
 import config
 from tools.python_coder.base import BasePythonExecutor
@@ -14,21 +14,16 @@ def get_python_executor(session_id: str) -> BasePythonExecutor:
         session_id: Session ID for workspace isolation
 
     Returns:
-        Python executor instance (Native or Nanocoder)
+        Python executor instance (Native or OpenCode)
 
     Raises:
         ValueError: If PYTHON_EXECUTOR_MODE is invalid
-        RuntimeError: If Nanocoder mode is selected but not installed
     """
     mode = config.PYTHON_EXECUTOR_MODE
 
     if mode == "native":
         from tools.python_coder.native_tool import NativePythonExecutor
         return NativePythonExecutor(session_id)
-
-    elif mode == "nanocoder":
-        from tools.python_coder.nanocoder_tool import NanocoderExecutor
-        return NanocoderExecutor(session_id)
 
     elif mode == "opencode":
         from tools.python_coder.opencode_tool import OpenCodeExecutor
@@ -37,7 +32,7 @@ def get_python_executor(session_id: str) -> BasePythonExecutor:
     else:
         raise ValueError(
             f"Invalid PYTHON_EXECUTOR_MODE: '{mode}'. "
-            f"Must be 'native', 'nanocoder', or 'opencode'"
+            f"Must be 'native' or 'opencode'"
         )
 
 

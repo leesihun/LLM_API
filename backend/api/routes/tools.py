@@ -78,17 +78,6 @@ class RAGUploadRequest(BaseModel):
     collection_name: str
 
 
-class PPTMakerRequest(BaseModel):
-    """PPT maker request"""
-    instruction: str
-    session_id: str
-    theme: Optional[str] = None
-    footer: Optional[str] = None
-    header: Optional[str] = None
-    timeout: Optional[int] = None
-    context: Optional[ToolContext] = None
-
-
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -161,11 +150,6 @@ def list_tools(current_user: Optional[dict] = Depends(get_optional_user)):
         {
             "name": "rag",
             "description": "Retrieve information from document collections",
-            "enabled": True
-        },
-        {
-            "name": "ppt_maker",
-            "description": "Create professional presentations from natural language",
             "enabled": True
         }
     ]
@@ -515,25 +499,82 @@ async def upload_to_rag(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload document to RAG collection (requires authentication)"""
+    """Upload document to RAG collection (requires authentication)
+
+    Supports text files (txt, md, json, csv) and binary files (pdf, docx).
+    Binary files are saved to temp location for processing.
+    """
+    import tempfile
+    import os
+
     username = current_user["username"]
+
+    print(f"\n[RAG UPLOAD] Uploading file: {file.filename}")
+    print(f"[RAG UPLOAD] Collection: {collection_name}")
+    print(f"[RAG UPLOAD] User: {username}")
 
     try:
         tool = RAGTool(username=username)
 
         # Read file content
         content = await file.read()
-        content_str = content.decode('utf-8')
 
-        # Upload to collection
-        result = tool.upload_document(
-            collection_name=collection_name,
-            document_path=file.filename,
-            document_content=content_str
-        )
+        # Get file extension
+        file_ext = Path(file.filename).suffix.lower()
 
+        # Binary formats that need file-based processing
+        binary_formats = ['.pdf', '.docx']
+
+        if file_ext in binary_formats:
+            # Save to temp file for binary processing
+            print(f"[RAG UPLOAD] Binary format detected ({file_ext}), saving to temp file")
+
+            # Create temp file with proper extension
+            with tempfile.NamedTemporaryFile(
+                mode='wb',
+                suffix=file_ext,
+                delete=False
+            ) as tmp_file:
+                tmp_file.write(content)
+                tmp_path = tmp_file.name
+
+            print(f"[RAG UPLOAD] Temp file created: {tmp_path}")
+
+            try:
+                # Upload from file path (RAGTool will read the binary file)
+                result = tool.upload_document(
+                    collection_name=collection_name,
+                    document_path=tmp_path,
+                    document_content=None,  # Let tool read from file
+                    document_name=file.filename  # Use original filename
+                )
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(tmp_path)
+                    print(f"[RAG UPLOAD] Temp file cleaned up")
+                except Exception as cleanup_error:
+                    print(f"[RAG UPLOAD] Warning: Failed to clean up temp file: {cleanup_error}")
+        else:
+            # Text-based formats can be passed directly
+            print(f"[RAG UPLOAD] Text format detected ({file_ext}), decoding as UTF-8")
+            try:
+                content_str = content.decode('utf-8')
+            except UnicodeDecodeError:
+                # Try with latin-1 as fallback
+                content_str = content.decode('latin-1')
+
+            # Upload with content string
+            result = tool.upload_document(
+                collection_name=collection_name,
+                document_path=file.filename,
+                document_content=content_str
+            )
+
+        print(f"[RAG UPLOAD] Upload result: {result}")
         return result
     except Exception as e:
+        print(f"[RAG UPLOAD] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -676,109 +717,4 @@ async def query_rag(
             data={},
             metadata={"execution_time": time.time() - start_time},
             error=str(e)
-        )
-
-
-@router.post("/ppt_maker", response_model=ToolResponse)
-async def ppt_maker(
-    request: PPTMakerRequest,
-    current_user: Optional[dict] = Depends(get_optional_user)
-):
-    """
-    Create presentation from natural language instruction
-
-    NEVER raises HTTP exceptions - always returns ToolResponse with error details
-
-    Args:
-        request: Presentation creation request
-        current_user: Authenticated user (optional)
-
-    Returns:
-        Presentation files with metadata
-    """
-    print("\n" + "=" * 80)
-    print("[TOOLS API] /api/tools/ppt_maker endpoint called")
-    print("=" * 80)
-    print(f"User: {current_user['username'] if current_user else 'guest'}")
-    print(f"Session ID: {request.session_id}")
-    print(f"Instruction: {request.instruction[:100]}...")
-    print(f"Theme: {request.theme or 'default'}")
-    print(f"Context provided: {bool(request.context)}")
-
-    start_time = time.time()
-
-    try:
-        # Import here to avoid circular imports
-        from tools.ppt_maker import PPTMakerTool
-
-        print(f"\n[TOOLS API] Initializing PPTMakerTool...")
-        tool = PPTMakerTool(session_id=request.session_id)
-        print(f"[TOOLS API] [OK] Tool initialized")
-
-        # Create presentation
-        print(f"\n[TOOLS API] Calling tool.create_presentation()...")
-        result = tool.create_presentation(
-            instruction=request.instruction,
-            theme=request.theme,
-            footer=request.footer,
-            header=request.header,
-            timeout=request.timeout
-        )
-        print(f"[TOOLS API] [OK] Presentation created")
-
-        # Format answer
-        answer = f"Presentation created successfully with {result['num_slides']} slides."
-        answer += f"\n\nFiles generated:"
-        answer += f"\n- Markdown: {Path(result['markdown_file']).name}"
-        if result['pdf_file']:
-            answer += f"\n- PDF: {Path(result['pdf_file']).name}"
-        if result['pptx_file']:
-            answer += f"\n- PPTX: {Path(result['pptx_file']).name}"
-
-        execution_time = time.time() - start_time
-
-        return ToolResponse(
-            success=True,
-            answer=answer,
-            data={
-                "markdown": result["markdown"],
-                "markdown_file": result["markdown_file"],
-                "pdf_file": result["pdf_file"],
-                "pptx_file": result["pptx_file"],
-                "num_slides": result["num_slides"],
-                "workspace": result["workspace"],
-                "files": result["files"]
-            },
-            metadata={
-                "execution_time": execution_time,
-                "theme": request.theme or config.PPT_MAKER_DEFAULT_THEME,
-                "num_slides": result["num_slides"]
-            }
-        )
-
-    except Exception as e:
-        execution_time = time.time() - start_time
-        error_msg = str(e)
-
-        print(f"[TOOLS API] ERROR: {error_msg}")
-
-        # Print full traceback for debugging
-        import traceback
-        print(f"[TOOLS API] Full traceback:")
-        traceback.print_exc()
-
-        return ToolResponse(
-            success=False,
-            answer=f"Presentation creation failed: {error_msg}",
-            data={
-                "markdown": "",
-                "markdown_file": "",
-                "pdf_file": "",
-                "pptx_file": "",
-                "num_slides": 0,
-                "workspace": "",
-                "files": {}
-            },
-            metadata={"execution_time": execution_time},
-            error=error_msg
         )

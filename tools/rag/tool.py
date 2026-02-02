@@ -109,7 +109,8 @@ class RAGTool:
         self,
         collection_name: str,
         document_path: str,
-        document_content: Optional[str] = None
+        document_content: Optional[str] = None,
+        document_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Upload and index a document
@@ -118,6 +119,7 @@ class RAGTool:
             collection_name: Collection to add to
             document_path: Path to document or document name
             document_content: Document content (if providing directly)
+            document_name: Optional override for document name (useful when uploading from temp files)
 
         Returns:
             Upload result
@@ -146,9 +148,9 @@ class RAGTool:
                 }
 
             document_content = self._read_document(doc_path)
-            doc_name = doc_path.name
+            doc_name = document_name if document_name else doc_path.name
         else:
-            doc_name = Path(document_path).name
+            doc_name = document_name if document_name else Path(document_path).name
 
         # Chunk document
         chunks = self._chunk_text(document_content)

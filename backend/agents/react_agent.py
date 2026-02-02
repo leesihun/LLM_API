@@ -22,9 +22,7 @@ class ReActAgent(Agent):
     def _get_prompt_suffix(self) -> str:
         """Get prompt file suffix based on executor mode"""
         mode = config.PYTHON_EXECUTOR_MODE
-        if mode == "nanocoder":
-            return "_nanocoder"
-        elif mode == "opencode":
+        if mode == "opencode":
             return "_opencode"
         return ""  # native mode uses base prompts
 
@@ -192,7 +190,7 @@ class ReActAgent(Agent):
 
         # Select prompt based on python executor mode
         # Native mode: generates Python code directly
-        # Nanocoder/OpenCode mode: generates natural language instructions
+        # OpenCode mode: generates natural language instructions
         suffix = self._get_prompt_suffix()
         system_prompt_file = f"agents/react_system{suffix}.txt"
         thought_prompt_file = f"agents/react_thought{suffix}.txt"
@@ -693,7 +691,7 @@ class ReActAgent(Agent):
                 # Native mode: extract Python code from fenced blocks
                 code_input = self._extract_code_from_fenced_block(clean_input)
             else:
-                # OpenCode/Nanocoder mode: pass natural language instruction directly
+                # OpenCode mode: pass natural language instruction directly
                 # DO NOT extract from fenced blocks - preserve full instruction
                 code_input = clean_input
                 print(f"[REACT] {config.PYTHON_EXECUTOR_MODE} mode: passing natural language instruction ({len(code_input)} chars)")

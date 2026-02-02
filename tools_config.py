@@ -13,7 +13,7 @@ import config
 
 def get_python_coder_description() -> str:
     """Get python_coder description based on executor mode"""
-    if config.PYTHON_EXECUTOR_MODE in ["nanocoder", "opencode"]:
+    if config.PYTHON_EXECUTOR_MODE == "opencode":
         return (
             "Execute code tasks using an AI coding agent. Provide detailed natural language "
             "instructions describing what code to write and execute. The agent will generate "
@@ -32,7 +32,7 @@ def get_python_coder_description() -> str:
 
 def get_python_coder_input_description() -> str:
     """Get python_coder input parameter description based on executor mode"""
-    if config.PYTHON_EXECUTOR_MODE in ["nanocoder", "opencode"]:
+    if config.PYTHON_EXECUTOR_MODE == "opencode":
         return (
             "Detailed natural language instruction describing the code task. "
             "Be specific about: what the code should do, expected outputs, "
@@ -137,48 +137,6 @@ TOOL_SCHEMAS = {
             "data": "Dictionary with optimized_query, documents, and num_results",
             "metadata": "Execution metadata including timing and collection name"
         }
-    },
-
-    "ppt_maker": {
-        "name": "ppt_maker",
-        "description": "Create professional presentations from natural language descriptions. Generates PDF and PPTX files with customizable themes and layouts. Use this when user asks to create slides, presentations, or decks.",
-        "endpoint": "/api/tools/ppt_maker",
-        "method": "POST",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "instruction": {
-                    "type": "string",
-                    "description": "Natural language description of the presentation to create (e.g., 'Create a 5-slide presentation about machine learning basics')"
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Session ID for workspace isolation (required)"
-                },
-                "theme": {
-                    "type": "string",
-                    "description": "Marp theme to use: 'default', 'gaia', or 'uncover' (optional, default: gaia)",
-                    "default": "gaia"
-                },
-                "footer": {
-                    "type": "string",
-                    "description": "Footer text for all slides (optional)",
-                    "default": ""
-                },
-                "header": {
-                    "type": "string",
-                    "description": "Header text for all slides (optional)",
-                    "default": ""
-                }
-            },
-            "required": ["instruction", "session_id"]
-        },
-        "returns": {
-            "success": "Boolean indicating if presentation was created successfully",
-            "answer": "Human-readable summary of presentation creation",
-            "data": "Dictionary with markdown, pdf_path, pptx_path, num_slides, files",
-            "metadata": "Execution metadata including timing and theme"
-        }
     }
 }
 
@@ -229,7 +187,7 @@ def format_tools_for_llm() -> str:
         Formatted string describing all available tools
     """
     tools = []
-    tools.append('websearch, python_coder, rag, ppt_maker')
+    tools.append('websearch, python_coder, rag')
 
     return "\n\n".join(tools)
 
