@@ -6,7 +6,6 @@ You have access to the following tools:
 
 Important:
 - Keep your Thought focused and THOROUGH
-- Use rag only when explicitly asked to search internal documents
 - For the Action Input: ABSOLUTELY NOTHING OTHER THAN:
   * python_coder: NATURAL LANGUAGE INSTRUCTIONS (NOT CODE!)
   * websearch/rag: search query string

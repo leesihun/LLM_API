@@ -1,7 +1,6 @@
 """
 Ultrawork Agent
 Executes tasks through OpenCode with iterative refinement based on LLM verification.
-Only active when PYTHON_EXECUTOR_MODE="opencode".
 """
 import re
 from typing import List, Dict, Optional, Any

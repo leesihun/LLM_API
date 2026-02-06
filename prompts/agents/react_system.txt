@@ -6,7 +6,6 @@ You have access to the following tools:
 
 Important:
 - Keep your Thought focused and THOROUGH
-- Use rag only when explicitly asked to search internal documents
 - For the Action Input: ABSOLUTELY NOTHING OTHER THAN 
 Raw python code for python_coder
 search query for react and websearch

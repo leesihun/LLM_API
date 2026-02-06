@@ -81,7 +81,7 @@ PROMPTS_LOG_PATH = LOG_DIR / "prompts.log"  # LLM interaction logs
 # Agent Settings
 # ============================================================================
 # Available agent types
-AVAILABLE_AGENTS = ["auto", "react", "plan_execute", "chat"]
+AVAILABLE_AGENTS = ["auto", "react", "plan_execute", "ultrawork", "chat"]
 DEFAULT_AGENT = "auto"
 
 # ReAct Agent Settings
@@ -198,7 +198,7 @@ RAG_METADATA_DIR = Path("data/rag_metadata")  # Metadata storage
 RAG_EMBEDDING_MODEL = "/scratch0/LLM_models/offline_models/bge-base-en-v1.5"  # Recommended: best accuracy/speed tradeoff
 # Option 2: Use absolute path to local model directory
 # RAG_EMBEDDING_MODEL = r"C:\path\to\your\model\bge-base-en-v1.5"
-RAG_EMBEDDING_DEVICE = "cpu"  # "cpu" or "cuda"
+RAG_EMBEDDING_DEVICE = "cuda"  # "cpu" or "cuda"
 RAG_EMBEDDING_BATCH_SIZE = 32
 
 # FAISS Settings

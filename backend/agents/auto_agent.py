@@ -15,7 +15,7 @@ from backend.agents.ultrawork_agent import UltraworkAgent
 class AutoAgent(Agent):
     """
     Auto-routing agent that uses LLM to decide which agent to use.
-    When PYTHON_EXECUTOR_MODE="opencode", plan_execute is replaced by ultrawork.
+    Routes to chat, react, plan_execute, or ultrawork based on task characteristics.
     """
 
     def __init__(self, model: str = None, temperature: float = None):
@@ -94,15 +94,13 @@ class AutoAgent(Agent):
         # Parse response
         response_lower = response.strip().lower()
 
-        if "plan_execute" in response_lower:
-            # When opencode mode is enabled, use ultrawork instead of plan_execute
-            if config.PYTHON_EXECUTOR_MODE == "opencode":
-                return "ultrawork"
+        if "ultrawork" in response_lower:
+            return "ultrawork"
+        elif "plan_execute" in response_lower:
             return "plan_execute"
         elif "react" in response_lower:
             return "react"
         elif "chat" in response_lower:
             return "chat"
         else:
-            # Default to chat if unclear
             return "chat"
