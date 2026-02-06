@@ -669,7 +669,7 @@ class RAGTool:
                 import PyPDF2
                 text = []
                 with open(path, 'rb') as f:
-                    reader = PyPDF2.PdfReader(f)
+                    reader = PyPDF2.PdfReader(f, strict=False)
                     for page in reader.pages:
                         text.append(page.extract_text())
                 return '\n'.join(text)
