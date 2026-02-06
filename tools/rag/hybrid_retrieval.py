@@ -109,14 +109,15 @@ class RerankerCrossEncoder:
     Two-stage retrieval: Initial retrieval + reranking with cross-encoder
 
     This can improve accuracy by 15-20% compared to single-stage retrieval.
+    Uses a multilingual cross-encoder to support Korean + English queries and documents.
     """
 
-    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def __init__(self, model_name: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"):
         """
         Initialize reranker
 
         Args:
-            model_name: Cross-encoder model for reranking
+            model_name: Cross-encoder model for reranking (must support target languages)
         """
         self.model_name = model_name
         self.model = None

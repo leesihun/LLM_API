@@ -664,6 +664,16 @@ class RAGTool:
             df = pd.read_csv(path)
             return df.to_string()
 
+        elif path.suffix in ['.xlsx', '.xls']:
+            import pandas as pd
+            excel_file = pd.ExcelFile(path)
+            parts = []
+            for sheet_name in excel_file.sheet_names:
+                df = pd.read_excel(path, sheet_name=sheet_name)
+                parts.append(f"[Sheet: {sheet_name}]")
+                parts.append(df.to_string())
+            return '\n\n'.join(parts)
+
         elif path.suffix == '.pdf':
             from langchain_community.document_loaders import PyPDFLoader
             loader = PyPDFLoader(str(path))

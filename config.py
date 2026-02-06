@@ -187,17 +187,20 @@ RAG_INDEX_DIR = Path("data/rag_indices")  # FAISS indices storage
 RAG_METADATA_DIR = Path("data/rag_metadata")  # Metadata storage
 
 # Embedding Model Settings
-# 🔥 RECOMMENDED MODELS (ranked by accuracy, 2026):
-# 1. "BAAI/bge-large-en-v1.5" - Best accuracy for general English (1024 dim)
-# 2. "BAAI/bge-base-en-v1.5" - Good accuracy, faster (768 dim)
-# 3. "sentence-transformers/all-MiniLM-L6-v2" - Lightweight, decent (384 dim)
-# 4. "intfloat/e5-large-v2" - Strong performance (1024 dim)
-# 5. "thenlper/gte-large" - Excellent for technical docs (1024 dim)
+# RECOMMENDED MODELS (ranked by accuracy, 2026):
 #
-# Option 1: Use HuggingFace model name (requires internet on first run or cached model)
-RAG_EMBEDDING_MODEL = "/scratch0/LLM_models/offline_models/bge-base-en-v1.5"  # Recommended: best accuracy/speed tradeoff
-# Option 2: Use absolute path to local model directory
-# RAG_EMBEDDING_MODEL = r"C:\path\to\your\model\bge-base-en-v1.5"
+# Multilingual (Korean + English + 100 languages):
+# 1. "BAAI/bge-m3" - Best multilingual, cross-lingual retrieval (1024 dim)
+# 2. "intfloat/multilingual-e5-large" - Strong multilingual (1024 dim)
+#
+# English-only:
+# 3. "BAAI/bge-large-en-v1.5" - Best accuracy for English-only (1024 dim)
+# 4. "BAAI/bge-base-en-v1.5" - Good English accuracy, faster (768 dim)
+# 5. "sentence-transformers/all-MiniLM-L6-v2" - Lightweight, decent (384 dim)
+#
+# NOTE: Switching models requires rebuilding all FAISS indices (re-upload documents).
+# Use HuggingFace model name (requires internet) or absolute path to local model directory.
+RAG_EMBEDDING_MODEL = "/scratch0/LLM_models/offline_models/bge-m3"  # Multilingual: Korean + English cross-lingual retrieval
 RAG_EMBEDDING_DEVICE = "cuda"  # "cpu" or "cuda"
 RAG_EMBEDDING_BATCH_SIZE = 32
 
@@ -209,7 +212,7 @@ RAG_SIMILARITY_METRIC = "cosine"  # "cosine", "l2", or "ip" (inner product)
 RAG_CHUNK_SIZE = 512  # Characters per chunk (optimal: 200-500 for general docs)
 RAG_CHUNK_OVERLAP = 50  # Overlap between chunks
 RAG_CHUNKING_STRATEGY = "semantic"  # "fixed", "semantic" (best), "recursive", "sentence"
-RAG_MAX_RESULTS = 5  # Maximum documents to retrieve
+RAG_MAX_RESULTS = 20  # Maximum documents to retrieve
 RAG_MIN_SCORE_THRESHOLD = 0.3  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
 RAG_CONTEXT_WINDOW = 1  # Number of neighboring chunks to include around each match (0 = matched chunk only)
 
@@ -219,19 +222,19 @@ RAG_HYBRID_ALPHA = 0.5  # Weight: 0.0=pure keyword, 1.0=pure semantic, 0.5=balan
 
 # Reranking Settings (RECOMMENDED for 15-20% additional accuracy improvement)
 RAG_USE_RERANKING = True  # Enable two-stage retrieval with reranking
-RAG_RERANKER_MODEL = "/scratch0/LLM_models/offline_models/ms-marco-MiniLM-L-6-v2"  # Cross-encoder for reranking
-RAG_RERANKING_TOP_K = 10  # Retrieve more initially, then rerank to top-5
+RAG_RERANKER_MODEL = "/scratch0/LLM_models/offline_models/mmarco-mMiniLMv2-L12-H384-v1"  # Multilingual cross-encoder for reranking
+RAG_RERANKING_TOP_K = 50  # Retrieve more initially, then rerank to top-5
 
 # Query Optimization
-RAG_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "  # BGE model instruction prefix for queries
+RAG_QUERY_PREFIX = ""  # bge-m3 uses built-in instruction handling; no manual prefix needed
 RAG_USE_MULTI_QUERY = True  # Generate multiple query variants and merge results via RRF
-RAG_MULTI_QUERY_COUNT = 3  # Number of query variants to generate (semantic, keyword, aspect)
+RAG_MULTI_QUERY_COUNT = 6  # Number of bilingual query variants (3 angles x 2 languages)
 RAG_QUERY_EXPANSION = False  # Expand query with synonyms/related terms (experimental)
 
 RAG_DEFAULT_COLLECTION = "default"  # Default collection name
 
 # Supported document formats
-RAG_SUPPORTED_FORMATS = [".txt", ".pdf", ".docx", ".md", ".json", ".csv"]
+RAG_SUPPORTED_FORMATS = [".txt", ".pdf", ".docx", ".xlsx", ".xls", ".md", ".json", ".csv"]
 
 # ============================================================================
 # Session Settings

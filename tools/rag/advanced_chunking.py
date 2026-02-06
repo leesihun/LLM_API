@@ -80,10 +80,11 @@ class AdvancedChunker:
         """
         Chunk by sentences, respecting chunk_size limit
 
-        This prevents cutting mid-sentence, improving semantic coherence
+        This prevents cutting mid-sentence, improving semantic coherence.
+        Supports both half-width (.!?) and full-width Korean punctuation.
         """
-        # Split into sentences
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        # Split into sentences (half-width and full-width punctuation)
+        sentences = re.split(r'(?<=[.!?\u3002\uFF01\uFF1F])\s+', text)
 
         chunks = []
         current_chunk = []
@@ -123,8 +124,8 @@ class AdvancedChunker:
             # Fallback to sentence-aware if no embedding model
             return self._sentence_aware_chunking(text)
 
-        # Split into sentences
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        # Split into sentences (half-width and full-width punctuation)
+        sentences = re.split(r'(?<=[.!?\u3002\uFF01\uFF1F])\s+', text)
 
         if len(sentences) <= 1:
             return [text]
