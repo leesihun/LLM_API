@@ -80,12 +80,20 @@ class RAGTool:
         index_path = self.user_index_dir / f"{collection_name}.index"
         metadata_path = self.user_metadata_dir / f"{collection_name}.json"
 
-        if collection_dir.exists():
-            return {
-                "success": False,
-                "error": f"Collection '{collection_name}' already exists"
-            }
+        # Check if collection already exists with valid metadata
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    existing_metadata = json.load(f)
+                return {
+                    "success": False,
+                    "error": f"Collection '{collection_name}' already exists with {len(existing_metadata.get('documents', {}))} documents"
+                }
+            except Exception:
+                # Metadata file exists but is corrupted, recreate it
+                print(f"[RAG] Warning: Corrupted metadata found for '{collection_name}', recreating...")
 
+        # Create collection directory
         collection_dir.mkdir(parents=True, exist_ok=True)
 
         # Create empty metadata
@@ -96,8 +104,14 @@ class RAGTool:
             "chunk_count": 0
         }
 
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2)
+        try:
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to create metadata file: {str(e)}"
+            }
 
         return {
             "success": True,
@@ -129,10 +143,32 @@ class RAGTool:
         collection_dir = self.user_docs_dir / collection_name
         metadata_path = self.user_metadata_dir / f"{collection_name}.json"
 
+        # Create collection if it doesn't exist
         if not collection_dir.exists():
-            return {
-                "success": False,
-                "error": f"Collection '{collection_name}' does not exist"
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[RAG] Created new collection directory: {collection_dir}")
+
+        # Load or create metadata
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                print(f"[RAG] Loaded existing metadata ({len(metadata.get('documents', {}))} documents)")
+            except Exception as e:
+                print(f"[RAG] Warning: Failed to load metadata, creating new: {e}")
+                metadata = {
+                    "collection_name": collection_name,
+                    "created_at": time.time(),
+                    "documents": {},
+                    "chunk_count": 0
+                }
+        else:
+            print(f"[RAG] Creating new metadata file")
+            metadata = {
+                "collection_name": collection_name,
+                "created_at": time.time(),
+                "documents": {},
+                "chunk_count": 0
             }
 
         # Read document
@@ -152,27 +188,33 @@ class RAGTool:
         else:
             doc_name = document_name if document_name else Path(document_path).name
 
+        print(f"[RAG] Processing document: {doc_name}")
+
         # Chunk document
+        print(f"[RAG] Chunking document...")
         chunks = self._chunk_text(document_content)
+        print(f"[RAG] Created {len(chunks)} chunks")
 
         # Generate embeddings (normalized for cosine similarity with IndexFlatIP)
+        print(f"[RAG] Generating embeddings...")
         embeddings = self.embedding_model.encode(
             chunks,
             batch_size=config.RAG_EMBEDDING_BATCH_SIZE,
             show_progress_bar=False,
             normalize_embeddings=True
         )
+        print(f"[RAG] Generated {len(embeddings)} embeddings")
 
         # Load or create index
+        print(f"[RAG] Loading/creating FAISS index...")
         index = self._load_or_create_index(collection_name, self.embedding_dim)
-
-        # Load metadata
-        with open(metadata_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
+        print(f"[RAG] Index loaded (current size: {index.ntotal} vectors)")
 
         # Add to index
         start_idx = index.ntotal
+        print(f"[RAG] Adding embeddings to index (indices {start_idx} to {start_idx + len(embeddings) - 1})...")
         index.add(np.array(embeddings).astype('float32'))
+        print(f"[RAG] Index now has {index.ntotal} vectors")
 
         # Update metadata (include timestamp in hash to avoid collision on re-upload)
         upload_time = time.time()
@@ -187,11 +229,28 @@ class RAGTool:
         metadata["chunk_count"] = index.ntotal
 
         # Save index and metadata
-        self._save_index(index, collection_name)
+        print(f"[RAG] Saving index to disk...")
+        try:
+            self._save_index(index, collection_name)
+            print(f"[RAG] Index saved successfully")
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to save index: {str(e)}"
+            }
 
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2)
+        print(f"[RAG] Saving metadata to disk...")
+        try:
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+            print(f"[RAG] Metadata saved successfully")
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to save metadata: {str(e)}"
+            }
 
+        print(f"[RAG] Upload complete!")
         return {
             "success": True,
             "document_name": doc_name,
@@ -731,6 +790,9 @@ class RAGTool:
     def _save_index(self, index, collection_name: str):
         """Save index"""
         import faiss
+
+        # Ensure index directory exists
+        self.user_index_dir.mkdir(parents=True, exist_ok=True)
 
         index_path = self.user_index_dir / f"{collection_name}.index"
         faiss.write_index(index, str(index_path))
