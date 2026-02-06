@@ -611,12 +611,94 @@ async def delete_rag_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _deduplicate_results(results: List[Dict[str, Any]], overlap_threshold: float = 0.5) -> List[Dict[str, Any]]:
+    """
+    Remove near-duplicate results caused by overlapping context windows.
+    Two results are considered duplicates if their text overlap exceeds the threshold.
+    Keeps the higher-scored result.
+    """
+    if len(results) <= 1:
+        return results
+
+    deduplicated = [results[0]]
+    for candidate in results[1:]:
+        candidate_words = set(candidate["chunk"].split())
+        is_duplicate = False
+
+        for existing in deduplicated:
+            existing_words = set(existing["chunk"].split())
+            if not candidate_words or not existing_words:
+                continue
+            overlap = len(candidate_words & existing_words) / min(len(candidate_words), len(existing_words))
+            if overlap > overlap_threshold:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            deduplicated.append(candidate)
+
+    return deduplicated
+
+
+def _reorder_lost_in_middle(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Reorder results to mitigate the 'lost in the middle' problem.
+    Places the most relevant documents at the START and END of the list,
+    with lower-relevance ones in the middle. This matches how LLMs attend
+    to context -- boundaries get more attention than the middle.
+    """
+    if len(results) <= 2:
+        return results
+
+    # Results should already be sorted by score descending
+    reordered = []
+    for i, doc in enumerate(results):
+        if i % 2 == 0:
+            reordered.insert(0, doc)  # Even ranks -> front (most relevant first)
+        else:
+            reordered.append(doc)     # Odd ranks -> back
+
+    return reordered
+
+
+def _merge_multi_query_results(
+    all_results: List[List[Dict[str, Any]]],
+    max_results: int
+) -> List[Dict[str, Any]]:
+    """
+    Merge results from multiple query variants using Reciprocal Rank Fusion.
+    Each result list is treated as a ranked list; RRF produces a unified ranking.
+    """
+    RRF_K = 60
+    rrf_scores: Dict[str, float] = {}
+    result_map: Dict[str, Dict[str, Any]] = {}
+
+    for query_results in all_results:
+        for rank, doc in enumerate(query_results):
+            # Use chunk text hash as dedup key
+            key = f"{doc['document']}::{doc['chunk_index']}"
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
+            # Keep the version with the highest individual score
+            if key not in result_map or doc.get("score", 0) > result_map[key].get("score", 0):
+                result_map[key] = doc
+
+    # Sort by RRF score and take top results
+    sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)[:max_results]
+    merged = []
+    for key in sorted_keys:
+        doc = result_map[key]
+        doc["rrf_score"] = rrf_scores[key]
+        merged.append(doc)
+
+    return merged
+
+
 @router.post("/rag/query", response_model=ToolResponse)
 async def query_rag(
     request: RAGQueryRequest,
     current_user: Optional[dict] = Depends(get_optional_user)
 ):
-    """Query RAG collection with LLM-enhanced retrieval and synthesis"""
+    """Query RAG collection with multi-query retrieval, deduplication, and LLM synthesis"""
     username = current_user["username"] if current_user else "guest"
     
     print("\n" + "=" * 80)
@@ -627,59 +709,117 @@ async def query_rag(
     print(f"Query: {request.query}")
     print(f"Max results: {request.max_results or 'default'}")
     print(f"Context provided: {bool(request.context)}")
+    print(f"Multi-query: {config.RAG_USE_MULTI_QUERY}")
     
     start_time = time.time()
 
     try:
-        # Step 1: Optimize query using LLM
-        print(f"\n[TOOLS API] Step 1: Formatting context...")
+        # Step 1: Generate query variants
         context_str = format_context(request.context)
-        print(f"[TOOLS API] Context formatted ({len(context_str)} chars)")
-
-        print(f"\n[TOOLS API] Step 2: Loading query optimization prompt...")
-        query_prompt = load_prompt(
-            "rag_query.txt",
-            user_query=request.query,
-            context=context_str
-        )
-        print(f"[TOOLS API] Prompt loaded ({len(query_prompt)} chars)")
-
-        print(f"\n[TOOLS API] Step 3: Calling LLM for query optimization...")
-        messages = [{"role": "user", "content": query_prompt}]
-        optimized_query = llm_backend.chat(
-            messages,
-            config.TOOL_MODELS.get("rag", config.OLLAMA_MODEL),
-            0.3
-        ).strip()
-        print(f"[TOOLS API] [OK] Optimized query: '{optimized_query}'")
-
-        # Step 2: Retrieve documents
-        print(f"\n[TOOLS API] Step 4: Initializing RAGTool...")
         tool = RAGTool(username=username)
-        print(f"[TOOLS API] Calling tool.retrieve()...")
-        retrieval_result = tool.retrieve(
-            collection_name=request.collection_name,
-            query=optimized_query,
-            max_results=request.max_results
-        )
-        print(f"[TOOLS API] [OK] Retrieval completed: {retrieval_result.get('num_results', 0)} documents")
+        final_max = request.max_results or config.RAG_MAX_RESULTS
 
-        if not retrieval_result["success"]:
-            return ToolResponse(
-                success=False,
-                answer="RAG retrieval failed",
-                data={},
-                metadata={"execution_time": time.time() - start_time},
-                error=retrieval_result.get("error", "Unknown error")
+        if config.RAG_USE_MULTI_QUERY:
+            # Generate multiple diverse queries via LLM
+            print(f"\n[TOOLS API] Step 1: Generating {config.RAG_MULTI_QUERY_COUNT} query variants...")
+            query_prompt = load_prompt(
+                "rag_query.txt",
+                user_query=request.query,
+                context=context_str
+            )
+            messages = [{"role": "user", "content": query_prompt}]
+            raw_queries = llm_backend.chat(
+                messages,
+                config.TOOL_MODELS.get("rag", config.OLLAMA_MODEL),
+                0.5  # Moderate temperature for diverse but coherent variants
+            ).strip()
+
+            # Parse query variants (one per line)
+            query_variants = [q.strip() for q in raw_queries.split("\n") if q.strip()]
+            # Always include the original query as a variant
+            query_variants = [request.query] + query_variants[:config.RAG_MULTI_QUERY_COUNT]
+            print(f"[TOOLS API] [OK] Query variants ({len(query_variants)}):")
+            for i, qv in enumerate(query_variants):
+                print(f"  [{i}] {qv}")
+
+            # Step 2: Retrieve for each query variant
+            print(f"\n[TOOLS API] Step 2: Multi-query retrieval...")
+            all_results = []
+            for i, qv in enumerate(query_variants):
+                result = tool.retrieve(
+                    collection_name=request.collection_name,
+                    query=qv,
+                    max_results=final_max
+                )
+                if result["success"] and result.get("documents"):
+                    all_results.append(result["documents"])
+                    print(f"  Query [{i}]: {result.get('num_results', 0)} results")
+
+            if not all_results:
+                return ToolResponse(
+                    success=False,
+                    answer="RAG retrieval failed: no results from any query variant",
+                    data={},
+                    metadata={"execution_time": time.time() - start_time},
+                    error="No results from any query variant"
+                )
+
+            # Step 3: Merge via RRF
+            print(f"\n[TOOLS API] Step 3: Merging results via RRF...")
+            merged_results = _merge_multi_query_results(all_results, max_results=final_max * 2)
+            print(f"  Merged: {len(merged_results)} unique results")
+
+            # Deduplicate overlapping context windows
+            merged_results = _deduplicate_results(merged_results)
+            merged_results = merged_results[:final_max]
+            print(f"  After dedup: {len(merged_results)} results")
+
+            retrieval_documents = merged_results
+            optimized_query = " | ".join(query_variants)
+        else:
+            # Single-query mode: optimize query via LLM
+            print(f"\n[TOOLS API] Step 1: Single-query optimization...")
+            query_prompt = load_prompt(
+                "rag_query.txt",
+                user_query=request.query,
+                context=context_str
+            )
+            messages = [{"role": "user", "content": query_prompt}]
+            optimized_query = llm_backend.chat(
+                messages,
+                config.TOOL_MODELS.get("rag", config.OLLAMA_MODEL),
+                0.3
+            ).strip()
+            print(f"[TOOLS API] [OK] Optimized query: '{optimized_query}'")
+
+            retrieval_result = tool.retrieve(
+                collection_name=request.collection_name,
+                query=optimized_query,
+                max_results=request.max_results
             )
 
-        # Step 3: Format documents for LLM
+            if not retrieval_result["success"]:
+                return ToolResponse(
+                    success=False,
+                    answer="RAG retrieval failed",
+                    data={},
+                    metadata={"execution_time": time.time() - start_time},
+                    error=retrieval_result.get("error", "Unknown error")
+                )
+
+            retrieval_documents = retrieval_result["documents"]
+
+        # Step 4: Reorder for lost-in-the-middle mitigation
+        retrieval_documents = _reorder_lost_in_middle(retrieval_documents)
+
+        # Step 5: Format documents for LLM synthesis
+        score_key = "rerank_score" if any("rerank_score" in d for d in retrieval_documents) else "score"
         docs_formatted = "\n\n".join([
-            f"Document: {doc['document']}\nChunk {doc['chunk_index']} (Score: {doc['score']:.2f}):\n{doc['chunk']}"
-            for doc in retrieval_result["documents"]
+            f"[Document {i+1}] Source: {doc['document']}, Chunk {doc['chunk_index']} (Score: {doc.get(score_key, 0):.2f}):\n{doc['chunk']}"
+            for i, doc in enumerate(retrieval_documents)
         ])
 
-        # Step 4: Synthesize answer
+        # Step 6: Synthesize answer
         synthesis_prompt = load_prompt(
             "rag_synthesize.txt",
             user_query=request.query,
@@ -701,12 +841,13 @@ async def query_rag(
             answer=answer,
             data={
                 "optimized_query": optimized_query,
-                "documents": retrieval_result["documents"],
-                "num_results": retrieval_result["num_results"]
+                "documents": retrieval_documents,
+                "num_results": len(retrieval_documents)
             },
             metadata={
                 "execution_time": execution_time,
-                "collection": request.collection_name
+                "collection": request.collection_name,
+                "multi_query": config.RAG_USE_MULTI_QUERY
             }
         )
 

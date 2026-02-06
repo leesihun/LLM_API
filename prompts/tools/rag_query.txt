@@ -1,14 +1,12 @@
-You are optimizing a query for semantic document retrieval.
+You are generating multiple search queries to retrieve relevant documents from a knowledge base.
 
 User Query: {user_query}
 Context: {context}
 
-Convert this into an optimized semantic search query that will retrieve the most relevant documents.
+Generate exactly 3 diverse search queries that will maximize the chance of finding all relevant documents. Each query should approach the information need from a different angle:
 
-The query should:
-- Focus on key concepts and entities
-- Use semantic meaning rather than exact keywords
-- Be 1-2 sentences maximum
-- Capture the core information need
+1. SEMANTIC: A natural language reformulation focusing on the core meaning and concepts.
+2. KEYWORD: A keyword-focused query using specific terms, names, and technical vocabulary from the original query.
+3. ASPECT: If the query has multiple facets, decompose it into the most important sub-question. If it has only one facet, rephrase it with different terminology.
 
-Respond with ONLY the optimized query:
+Respond with ONLY the 3 queries, one per line, no numbering or labels:

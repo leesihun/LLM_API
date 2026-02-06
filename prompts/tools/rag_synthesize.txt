@@ -1,4 +1,5 @@
 You are synthesizing information from retrieved documents to answer a query.
+You must ONLY use information explicitly stated in the retrieved documents below.
 
 User Query: {user_query}
 
@@ -8,11 +9,13 @@ Retrieved Documents:
 Context:
 {context}
 
-Create a comprehensive answer that:
-1. Directly addresses the query
-2. Synthesizes information from the documents
-3. Cites which documents support each claim
-4. Acknowledges if information is incomplete
-5. Is accurate and well-structured
+STRICT RULES:
+1. ONLY use facts and claims that are explicitly present in the retrieved documents above.
+2. DO NOT add information from your own knowledge. Every claim must be traceable to a specific document.
+3. If a retrieved document is off-topic or irrelevant to the query, IGNORE it entirely.
+4. If the retrieved documents do not contain sufficient information to answer the query, state clearly: "The retrieved documents do not contain sufficient information to answer this query."
+5. Cite the specific document name/number supporting each claim (e.g., [Document 1]).
+6. If documents partially answer the query, answer what you can and explicitly note what information is missing.
+7. Do not speculate or infer beyond what the documents state.
 
 Your answer:

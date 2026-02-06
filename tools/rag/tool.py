@@ -155,11 +155,12 @@ class RAGTool:
         # Chunk document
         chunks = self._chunk_text(document_content)
 
-        # Generate embeddings
+        # Generate embeddings (normalized for cosine similarity with IndexFlatIP)
         embeddings = self.embedding_model.encode(
             chunks,
             batch_size=config.RAG_EMBEDDING_BATCH_SIZE,
-            show_progress_bar=False
+            show_progress_bar=False,
+            normalize_embeddings=True
         )
 
         # Load or create index
@@ -173,14 +174,15 @@ class RAGTool:
         start_idx = index.ntotal
         index.add(np.array(embeddings).astype('float32'))
 
-        # Update metadata
-        doc_id = hashlib.md5(doc_name.encode()).hexdigest()
+        # Update metadata (include timestamp in hash to avoid collision on re-upload)
+        upload_time = time.time()
+        doc_id = hashlib.md5(f"{doc_name}:{upload_time}".encode()).hexdigest()
         metadata["documents"][doc_id] = {
             "name": doc_name,
             "path": str(document_path),
             "chunk_indices": list(range(start_idx, index.ntotal)),
             "chunks": chunks,
-            "uploaded_at": time.time()
+            "uploaded_at": upload_time
         }
         metadata["chunk_count"] = index.ntotal
 
@@ -304,7 +306,10 @@ class RAGTool:
         # Generate query embedding
         print(f"\n[RAG] Generating query embedding...")
         embed_start = time.time()
-        query_embedding = self.embedding_model.encode([query])[0]
+        query_embedding = self.embedding_model.encode(
+            [config.RAG_QUERY_PREFIX + query],
+            normalize_embeddings=True
+        )[0]
         embed_time = time.time() - embed_start
         print(f"[RAG] [OK] Query embedding generated ({embed_time:.2f}s)")
         print(f"  Embedding shape: {query_embedding.shape}")
@@ -324,8 +329,8 @@ class RAGTool:
         print(f"  Distances: {distances[0].tolist()}")
         print(f"  Indices: {indices[0].tolist()}")
 
-        # Retrieve chunks
-        print(f"\n[RAG] Retrieving document chunks...")
+        # Retrieve chunks with context window
+        print(f"\n[RAG] Retrieving document chunks (context_window={config.RAG_CONTEXT_WINDOW})...")
         results = []
         for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
             # Find document containing this chunk
@@ -334,17 +339,36 @@ class RAGTool:
                     chunk_local_idx = doc_meta["chunk_indices"].index(idx)
                     score = float(1 / (1 + dist))
                     chunk_text = doc_meta["chunks"][chunk_local_idx]
-                    
+
+                    # Build context window from neighboring chunks
+                    context_chunks = []
+                    total_chunks = len(doc_meta["chunks"])
+                    window = config.RAG_CONTEXT_WINDOW
+                    start_ctx = max(0, chunk_local_idx - window)
+                    end_ctx = min(total_chunks, chunk_local_idx + window + 1)
+
+                    for ctx_idx in range(start_ctx, end_ctx):
+                        context_chunks.append(doc_meta["chunks"][ctx_idx])
+
+                    chunk_with_context = "\n---\n".join(context_chunks)
+
                     results.append({
                         "document": doc_meta["name"],
-                        "chunk": chunk_text,
+                        "chunk": chunk_with_context,
                         "score": score,
                         "chunk_index": chunk_local_idx
                     })
                     
                     print(f"  Result {i+1}: {doc_meta['name']} chunk {chunk_local_idx} (score: {score:.3f})")
-                    print(f"    Preview: {chunk_text[:100]}...")
+                    print(f"    Context: chunks {start_ctx}-{end_ctx-1}, Preview: {chunk_text[:100]}...")
                     break
+
+        # Filter out low-relevance results
+        pre_filter_count = len(results)
+        results = [r for r in results if r["score"] >= config.RAG_MIN_SCORE_THRESHOLD]
+        filtered_count = pre_filter_count - len(results)
+        if filtered_count > 0:
+            print(f"\n[RAG] Filtered {filtered_count} results below score threshold ({config.RAG_MIN_SCORE_THRESHOLD})")
 
         print(f"\n[RAG] [OK] Retrieved {len(results)} results")
         total_time = time.time() - start_time
@@ -537,7 +561,8 @@ class RAGTool:
                 embeddings = self.embedding_model.encode(
                     all_chunks,
                     batch_size=config.RAG_EMBEDDING_BATCH_SIZE,
-                    show_progress_bar=False
+                    show_progress_bar=False,
+                    normalize_embeddings=True
                 )
 
                 # Create new index

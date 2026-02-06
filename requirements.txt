@@ -149,6 +149,7 @@ scikit-learn
 scipy
 seaborn
 sentence-transformers
+rank-bm25  # For hybrid search (keyword + semantic)
 setuptools
 shellingham
 six

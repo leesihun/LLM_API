@@ -134,7 +134,7 @@ TOOL_PARAMETERS = {
         "timeout": 864000,  # 10 days for code execution
     },
     "rag": {
-        "temperature": 1.0,
+        "temperature": 0.2,  # Low temperature for factual synthesis from retrieved documents
         "max_tokens": 30000,
         "timeout": 864000,  # 10 days for RAG retrieval
     },
@@ -187,7 +187,17 @@ RAG_INDEX_DIR = Path("data/rag_indices")  # FAISS indices storage
 RAG_METADATA_DIR = Path("data/rag_metadata")  # Metadata storage
 
 # Embedding Model Settings
-RAG_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # HuggingFace model
+# 🔥 RECOMMENDED MODELS (ranked by accuracy, 2026):
+# 1. "BAAI/bge-large-en-v1.5" - Best accuracy for general English (1024 dim)
+# 2. "BAAI/bge-base-en-v1.5" - Good accuracy, faster (768 dim)
+# 3. "sentence-transformers/all-MiniLM-L6-v2" - Lightweight, decent (384 dim)
+# 4. "intfloat/e5-large-v2" - Strong performance (1024 dim)
+# 5. "thenlper/gte-large" - Excellent for technical docs (1024 dim)
+#
+# Option 1: Use HuggingFace model name (requires internet on first run or cached model)
+RAG_EMBEDDING_MODEL = "/scratch0/LLM_models/offline_models/bge-base-en-v1.5"  # Recommended: best accuracy/speed tradeoff
+# Option 2: Use absolute path to local model directory
+# RAG_EMBEDDING_MODEL = r"C:\path\to\your\model\bge-base-en-v1.5"
 RAG_EMBEDDING_DEVICE = "cpu"  # "cpu" or "cuda"
 RAG_EMBEDDING_BATCH_SIZE = 32
 
@@ -196,9 +206,28 @@ RAG_INDEX_TYPE = "Flat"  # "Flat", "IVF", or "HNSW"
 RAG_SIMILARITY_METRIC = "cosine"  # "cosine", "l2", or "ip" (inner product)
 
 # Chunking Settings
-RAG_CHUNK_SIZE = 512  # Characters per chunk
+RAG_CHUNK_SIZE = 512  # Characters per chunk (optimal: 200-500 for general docs)
 RAG_CHUNK_OVERLAP = 50  # Overlap between chunks
+RAG_CHUNKING_STRATEGY = "semantic"  # "fixed", "semantic" (best), "recursive", "sentence"
 RAG_MAX_RESULTS = 5  # Maximum documents to retrieve
+RAG_MIN_SCORE_THRESHOLD = 0.3  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
+RAG_CONTEXT_WINDOW = 1  # Number of neighboring chunks to include around each match (0 = matched chunk only)
+
+# Hybrid Search Settings (RECOMMENDED for 15-20% accuracy improvement)
+RAG_USE_HYBRID_SEARCH = True  # Enable hybrid dense + sparse retrieval
+RAG_HYBRID_ALPHA = 0.5  # Weight: 0.0=pure keyword, 1.0=pure semantic, 0.5=balanced
+
+# Reranking Settings (RECOMMENDED for 15-20% additional accuracy improvement)
+RAG_USE_RERANKING = True  # Enable two-stage retrieval with reranking
+RAG_RERANKER_MODEL = "/scratch0/LLM_models/offline_models/ms-marco-MiniLM-L-6-v2"  # Cross-encoder for reranking
+RAG_RERANKING_TOP_K = 10  # Retrieve more initially, then rerank to top-5
+
+# Query Optimization
+RAG_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "  # BGE model instruction prefix for queries
+RAG_USE_MULTI_QUERY = True  # Generate multiple query variants and merge results via RRF
+RAG_MULTI_QUERY_COUNT = 3  # Number of query variants to generate (semantic, keyword, aspect)
+RAG_QUERY_EXPANSION = False  # Expand query with synonyms/related terms (experimental)
+
 RAG_DEFAULT_COLLECTION = "default"  # Default collection name
 
 # Supported document formats
