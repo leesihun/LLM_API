@@ -528,24 +528,23 @@ class EnhancedRAGTool:
             return df.to_string()
 
         elif path.suffix == '.pdf':
-            try:
-                import PyPDF2
-                text = []
-                with open(path, 'rb') as f:
-                    reader = PyPDF2.PdfReader(f)
-                    for page in reader.pages:
-                        text.append(page.extract_text())
-                return '\n'.join(text)
-            except ImportError:
-                raise ImportError("PyPDF2 required for PDF support")
+            from langchain_community.document_loaders import PyPDFLoader
+            loader = PyPDFLoader(str(path))
+            pages = loader.load()
+            return '\n'.join(page.page_content for page in pages)
 
         elif path.suffix == '.docx':
-            try:
-                from docx import Document
-                doc = Document(path)
-                return '\n'.join([para.text for para in doc.paragraphs])
-            except ImportError:
-                raise ImportError("python-docx required for DOCX support")
+            from docx import Document
+            doc = Document(path)
+            parts = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    parts.append(para.text)
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells]
+                    parts.append(' | '.join(cells))
+            return '\n'.join(parts)
 
         else:
             with open(path, 'r', encoding='utf-8') as f:
