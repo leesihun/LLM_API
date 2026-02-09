@@ -26,6 +26,7 @@ class Agent(ABC):
         self.temperature = temperature or config.DEFAULT_TEMPERATURE
         self.llm = llm_backend
         self.session_id = None  # Set by caller if needed
+        self.username = None  # Set by caller for tool auth
         self.tool_calls = []  # Track tool calls for logging
 
     @abstractmethod

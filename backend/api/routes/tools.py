@@ -699,7 +699,12 @@ async def query_rag(
     current_user: Optional[dict] = Depends(get_optional_user)
 ):
     """Query RAG collection with multi-query retrieval, deduplication, and LLM synthesis"""
-    username = current_user["username"] if current_user else "guest"
+    username = current_user["username"] if current_user else None
+    # Fallback: use username from context (passed by agents in server-to-server calls)
+    if not username and request.context and request.context.username:
+        username = request.context.username
+    if not username:
+        username = "guest"
     
     print("\n" + "=" * 80)
     print("[TOOLS API] /api/tools/rag/query endpoint called")

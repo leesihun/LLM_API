@@ -218,8 +218,9 @@ async def chat_completions(
         # Get the appropriate agent
         agent = _get_agent(agent_type_name, model_name, temp)
 
-        # Set session_id on agent for logging
+        # Set session_id and username on agent for tool auth
         agent.session_id = session_id
+        agent.username = username
 
         # Extract user input (last message) and conversation history (previous messages)
         # For continued sessions, use the full loaded history instead of just new messages

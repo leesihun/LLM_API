@@ -483,9 +483,10 @@ class ReActAgent(Agent):
             # Convert string input to tool parameters
             parameters = self._convert_string_to_params(tool_name, tool_input)
 
-            # Call tool via base agent
+            # Call tool via base agent (pass username for tool auth)
             context = {
-                "session_id": self.session_id or "auto"
+                "session_id": self.session_id or "auto",
+                "username": self.username
             }
 
             result = self.call_tool(tool_name, parameters, context)

@@ -466,6 +466,7 @@ class PlanExecuteAgent(Agent):
         # Use ReAct agent to execute this step
         react_agent = ReActAgent(model=self.model, temperature=self.temperature)
         react_agent.session_id = self.session_id
+        react_agent.username = self.username
         react_agent.tool_calls = self.tool_calls
 
         try:
