@@ -155,10 +155,29 @@ class ReActAgent(Agent):
             else:
                 print(f"[REACT] [CONTINUE] final_answer=false, continuing to next iteration...")
 
-        # Max iterations reached
-        error_msg = f"Maximum iterations ({self.max_iterations}) reached without completing task"
-        print(f"\n[REACT] [ERROR] {error_msg}")
-        raise ReActMaxIterationsError(error_msg, iterations_used=self.max_iterations)
+        # Max iterations reached - fall back to chat mode
+        print(f"\n[REACT] [MAX ITERATIONS] Reached {self.max_iterations} iterations, converting to chat mode...")
+
+        if skip_final_synthesis:
+            # PlanExecute mode - return last observation from scratchpad
+            print(f"[REACT] [FALLBACK] plan_execute mode, returning accumulated scratchpad")
+            return scratchpad
+
+        # Generate final answer from everything gathered so far (chat mode fallback)
+        try:
+            final_answer = self._generate_final_answer(
+                user_input=user_input,
+                conversation_history=conversation_history,
+                scratchpad=scratchpad
+            )
+            print(f"[REACT] [FALLBACK] Chat mode generated answer: {final_answer[:200]}..." if len(final_answer) > 200 else f"[REACT] [FALLBACK] Chat mode generated answer")
+            return final_answer
+        except Exception as e:
+            print(f"[REACT] [ERROR] Chat mode fallback also failed: {e}")
+            raise ReActMaxIterationsError(
+                f"Maximum iterations ({self.max_iterations}) reached and chat fallback failed: {e}",
+                iterations_used=self.max_iterations
+            )
 
     def _step1_generate_action(
         self,
