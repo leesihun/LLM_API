@@ -12,20 +12,18 @@ SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 10007  # Main API server (chat, auth, etc.)
 TOOLS_HOST = "127.0.0.1"  # Tools server host (change if on different machine)
 TOOLS_PORT = 10006   # Tools API server (websearch, python_coder, rag) - separate to avoid deadlock
+WEBSEARCH_SERVER_HOST = "10.252.38.241"  # Remote websearch server (fallback: local tools server)
+WEBSEARCH_SERVER_PORT = 10006            # Remote websearch server port
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
 SERVER_WORKERS = 4  # Number of parallel workers for main API
 TOOLS_SERVER_WORKERS = 4  # Number of parallel workers for tools API
 
-# ============================================================================
-# LLM Backend Settings
-# ============================================================================
-# Which LLM backend to use: "ollama", "llamacpp", or "auto" (tries ollama first, falls back to llamacpp)
 LLM_BACKEND: Literal["ollama", "llamacpp", "auto"] = "llamacpp"
 
 
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "gpt-oss:20b"  # Default model
+OLLAMA_MODEL = "gpt-oss:20b"
 
 # Model Preloading Settings
 PRELOAD_MODEL_ON_STARTUP = False  # Preload default model to GPU on server startup

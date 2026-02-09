@@ -257,8 +257,12 @@ class Agent(ABC):
         endpoint = schema["endpoint"]
         method = schema.get("method", "POST")
 
-        # Build URL using tools host and port (may be on different machine)
-        base_url = f"http://{config.TOOLS_HOST}:{config.TOOLS_PORT}"
+        # Build URL - route websearch to dedicated remote server
+        if tool_name == "websearch":
+            base_url = f"http://{config.WEBSEARCH_SERVER_HOST}:{config.WEBSEARCH_SERVER_PORT}"
+        else:
+            base_url = f"http://{config.TOOLS_HOST}:{config.TOOLS_PORT}"
+        fallback_base_url = f"http://{config.TOOLS_HOST}:{config.TOOLS_PORT}"
         url = f"{base_url}{endpoint}"
 
         # Add context to parameters if provided
@@ -358,6 +362,69 @@ class Agent(ABC):
             print(f"  Error: {result['error']}")
             print(f"{'='*80}\n")
 
+            return result
+
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            # Connection failed - try fallback to local tools server for websearch
+            if tool_name == "websearch" and base_url != fallback_base_url:
+                print(f"\n[BASE_AGENT] Remote websearch server unreachable: {e}")
+                print(f"[BASE_AGENT] Falling back to local tools server: {fallback_base_url}")
+                fallback_url = f"{fallback_base_url}{endpoint}"
+                try:
+                    if method == "POST":
+                        response = httpx.post(fallback_url, json=parameters, timeout=tool_timeout)
+                    else:
+                        response = httpx.get(fallback_url, params=parameters, timeout=tool_timeout)
+                    response.raise_for_status()
+                    result = response.json()
+                    duration = time.time() - start_time
+
+                    self.tool_calls.append({
+                        "name": tool_name,
+                        "input": parameters,
+                        "output": result,
+                        "success": True
+                    })
+                    self._log_tool_execution(tool_name, parameters, result, duration, True)
+
+                    print(f"\n[RESULT] Tool completed via fallback")
+                    print(f"  Duration: {duration:.2f}s")
+                    print(f"{'='*80}\n")
+                    return result
+
+                except Exception as fallback_e:
+                    duration = time.time() - start_time
+                    result = {
+                        "error": f"Tool call failed (remote and fallback): {str(fallback_e)}",
+                        "success": False
+                    }
+                    self.tool_calls.append({
+                        "name": tool_name,
+                        "input": parameters,
+                        "output": result,
+                        "success": False
+                    })
+                    self._log_tool_execution(tool_name, parameters, result, duration, False)
+                    print(f"\n[ERROR] Fallback also failed: {str(fallback_e)}")
+                    print(f"{'='*80}\n")
+                    return result
+
+            # Not websearch or already on fallback - report error normally
+            duration = time.time() - start_time
+            result = {
+                "error": f"Tool call failed: {str(e)}",
+                "success": False
+            }
+            self.tool_calls.append({
+                "name": tool_name,
+                "input": parameters,
+                "output": result,
+                "success": False
+            })
+            self._log_tool_execution(tool_name, parameters, result, duration, False)
+            print(f"\n[ERROR] Tool failed: {str(e)}")
+            print(f"  Duration: {duration:.2f}s")
+            print(f"{'='*80}\n")
             return result
 
         except Exception as e:
