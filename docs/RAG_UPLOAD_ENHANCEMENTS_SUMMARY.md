@@ -9,7 +9,7 @@ Implemented a **multi-tier optimization strategy** that provides **5-10x speedup
 1. **Fast PDF parsing** (PyMuPDF instead of PyPDFLoader)
 2. **Parallel processing** (multi-core CPU utilization)
 3. **Progressive embedding** (batch processing with memory efficiency)
-4. **Real-time progress tracking** (user feedback during upload)
+4. **Real-time progress bar** (text-based progress display in terminal)
 
 ## Performance Improvements
 
@@ -20,7 +20,7 @@ Implemented a **multi-tier optimization strategy** that provides **5-10x speedup
 | **Upload Time** | ~300 seconds | ~45 seconds | **6.7x faster** |
 | **Memory Usage** | 800 MB | 400 MB | **50% reduction** |
 | **CPU Utilization** | 1 core (12.5%) | 8 cores (100%) | **8x more efficient** |
-| **User Experience** | No feedback | Real-time progress | **Much better** |
+| **User Experience** | No feedback | Text progress bar | **Much better** |
 
 ### Time Breakdown
 
@@ -138,6 +138,9 @@ result = tool.upload_document(
     collection_name="my_docs",
     document_path="large_manual.pdf"
 )
+
+# Terminal shows real-time progress:
+# ██████████████████████████████████████░░░░░░░░░░░░  67.3% | Embedded 2300/3421 chunks
 
 print(f"Upload completed in {result['timing']['total']:.1f}s")
 ```

@@ -125,7 +125,8 @@ class RAGTool:
         document_path: str,
         document_content: Optional[str] = None,
         document_name: Optional[str] = None,
-        use_optimized: bool = True
+        use_optimized: bool = True,
+        progress_callback: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
         Upload and index a document
@@ -136,6 +137,7 @@ class RAGTool:
             document_content: Document content (if providing directly)
             document_name: Optional override for document name (useful when uploading from temp files)
             use_optimized: Use optimized uploader for PDFs (5-10x faster)
+            progress_callback: Optional callback(message, progress_pct) for progress updates
 
         Returns:
             Upload result
@@ -151,7 +153,8 @@ class RAGTool:
             return self._upload_pdf_optimized(
                 collection_name=collection_name,
                 pdf_path=doc_path,
-                document_name=document_name
+                document_name=document_name,
+                progress_callback=progress_callback
             )
         
         # Standard upload path for non-PDFs or when optimization disabled
@@ -824,7 +827,8 @@ class RAGTool:
         self,
         collection_name: str,
         pdf_path: Path,
-        document_name: Optional[str] = None
+        document_name: Optional[str] = None,
+        progress_callback: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
         Upload PDF using optimized parallel processing
@@ -833,6 +837,7 @@ class RAGTool:
             collection_name: Target collection
             pdf_path: Path to PDF file
             document_name: Optional override for document name
+            progress_callback: Optional callback(message, progress_pct) for progress updates
             
         Returns:
             Upload result
@@ -855,10 +860,6 @@ class RAGTool:
             pages_per_batch=20  # Process 20 pages per worker
         )
         
-        # Upload with progress tracking
-        def progress_callback(message: str, progress_pct: float):
-            print(f"[RAG UPLOAD] {message} ({progress_pct:.1f}%)")
-        
         try:
             result = uploader.upload_pdf_optimized(
                 pdf_path=pdf_path,
@@ -867,7 +868,8 @@ class RAGTool:
                 user_index_dir=self.user_index_dir,
                 user_metadata_dir=self.user_metadata_dir,
                 document_name=document_name,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                show_progress_bar=True  # Enable text-based progress bar by default
             )
             return result
             

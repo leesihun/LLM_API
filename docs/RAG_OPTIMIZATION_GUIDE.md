@@ -46,7 +46,7 @@ PyMuPDF is much faster than the previous PyPDFLoader and has no external depende
 
 ### Automatic (Default)
 
-The optimized uploader is **automatically enabled** for PDF files. Just upload as normal:
+The optimized uploader is **automatically enabled** for PDF files with a **text-based progress bar**:
 
 ```python
 from tools.rag import RAGTool
@@ -56,6 +56,9 @@ result = tool.upload_document(
     collection_name="my_collection",
     document_path="/path/to/large.pdf"
 )
+
+# You'll see in your terminal:
+# ██████████████████████████████████████░░░░░░░░░░░░  67.3% | Embedded 2300/3421 chunks
 ```
 
 ### Manual Control

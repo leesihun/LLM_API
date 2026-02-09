@@ -117,7 +117,8 @@ class OptimizedRAGUploader:
         user_index_dir: Path,
         user_metadata_dir: Path,
         document_name: Optional[str] = None,
-        progress_callback: Optional[Callable[[str, float], None]] = None
+        progress_callback: Optional[Callable[[str, float], None]] = None,
+        show_progress_bar: bool = True
     ) -> Dict[str, Any]:
         """
         Upload PDF with optimized parallel processing
@@ -130,6 +131,7 @@ class OptimizedRAGUploader:
             user_metadata_dir: User metadata directory
             document_name: Override document name
             progress_callback: Callback(message, progress_pct) for status updates
+            show_progress_bar: Show text-based progress bar in terminal
             
         Returns:
             Upload result dictionary
@@ -139,7 +141,15 @@ class OptimizedRAGUploader:
         def update_progress(msg: str, pct: float):
             if progress_callback:
                 progress_callback(msg, pct)
-            print(f"[OPTIMIZED UPLOAD] {msg} ({pct:.1f}%)")
+            
+            if show_progress_bar:
+                # Text-based progress bar
+                width = 50
+                filled = int(width * pct / 100)
+                bar = "█" * filled + "░" * (width - filled)
+                print(f"\r{bar} {pct:5.1f}% | {msg}", end="", flush=True)
+            else:
+                print(f"[OPTIMIZED UPLOAD] {msg} ({pct:.1f}%)")
         
         update_progress("Starting optimized upload", 0)
         
@@ -275,7 +285,8 @@ class OptimizedRAGUploader:
             json.dump(metadata, f, indent=2)
         
         total_time = time.time() - overall_start
-        update_progress(f"Upload complete in {total_time:.1f}s", 100)
+        update_progress(f"Upload complete!", 100)
+        print()  # New line after progress bar
         
         return {
             "success": True,
