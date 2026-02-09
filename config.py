@@ -213,7 +213,8 @@ RAG_CHUNK_SIZE = 512  # Characters per chunk (optimal: 200-500 for general docs)
 RAG_CHUNK_OVERLAP = 50  # Overlap between chunks
 RAG_CHUNKING_STRATEGY = "semantic"  # "fixed", "semantic" (best), "recursive", "sentence"
 RAG_MAX_RESULTS = 20  # Maximum documents to retrieve
-RAG_MIN_SCORE_THRESHOLD = 0.3  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
+RAG_MIN_SCORE_THRESHOLD = 0.1  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
+                               # Applies to FAISS cosine, RRF, and sigmoid-normalized rerank scores
 RAG_CONTEXT_WINDOW = 1  # Number of neighboring chunks to include around each match (0 = matched chunk only)
 
 # Hybrid Search Settings (RECOMMENDED for 15-20% accuracy improvement)

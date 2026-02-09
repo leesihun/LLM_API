@@ -450,7 +450,7 @@ class EnhancedRAGTool:
 
             rerank_time = time.time() - rerank_start
             print(f"  Reranking complete ({rerank_time:.2f}s)")
-            print(f"  Top result score: {results[0]['rerank_score']:.3f}")
+            print(f"  Top result score: {results[0]['rerank_score']:.3f} (raw: {results[0].get('rerank_score_raw', 'N/A'):.3f})")
         else:
             # Limit results if no reranking
             final_k = max_results or config.RAG_MAX_RESULTS

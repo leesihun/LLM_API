@@ -134,6 +134,33 @@ class RerankerCrossEncoder:
                     "Install with: pip install sentence-transformers"
                 )
 
+    @staticmethod
+    def _sigmoid(x: float) -> float:
+        """
+        Apply sigmoid normalization to cross-encoder logits.
+
+        Cross-encoder models return raw logits (typically -10 to +10 range).
+        Sigmoid maps these to probability-like scores (0 to 1):
+        - Negative logits → 0.0 to 0.5 (less relevant)
+        - Zero logit → 0.5 (neutral)
+        - Positive logits → 0.5 to 1.0 (more relevant)
+
+        Args:
+            x: Raw cross-encoder logit score
+
+        Returns:
+            Normalized score in range (0, 1)
+
+        Examples:
+            -10.0 → 0.000 (very irrelevant)
+            -1.767 → 0.146 (somewhat irrelevant)
+            0.0 → 0.500 (neutral)
+            3.0 → 0.953 (highly relevant)
+            10.0 → 1.000 (extremely relevant)
+        """
+        import numpy as np
+        return float(1.0 / (1.0 + np.exp(-x)))
+
     def rerank(
         self,
         query: str,
@@ -162,10 +189,11 @@ class RerankerCrossEncoder:
         # Get cross-encoder scores
         scores = self.model.predict(pairs)
 
-        # Update document scores and sort
+        # Update document scores with sigmoid normalization
         for doc, score in zip(documents, scores):
-            doc['rerank_score'] = float(score)
-            doc['original_score'] = doc.get('score', 0.0)
+            doc['rerank_score_raw'] = float(score)  # Raw cross-encoder logit
+            doc['rerank_score'] = self._sigmoid(score)  # Normalized to 0-1 range
+            doc['original_score'] = doc.get('score', 0.0)  # Original FAISS/RRF score
 
         # Sort by rerank score
         reranked = sorted(documents, key=lambda x: x['rerank_score'], reverse=True)
