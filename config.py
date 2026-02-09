@@ -231,7 +231,7 @@ RAG_USE_MULTI_QUERY = True  # Generate multiple query variants and merge results
 RAG_MULTI_QUERY_COUNT = 6  # Number of bilingual query variants (3 angles x 2 languages)
 RAG_QUERY_EXPANSION = False  # Expand query with synonyms/related terms (experimental)
 
-RAG_DEFAULT_COLLECTION = "default"  # Default collection name
+RAG_DEFAULT_COLLECTION = "USB"  # Default collection name
 
 # Supported document formats
 RAG_SUPPORTED_FORMATS = [".txt", ".pdf", ".docx", ".xlsx", ".xls", ".md", ".json", ".csv"]
