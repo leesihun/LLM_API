@@ -213,7 +213,7 @@ RAG_CHUNK_SIZE = 512  # Characters per chunk (optimal: 200-500 for general docs)
 RAG_CHUNK_OVERLAP = 50  # Overlap between chunks
 RAG_CHUNKING_STRATEGY = "semantic"  # "fixed", "semantic" (best), "recursive", "sentence"
 RAG_MAX_RESULTS = 20  # Maximum documents to retrieve
-RAG_MIN_SCORE_THRESHOLD = 0.1  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
+RAG_MIN_SCORE_THRESHOLD = 0.6  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
                                # Applies to FAISS cosine, RRF, and sigmoid-normalized rerank scores
 RAG_CONTEXT_WINDOW = 1  # Number of neighboring chunks to include around each match (0 = matched chunk only)
 
@@ -232,7 +232,7 @@ RAG_USE_MULTI_QUERY = True  # Generate multiple query variants and merge results
 RAG_MULTI_QUERY_COUNT = 6  # Number of bilingual query variants (3 angles x 2 languages)
 RAG_QUERY_EXPANSION = False  # Expand query with synonyms/related terms (experimental)
 
-RAG_DEFAULT_COLLECTION = "USB"  # Default collection name
+RAG_DEFAULT_COLLECTION = "default"  # Default collection name
 
 # Supported document formats
 RAG_SUPPORTED_FORMATS = [".txt", ".pdf", ".docx", ".xlsx", ".xls", ".md", ".json", ".csv"]

@@ -404,6 +404,10 @@ class EnhancedRAGTool:
         print(f"\n[ENHANCED RAG] Stage 3: Document Retrieval (context_window={config.RAG_CONTEXT_WINDOW})")
         results = []
         for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
+            # Skip invalid FAISS indices (FAISS returns -1 for empty slots when k > ntotal)
+            if idx < 0:
+                continue
+
             for doc_id, doc_meta in metadata["documents"].items():
                 if idx in doc_meta["chunk_indices"]:
                     chunk_local_idx = doc_meta["chunk_indices"].index(idx)

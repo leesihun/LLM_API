@@ -412,6 +412,10 @@ class RAGTool:
         print(f"\n[RAG] Retrieving document chunks (context_window={config.RAG_CONTEXT_WINDOW})...")
         results = []
         for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
+            # Skip invalid FAISS indices (FAISS returns -1 for empty slots when k > ntotal)
+            if idx < 0:
+                continue
+
             # Find document containing this chunk
             for doc_id, doc_meta in metadata["documents"].items():
                 if idx in doc_meta["chunk_indices"]:

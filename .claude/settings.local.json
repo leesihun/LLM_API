@@ -33,7 +33,8 @@
       "Bash(opencode debug:*)",
       "Bash(opencode run:*)",
       "Read(//c/Users/Lee/.config/opencode/**)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []
