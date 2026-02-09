@@ -124,7 +124,8 @@ class RAGTool:
         collection_name: str,
         document_path: str,
         document_content: Optional[str] = None,
-        document_name: Optional[str] = None
+        document_name: Optional[str] = None,
+        use_optimized: bool = True
     ) -> Dict[str, Any]:
         """
         Upload and index a document
@@ -134,10 +135,26 @@ class RAGTool:
             document_path: Path to document or document name
             document_content: Document content (if providing directly)
             document_name: Optional override for document name (useful when uploading from temp files)
+            use_optimized: Use optimized uploader for PDFs (5-10x faster)
 
         Returns:
             Upload result
         """
+        # Check if this is a PDF and we should use optimized path
+        doc_path = Path(document_path)
+        if (use_optimized and 
+            document_content is None and 
+            doc_path.exists() and 
+            doc_path.suffix.lower() == '.pdf'):
+            
+            print(f"[RAG] Using optimized PDF uploader for: {doc_path.name}")
+            return self._upload_pdf_optimized(
+                collection_name=collection_name,
+                pdf_path=doc_path,
+                document_name=document_name
+            )
+        
+        # Standard upload path for non-PDFs or when optimization disabled
         self._load_embedding_model()
 
         collection_dir = self.user_docs_dir / collection_name
@@ -734,10 +751,16 @@ class RAGTool:
             return '\n\n'.join(parts)
 
         elif path.suffix == '.pdf':
-            from langchain_community.document_loaders import PyPDFLoader
-            loader = PyPDFLoader(str(path))
-            pages = loader.load()
-            return '\n'.join(page.page_content for page in pages)
+            # Use fast PDF reader
+            try:
+                from tools.rag.optimized_uploader import read_pdf_fast
+                return read_pdf_fast(path)
+            except Exception as e:
+                print(f"[RAG] Fast PDF reader failed, falling back to PyPDFLoader: {e}")
+                from langchain_community.document_loaders import PyPDFLoader
+                loader = PyPDFLoader(str(path))
+                pages = loader.load()
+                return '\n'.join(page.page_content for page in pages)
 
         elif path.suffix == '.docx':
             from docx import Document
@@ -796,3 +819,67 @@ class RAGTool:
 
         index_path = self.user_index_dir / f"{collection_name}.index"
         faiss.write_index(index, str(index_path))
+    
+    def _upload_pdf_optimized(
+        self,
+        collection_name: str,
+        pdf_path: Path,
+        document_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload PDF using optimized parallel processing
+        
+        Args:
+            collection_name: Target collection
+            pdf_path: Path to PDF file
+            document_name: Optional override for document name
+            
+        Returns:
+            Upload result
+        """
+        from tools.rag.optimized_uploader import OptimizedRAGUploader
+        
+        self._load_embedding_model()
+        
+        # Create collection if it doesn't exist
+        collection_dir = self.user_docs_dir / collection_name
+        if not collection_dir.exists():
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[RAG] Created new collection directory: {collection_dir}")
+        
+        # Initialize optimized uploader
+        uploader = OptimizedRAGUploader(
+            embedding_model=self.embedding_model,
+            embedding_dim=self.embedding_dim,
+            max_workers=None,  # Use all CPU cores
+            pages_per_batch=20  # Process 20 pages per worker
+        )
+        
+        # Upload with progress tracking
+        def progress_callback(message: str, progress_pct: float):
+            print(f"[RAG UPLOAD] {message} ({progress_pct:.1f}%)")
+        
+        try:
+            result = uploader.upload_pdf_optimized(
+                pdf_path=pdf_path,
+                collection_name=collection_name,
+                user_docs_dir=self.user_docs_dir,
+                user_index_dir=self.user_index_dir,
+                user_metadata_dir=self.user_metadata_dir,
+                document_name=document_name,
+                progress_callback=progress_callback
+            )
+            return result
+            
+        except Exception as e:
+            print(f"[RAG] Optimized upload failed: {e}")
+            print(f"[RAG] Falling back to standard upload method")
+            
+            # Fallback to standard method
+            return self.upload_document(
+                collection_name=collection_name,
+                document_path=str(pdf_path),
+                document_content=None,
+                document_name=document_name,
+                use_optimized=False  # Prevent infinite recursion
+            )

@@ -124,6 +124,7 @@ Pygments
 pyparsing
 pypdf
 PyPDF2
+PyMuPDF  # Fast PDF parsing (5-10x faster than PyPDF2) - required for optimized RAG uploads
 pypdfium2
 PyPika
 pyproject_hooks
