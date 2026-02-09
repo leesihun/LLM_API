@@ -201,8 +201,8 @@ RAG_METADATA_DIR = Path("data/rag_metadata")  # Metadata storage
 # NOTE: Switching models requires rebuilding all FAISS indices (re-upload documents).
 # Use HuggingFace model name (requires internet) or absolute path to local model directory.
 RAG_EMBEDDING_MODEL = "/scratch0/LLM_models/offline_models/bge-m3"  # Multilingual: Korean + English cross-lingual retrieval
-RAG_EMBEDDING_DEVICE = "cpu"  # "cpu" or "cuda"
-RAG_EMBEDDING_BATCH_SIZE = 32
+RAG_EMBEDDING_DEVICE = "cuda"  # "cpu" or "cuda"
+RAG_EMBEDDING_BATCH_SIZE = 16
 
 # FAISS Settings
 RAG_INDEX_TYPE = "Flat"  # "Flat", "IVF", or "HNSW"

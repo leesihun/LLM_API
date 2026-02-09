@@ -137,7 +137,9 @@ def main():
         reload=False,
         log_level=config.LOG_LEVEL.lower(),
         access_log=True,
-        workers=config.TOOLS_SERVER_WORKERS
+        workers=config.TOOLS_SERVER_WORKERS,
+        timeout_keep_alive=3600,  # 1 hour keepalive timeout for large uploads
+        timeout_graceful_shutdown=300  # 5 minute graceful shutdown
     )
 
 
