@@ -22,7 +22,7 @@ The separation is critical because agents running on the main server make HTTP c
 python tools_server.py
 
 # Terminal 2 - Main API
-python server.py
+python run_backend.py
 ```
 
 ### Dependencies

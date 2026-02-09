@@ -416,7 +416,12 @@ class RAGTool:
             for doc_id, doc_meta in metadata["documents"].items():
                 if idx in doc_meta["chunk_indices"]:
                     chunk_local_idx = doc_meta["chunk_indices"].index(idx)
-                    score = float(1 / (1 + dist))
+                    if config.RAG_SIMILARITY_METRIC == "cosine":
+                        # IndexFlatIP returns cosine similarity directly (higher = better)
+                        score = float(dist)
+                    else:
+                        # L2 distance: convert to similarity (lower distance = higher score)
+                        score = float(1 / (1 + dist))
                     chunk_text = doc_meta["chunks"][chunk_local_idx]
 
                     # Build context window from neighboring chunks

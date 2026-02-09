@@ -356,6 +356,9 @@ class EnhancedRAGTool:
 
         print(f"  Retrieved {len(indices[0])} candidates")
 
+        # Track whether hybrid fusion was used (RRF scores have different scale)
+        hybrid_used = False
+
         # Hybrid search using Reciprocal Rank Fusion (RRF)
         if config.RAG_USE_HYBRID_SEARCH and self.hybrid_retriever is not None:
             print(f"\n[ENHANCED RAG] Stage 2: Hybrid Fusion via RRF (Dense + Sparse)")
@@ -387,9 +390,11 @@ class EnhancedRAGTool:
                 )
 
                 indices = np.array([top_indices])
-                # Convert RRF scores to pseudo-distances for downstream scoring
-                # RRF scores are small positive values; invert to distance-like
-                distances = np.array([1.0 / (rrf_scores + 1e-9) - 1.0])
+                # Normalize RRF scores to 0-1 range for consistent thresholding.
+                # Raw RRF scores are ~0.005-0.016, far too small for the score threshold.
+                max_rrf = rrf_scores.max() if len(rrf_scores) > 0 and rrf_scores.max() > 0 else 1.0
+                distances = np.array([rrf_scores / max_rrf])
+                hybrid_used = True
 
                 print(f"  RRF fusion complete (alpha={config.RAG_HYBRID_ALPHA})")
             else:
@@ -402,7 +407,15 @@ class EnhancedRAGTool:
             for doc_id, doc_meta in metadata["documents"].items():
                 if idx in doc_meta["chunk_indices"]:
                     chunk_local_idx = doc_meta["chunk_indices"].index(idx)
-                    score = float(1 / (1 + dist))
+                    if hybrid_used:
+                        # Already normalized RRF score (0-1)
+                        score = float(dist)
+                    elif config.RAG_SIMILARITY_METRIC == "cosine":
+                        # IndexFlatIP returns cosine similarity directly (higher = better)
+                        score = float(dist)
+                    else:
+                        # L2 distance: convert to similarity (lower distance = higher score)
+                        score = float(1 / (1 + dist))
                     chunk_text = doc_meta["chunks"][chunk_local_idx]
 
                     # Build context window from neighboring chunks

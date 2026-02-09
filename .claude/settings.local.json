@@ -32,7 +32,8 @@
       "Bash(opencode debug --help:*)",
       "Bash(opencode debug:*)",
       "Bash(opencode run:*)",
-      "Read(//c/Users/Lee/.config/opencode/**)"
+      "Read(//c/Users/Lee/.config/opencode/**)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []
