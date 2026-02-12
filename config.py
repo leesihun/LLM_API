@@ -210,8 +210,8 @@ RAG_SIMILARITY_METRIC = "cosine"  # "cosine", "l2", or "ip" (inner product)
 RAG_CHUNK_SIZE = 512  # Characters per chunk (optimal: 200-500 for general docs)
 RAG_CHUNK_OVERLAP = 50  # Overlap between chunks
 RAG_CHUNKING_STRATEGY = "semantic"  # "fixed", "semantic" (best), "recursive", "sentence"
-RAG_MAX_RESULTS = 20  # Maximum documents to retrieve
-RAG_MIN_SCORE_THRESHOLD = 0.6  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
+RAG_MAX_RESULTS = 100  # Maximum documents to retrieve
+RAG_MIN_SCORE_THRESHOLD = 0.5  # Minimum relevance score (0.0-1.0) - chunks below this are discarded
                                # Applies to FAISS cosine, RRF, and sigmoid-normalized rerank scores
 RAG_CONTEXT_WINDOW = 1  # Number of neighboring chunks to include around each match (0 = matched chunk only)
 
@@ -222,7 +222,7 @@ RAG_HYBRID_ALPHA = 0.5  # Weight: 0.0=pure keyword, 1.0=pure semantic, 0.5=balan
 # Reranking Settings (RECOMMENDED for 15-20% additional accuracy improvement)
 RAG_USE_RERANKING = True  # Enable two-stage retrieval with reranking
 RAG_RERANKER_MODEL = "/scratch0/LLM_models/offline_models/mmarco-mMiniLMv2-L12-H384-v1"  # Multilingual cross-encoder for reranking
-RAG_RERANKING_TOP_K = 50  # Retrieve more initially, then rerank to top-5
+RAG_RERANKING_TOP_K = 500  # Retrieve more initially, then rerank to top-k
 
 # Query Optimization
 RAG_QUERY_PREFIX = ""  # bge-m3 uses built-in instruction handling; no manual prefix needed

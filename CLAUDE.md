@@ -33,12 +33,36 @@ pip install -r requirements.txt
 
 **Important**: The project uses both `bcrypt==4.0.1` and `passlib==1.7.4` for password hashing. Bcrypt has a 72-byte password limit (not 72 characters).
 
+### Testing
+
+Tests are in `tests/` and require both servers running (for API tests) or can run direct tests standalone:
+```bash
+# Direct RAG tool tests (no servers needed)
+python tests/test_rag.py
+
+# RAG upload performance tests
+python tests/test_rag_upload_performance.py
+```
+Tests use `requests` against `http://localhost:10007`, not pytest. They create test users/collections and clean up after themselves.
+
+### Utility Scripts
+
+```bash
+python create_users.py          # Batch create users
+python create_user_direct.py    # Create a single user directly in DB
+python clear_data.py            # Clear all data (sessions, uploads, scratch)
+python clear_rag_data.py        # Clear RAG indices, documents, metadata
+```
+
 ### Configuration
 
 All configuration is centralized in `config.py`. Key settings:
 - `LLM_BACKEND`: Choose "ollama", "llamacpp", or "auto"
 - `TOOLS_HOST`/`TOOLS_PORT`: Tools server location
 - `PYTHON_EXECUTOR_MODE`: "native" or "opencode" for code execution
+- `SERVER_WORKERS`/`TOOLS_SERVER_WORKERS`: Multi-worker uvicorn (default 4)
+- `PRELOAD_MODEL_ON_STARTUP`: Preload LLM model at server start
+- `PYTHON_CODER_SMART_EDIT`: LLM-based code merging with existing .py files
 
 ## High-Level Architecture
 
@@ -69,7 +93,9 @@ Tools run as separate services on port 10006:
 |------|----------|-------------|
 | **websearch** | `tools/web_search/tool.py` | Tavily API web search |
 | **python_coder** | `tools/python_coder/` | Code execution (native or opencode mode) |
-| **rag** | `tools/rag/tool.py` | FAISS-based document retrieval |
+| **rag** | `tools/rag/` | FAISS-based document retrieval (basic or enhanced) |
+
+**RAG Tool Selection** (`tools/rag/__init__.py`): At import time, `EnhancedRAGTool` is auto-selected if any of `RAG_USE_HYBRID_SEARCH`, `RAG_USE_RERANKING`, or `RAG_CHUNKING_STRATEGY != "fixed"` are set. Otherwise `BaseRAGTool` is used. EnhancedRAGTool adds hybrid BM25+FAISS search with RRF fusion, cross-encoder reranking, semantic chunking, multi-query expansion, and context window retrieval.
 
 **Tool Call Flow**:
 1. Agent calls `self.call_tool(tool_name, parameters, context)`
@@ -100,10 +126,14 @@ Loop continues until `final_answer: true`. Parsing uses regex in `_parse_action(
 
 `backend/core/llm_backend.py` provides unified interface:
 - **Auto-fallback**: Tries Ollama first, falls back to llama.cpp
-- **SSL handling**: Corporate certificate fallback for Windows environments
+- **SSL handling**: Three-tier fallback: corporate cert (`C:/DigitalCity.crt`) → default SSL → disabled SSL (with warning)
 - All LLM calls logged via `llm_interceptor.py` to `data/logs/prompts.log`
 
-### 5. File Attachments
+### 5. Streaming vs Agent Mode
+
+**Streaming** (`stream=true` in `/v1/chat/completions`) bypasses the entire agent system and calls `llm_backend.chat_stream()` directly. This means streaming mode has **no tool calling** — no websearch, python_coder, or RAG. Only non-streaming mode uses agents with tool capabilities.
+
+### 6. File Attachments
 
 Files attached to messages get **automatic** rich metadata extraction (no tool call needed):
 - **JSON**: Structure, keys, sample data
@@ -112,20 +142,20 @@ Files attached to messages get **automatic** rich metadata extraction (no tool c
 
 Handled by `extract_file_metadata()` in `backend/utils/file_handler.py`, formatted via `format_attached_files()` in `base_agent.py`.
 
-### 6. Database & Storage
+### 7. Database & Storage
 
 **SQLite** (`data/app.db`):
 - `users`: Authentication with bcrypt hashed passwords
 - `sessions`: Lightweight metadata only (no conversation data)
 
-**Conversations**: Stored as JSON in `data/sessions/{session_id}.json` for easy debugging.
+**Conversations**: Stored as JSON in `data/sessions/{session_id}.json` for easy debugging. Uses `filelock.FileLock` for concurrent read/write safety.
 
 **File Storage**:
 - User uploads: `data/uploads/{username}/`
 - Session scratch: `data/scratch/{session_id}/`
 - RAG: `data/rag_documents/`, `data/rag_indices/`, `data/rag_metadata/`
 
-### 7. API Routes
+### 8. API Routes
 
 | File | Endpoints |
 |------|-----------|
@@ -170,6 +200,11 @@ Handled by `extract_file_metadata()` in `backend/utils/file_handler.py`, formatt
 4. **Tool timeouts** - Default is 10 days (864000s) for long-running operations
 5. **Conversation history** - Limited by `MAX_CONVERSATION_HISTORY` (default 50)
 6. **Windows UTF-8** - Both servers set explicit UTF-8 encoding for console emoji support
+7. **Streaming loses tools** - `stream=true` bypasses agents entirely; only direct LLM chat
+8. **RAG score semantics** - FAISS `IndexFlatIP` returns cosine similarity (0-1, higher=better), NOT L2 distance. Use `dist` directly as score. Hybrid RRF scores must be normalized to 0-1 range before threshold filtering
+9. **AutoAgent eager init** - All agent types are instantiated in `__init__`, not lazily
+10. **Multi-worker string import** - uvicorn uses `"tools_server:app"` string format (not app object) when `workers > 1`
+11. **`data/` is gitignored** - The entire `data/` directory (DB, sessions, uploads, RAG indices, logs) is excluded from version control
 
 ## File Organization
 
