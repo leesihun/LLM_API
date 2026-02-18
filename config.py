@@ -145,7 +145,7 @@ DEFAULT_TOOL_TIMEOUT = 864000
 # Web Search Tool Settings
 # ============================================================================
 WEBSEARCH_PROVIDER = "tavily"  # Options: "tavily", "serper", "mock"
-TAVILY_API_KEY = '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'
+TAVILY_API_KEY = "your-secret-key-change-in-production"
 TAVILY_MAX_RESULTS = 5  # Maximum search results to retrieve
 TAVILY_SEARCH_DEPTH = "advanced"  # "basic" or "advanced" - use "basic" for faster responses
 TAVILY_INCLUDE_DOMAINS = []  # List of domains to include (empty = all)
