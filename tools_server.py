@@ -43,6 +43,10 @@ app.include_router(tools.router)
 @app.on_event("startup")
 async def startup_event():
     """Run on server startup"""
+    # Clear any stale stop file from a previous run
+    from backend.utils.stop_signal import clear_stop
+    clear_stop()
+
     if config.PRELOAD_MODEL_ON_STARTUP:
         print("\n" + "=" * 70)
         print("MODEL PRELOADING (Tools Server)")

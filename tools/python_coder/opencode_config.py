@@ -79,9 +79,6 @@ def generate_opencode_config() -> Path:
     opencode_config = {
         "$schema": "https://opencode.ai/config.json",
         "provider": providers,
-        "permissions": [
-            {"permission": "*", "action": "allow", "pattern": "*"}
-        ]
     }
 
     with open(config_path, 'w', encoding='utf-8') as f:

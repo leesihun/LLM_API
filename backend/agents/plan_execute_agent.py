@@ -9,6 +9,7 @@ from typing import List, Dict, Optional, Any
 import config
 from backend.agents.base_agent import Agent
 from backend.agents.react_agent import ReActAgent, ReActMaxIterationsError
+from backend.utils.stop_signal import check_stop
 from tools_config import format_tools_for_llm
 
 
@@ -85,6 +86,7 @@ class PlanExecuteAgent(Agent):
         # ITERATIVE PLANNING LOOP
         # Each iteration creates a NEW plan, executes it, and checks if done
         while iteration < self.max_iterations:
+            check_stop()
             iteration += 1
             print(f"[PLAN-EXECUTE] Starting iteration {iteration}/{self.max_iterations}")
 
@@ -261,6 +263,7 @@ class PlanExecuteAgent(Agent):
         shared_context = conversation_history.copy() if self.share_context else []
 
         for step_info in plan["plan"]:
+            check_stop()
             step_num = step_info.get("step", len(results) + 1)
             description = step_info.get("description", "")
             tool_needed = step_info.get("tool")

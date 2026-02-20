@@ -7,6 +7,7 @@ from pathlib import Path
 
 import config
 from backend.core.llm_backend import llm_backend
+from backend.utils.stop_signal import check_stop, StopInferenceError  # noqa: F401
 
 
 class Agent(ABC):
@@ -205,6 +206,7 @@ class Agent(ABC):
         if stage:
             agent_type = f"{agent_type}:{stage}"
 
+        check_stop()
         return self.llm.chat(
             messages,
             self.model,

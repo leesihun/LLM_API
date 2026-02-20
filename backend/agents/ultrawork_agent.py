@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Any
 
 import config
 from backend.agents.base_agent import Agent
+from backend.utils.stop_signal import check_stop
 
 
 class UltraworkAgent(Agent):
@@ -48,6 +49,7 @@ class UltraworkAgent(Agent):
         all_results = []
 
         while iteration < self.max_iterations:
+            check_stop()
             iteration += 1
             print(f"\n[ULTRAWORK] === Iteration {iteration}/{self.max_iterations} ===")
 

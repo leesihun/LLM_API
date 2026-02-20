@@ -4,6 +4,7 @@ from typing import List, Dict, Optional, Any
 
 import config
 from backend.agents.base_agent import Agent
+from backend.utils.stop_signal import check_stop
 from tools_config import format_tools_for_llm
 
 
@@ -88,6 +89,7 @@ class ReActAgent(Agent):
 
         # Main reasoning loop
         for iteration in range(self.max_iterations):
+            check_stop()
             print(f"\n{'='*80}")
             print(f"[REACT] ITERATION {iteration + 1}/{self.max_iterations}")
             print(f"{'='*80}")

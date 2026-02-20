@@ -76,6 +76,11 @@ LOG_DIR = Path("data/logs")  # Logs directory
 PROMPTS_LOG_PATH = LOG_DIR / "prompts.log"  # LLM interaction logs
 
 # ============================================================================
+# Stop Signal Settings
+# ============================================================================
+STOP_FILE = Path("data/STOP")  # Create this file to halt all running inference
+
+# ============================================================================
 # Agent Settings
 # ============================================================================
 # Available agent types

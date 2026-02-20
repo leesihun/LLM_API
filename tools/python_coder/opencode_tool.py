@@ -2,7 +2,6 @@
 OpenCode Python Code Executor
 Two-stage execution: OpenCode generates code, then Python executor runs it
 """
-import json
 import queue
 import re
 import subprocess
@@ -78,19 +77,26 @@ class OpenCodeExecutor(BasePythonExecutor):
         start_time = time.time()
 
         prefix = (
-            "ULTRAWORK MODE - Write and execute a Python script for this task.\n"
-            "Steps:\n"
-            "1. Plan: Identify all prerequisites and dependencies needed\n"
-            "2. Write: Create a complete .py file with descriptive print statements - the python code must be stored in the current working directory\n"
-            "3. Verify: Review the code for correctness before execution\n"
-            "4. Execute: Run the script and analyze the output thoroughly\n"
-            """Requirements: 
-            - Include informative prints. 
-            - Explain all results in detail. 
-            - BE PRECISE!
-            - The python code must be stored in the current working directory
-            - If you need to read/move/execute files in different directories, use the absolute path.\n"""
-            "Task: "
+            "ULTRAWORK MODE - Complete the following task entirely. Do NOT stop until ALL steps are done.\n\n"
+            "MANDATORY STEPS (complete all before stopping):\n"
+            "1. Plan: Identify prerequisites, dependencies, and what the final output should look like\n"
+            "2. Write: Create a complete single long .py file in the current working directory\n"
+            "   - Include descriptive print statements for every major step\n"
+            "   - The LAST lines of the script MUST print a completion summary:\n"
+            "     print('=== TASK COMPLETE ===')\n"
+            "     print('Done: [what was accomplished]')\n"
+            "     print('Output: [key results or file paths produced]')\n"
+            "3. Verify: Review the code for correctness before running\n"
+            "4. Execute: Run the script using the shell and capture the full output\n"
+            "5. Confirm: Read the output and confirm the task is done — if anything failed, fix and re-run\n\n"
+            "REQUIREMENTS:\n"
+            "- You are NOT done until the script has been written, executed, and its output confirmed\n"
+            "- Do not stop after planning or writing — you MUST run the script\n"
+            "- Include informative prints throughout the script\n"
+            "- Explain all results clearly in the summary\n"
+            "- Python file must be saved in the current working directory\n"
+            "- Use absolute paths when accessing files in other directories\n\n"
+            "TASK: "
         )
 
         instruction = prefix + instruction
@@ -329,11 +335,12 @@ class OpenCodeExecutor(BasePythonExecutor):
             opencode_cmd = f"{opencode_cmd}.cmd"
 
         # Instruction already has ULTRAWORK prefix from execute()
+        # Use --format default (plain text) - more reliable than JSON parsing
         cmd = [
             opencode_cmd,
             "run",
             instruction,
-            "--format", "json",
+            "--format", "default",
             "--model", f"{config.OPENCODE_PROVIDER}/{config.OPENCODE_MODEL}",
         ]
 
@@ -346,52 +353,34 @@ class OpenCodeExecutor(BasePythonExecutor):
 
     def _parse_output(self, stdout: str) -> Tuple[str, Optional[str], Optional[str]]:
         """
-        Parse OpenCode output - extract session ID and text content
+        Parse OpenCode plain-text output (--format default).
+
+        Strips ANSI escape codes and returns the clean text.
+        Session ID is not extractable from plain text, so continuation
+        is disabled (each call starts fresh, which is fine since workspace
+        files persist between calls via the shared directory).
 
         Returns:
             Tuple of (text_output, opencode_session_id, error_message)
         """
-        session_id = None
+        import re
+
+        # Strip ANSI escape codes (colors, bold, etc.)
+        ansi_escape = re.compile(r'\x1b\[[0-9;]*[mGKHF]|\x1b\][^\x07]*\x07|\x1b[=><]')
+        clean = ansi_escape.sub('', stdout)
+
+        # Strip other control characters except newlines/tabs
+        clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', clean)
+
+        # Detect error lines
         error_msg = None
-        output_parts = []
+        for line in clean.split('\n'):
+            stripped = line.strip()
+            if stripped.lower().startswith('error:') or 'configuration is invalid' in stripped.lower():
+                error_msg = stripped
+                break
 
-        for line in stdout.strip().split('\n'):
-            if not line:
-                continue
-
-            try:
-                event = json.loads(line)
-                event_type = event.get("type")
-                part = event.get("part", {})
-
-                # Extract session ID
-                if not session_id:
-                    session_id = event.get("sessionID") or part.get("sessionID")
-
-                # Check for errors
-                if event_type == "error":
-                    error_msg = part.get("message") or part.get("error") or str(part)
-
-                # Extract text content
-                for key in ["text", "content", "output", "stdout", "result"]:
-                    value = part.get(key)
-                    if value and isinstance(value, str) and value.strip():
-                        output_parts.append(value)
-                        break
-
-            except json.JSONDecodeError:
-                if not line.startswith("INFO ") and not line.startswith("DEBUG "):
-                    output_parts.append(line)
-
-        combined_output = "\n".join(output_parts)
-
-        # Fallback if no parsed output
-        if not combined_output and stdout.strip():
-            raw_lines = [l for l in stdout.strip().split('\n')
-                        if l and not l.startswith("INFO ") and not l.startswith("DEBUG ")]
-            combined_output = "\n".join(raw_lines)
-
-        return combined_output, session_id, error_msg
+        return clean.strip(), None, error_msg
 
     def _get_python_files(self) -> List[Path]:
         """Get list of Python files in workspace"""
@@ -558,30 +547,13 @@ class OpenCodeExecutor(BasePythonExecutor):
         log_to_prompts_file("-" * 80)
 
     def _log_stream_line(self, line: str) -> None:
-        """Log a single line of streaming output"""
-        try:
-            event = json.loads(line)
-            event_type = event.get("type", "unknown")
-            part = event.get("part", {})
-
-            if event_type == "text":
-                text = part.get("text", "")
-                if text:
-                    log_to_prompts_file(f"  [TEXT] {text}")
-            elif event_type == "tool_call":
-                tool_name = part.get("name", "unknown")
-                log_to_prompts_file(f"  [TOOL_CALL] {tool_name}")
-            elif event_type == "tool_result":
-                success = part.get("success", False)
-                log_to_prompts_file(f"  [TOOL_RESULT] success={success}")
-            elif event_type == "error":
-                error = part.get("message", part.get("error", str(part)))
-                log_to_prompts_file(f"  [ERROR] {error}")
-            else:
-                log_to_prompts_file(f"  [{event_type.upper()}] {json.dumps(part)[:200]}")
-        except json.JSONDecodeError:
-            if line and not line.startswith("INFO ") and not line.startswith("DEBUG "):
-                log_to_prompts_file(f"  {line}")
+        """Log a single line of plain-text streaming output"""
+        import re
+        # Strip ANSI codes before logging
+        clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]|\x1b\][^\x07]*\x07|\x1b[=><]', '', line)
+        clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', clean)
+        if clean.strip():
+            log_to_prompts_file(f"  {clean}")
 
     def _log_result(
         self,
