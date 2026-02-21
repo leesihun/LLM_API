@@ -197,11 +197,27 @@ class OpenCodeExecutor(BasePythonExecutor):
 
     def _run_opencode(self, instruction: str, timeout: int) -> Dict[str, Any]:
         """
-        Run OpenCode to generate Python code
+        Run OpenCode to generate Python code.
+
+        Tries the persistent HTTP server first (no Node.js cold-start overhead).
+        Falls back to spawning a subprocess if the server is unavailable.
 
         Returns:
             Dict with keys: success, output, session_id, error
         """
+        # --- HTTP server mode (fast path) ---
+        from tools.python_coder.opencode_server import get_server
+        srv = get_server()
+        if srv._is_port_in_use():
+            print("[OPENCODE] Using HTTP server mode (no cold-start)")
+            http_result = self._run_opencode_http(instruction, timeout)
+            if http_result["success"]:
+                return http_result
+            print(f"[OPENCODE] HTTP mode failed ({http_result.get('error')}), "
+                  "falling back to subprocess")
+
+        # --- Subprocess fallback ---
+        print("[OPENCODE] Using subprocess mode")
         cmd = self._build_command(instruction)
         print(f"[OPENCODE] Command: {' '.join(cmd[:6])}...")
 
@@ -279,6 +295,90 @@ class OpenCodeExecutor(BasePythonExecutor):
                 "output": ''.join(stdout_lines),
                 "session_id": None,
                 "error": f"OpenCode error: {str(e)}"
+            }
+
+    def _run_opencode_http(self, instruction: str, timeout: int) -> Dict[str, Any]:
+        """
+        Run OpenCode via the persistent HTTP server.
+
+        On the first call for a given LLM session_id a new OpenCode session is
+        created via POST /session.  Subsequent calls with the same session_id
+        reuse that session (POST /session/{id}/message), giving the model full
+        context of previous exchanges in this conversation.
+
+        Returns:
+            Dict with keys: success, output, session_id, error
+        """
+        import requests as _req
+        from tools.python_coder.opencode_server import get_server
+
+        base_url = get_server().server_url
+
+        # --- Session management: one OpenCode session per LLM session_id ---
+        opencode_session_id = OpenCodeExecutor._session_map.get(self.session_id)
+
+        if not opencode_session_id:
+            try:
+                resp = _req.post(
+                    f"{base_url}/session",
+                    json={"title": f"llm-{self.session_id[:8]}"},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                opencode_session_id = resp.json()["id"]
+                OpenCodeExecutor._session_map[self.session_id] = opencode_session_id
+                print(f"[OPENCODE-HTTP] Created session: {opencode_session_id}")
+            except Exception as e:
+                return {
+                    "success": False, "output": "", "session_id": None,
+                    "error": f"Failed to create OpenCode session: {e}",
+                }
+        else:
+            print(f"[OPENCODE-HTTP] Reusing session: {opencode_session_id}")
+
+        # --- Send prompt, wait for full response ---
+        try:
+            resp = _req.post(
+                f"{base_url}/session/{opencode_session_id}/message",
+                json={
+                    "model": {
+                        "providerID": config.OPENCODE_PROVIDER,
+                        "modelID": config.OPENCODE_MODEL,
+                    },
+                    "parts": [{"type": "text", "text": instruction}],
+                },
+                timeout=(10, timeout),  # (connect_timeout, read_timeout)
+            )
+            resp.raise_for_status()
+            result = resp.json()
+
+            # Extract all text parts from the assistant response
+            text_parts = []
+            for part in result.get("parts", []):
+                if isinstance(part, dict) and part.get("type") == "text":
+                    text_parts.append(part.get("text", ""))
+
+            text = "\n".join(text_parts).strip()
+            self._log_stage(f"HTTP response received ({len(text)} chars)")
+
+            return {
+                "success": True,
+                "output": text,
+                "session_id": opencode_session_id,
+                "error": None,
+            }
+
+        except _req.exceptions.Timeout:
+            return {
+                "success": False, "output": "",
+                "session_id": opencode_session_id,
+                "error": f"OpenCode HTTP timeout after {timeout}s",
+            }
+        except Exception as e:
+            return {
+                "success": False, "output": "",
+                "session_id": opencode_session_id,
+                "error": f"OpenCode HTTP error: {e}",
             }
 
     def _run_python_file(self, python_file: Path, timeout: int) -> Dict[str, Any]:

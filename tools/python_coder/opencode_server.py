@@ -212,27 +212,27 @@ def get_server_manager() -> OpenCodeServerManager:
 
 def start_opencode_server() -> None:
     """
-    Verify opencode server is running (call on tools_server startup)
+    Ensure the opencode server is running (call on tools_server startup).
 
-    Note: Assumes external opencode server is already running.
-    Does not attempt to start a new server.
+    Auto-starts the server process if not already running.  On failure the
+    warning is printed and tool calls fall back to per-request subprocess mode.
     """
     from tools.python_coder.opencode_config import ensure_opencode_config
 
-    # Generate config first
+    # Keep opencode config in sync with config.py
     ensure_opencode_config()
 
-    # Just verify the server is reachable, don't start it
     manager = get_server_manager()
+    try:
+        manager.start()
+    except RuntimeError as e:
+        print(f"[OPENCODE SERVER] WARNING: {e}")
+        print("[OPENCODE SERVER] Tool calls will fall back to subprocess mode")
 
-    # Check if external server is running
-    if manager._is_port_in_use():
-        print(f"[OPENCODE SERVER] External server detected on {manager.server_url}")
-        print(f"[OPENCODE SERVER] Ready to use")
-    else:
-        print(f"[OPENCODE SERVER] WARNING: No server detected on {manager.server_url}")
-        print(f"[OPENCODE SERVER] Please start opencode server manually:")
-        print(f"[OPENCODE SERVER]   opencode serve --port {config.OPENCODE_SERVER_PORT}")
+
+def get_server() -> OpenCodeServerManager:
+    """Convenience alias used by opencode_tool.py."""
+    return get_server_manager()
 
 
 def stop_opencode_server() -> None:

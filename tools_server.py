@@ -93,15 +93,21 @@ async def startup_event():
 
         print("=" * 70 + "\n")
 
-    # OpenCode mode: uses embedded server with default agent and 'ultrawork' prefix
+    # OpenCode mode: start the persistent server in the background so the
+    # first tool call uses HTTP (no cold-start) instead of a fresh subprocess.
     if config.PYTHON_EXECUTOR_MODE == "opencode":
         print("\n" + "=" * 70)
         print("OPENCODE MODE")
         print("=" * 70)
-        print("[TOOLS SERVER] OpenCode executor ready")
-        print("[TOOLS SERVER] Using embedded server mode with default agent")
-        print("[TOOLS SERVER] Instructions prefixed with 'ultrawork' for optimal performance")
-        print("[TOOLS SERVER] Fully autonomous operation (no user prompts)")
+
+        import threading
+        def _start_oc_server():
+            from tools.python_coder.opencode_server import start_opencode_server
+            start_opencode_server()
+
+        threading.Thread(target=_start_oc_server, daemon=True, name="opencode-server").start()
+        print("[TOOLS SERVER] OpenCode persistent server starting in background...")
+        print(f"[TOOLS SERVER] Server URL: http://{config.OPENCODE_SERVER_HOST}:{config.OPENCODE_SERVER_PORT}")
         print("=" * 70 + "\n")
 
 
